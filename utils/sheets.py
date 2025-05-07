@@ -1,7 +1,11 @@
 import os
 import json
+import logging
 from googleapiclient.discovery import build
 from google.oauth2 import service_account
+
+# Configurar logging
+logger = logging.getLogger(__name__)
 
 # Hojas para cada tipo de dato
 SHEET_IDS = {
@@ -25,17 +29,25 @@ def get_credentials():
     creds_json = os.getenv('GOOGLE_CREDENTIALS')
     
     if not creds_json:
+        logger.error("Las credenciales de Google no están configuradas. Establece la variable de entorno GOOGLE_CREDENTIALS.")
         raise ValueError("Las credenciales de Google no están configuradas. Establece la variable de entorno GOOGLE_CREDENTIALS.")
     
-    # Parsear JSON de credenciales desde la variable de entorno
-    creds_info = json.loads(creds_json)
-    
-    # Crear credenciales desde la información JSON
-    creds = service_account.Credentials.from_service_account_info(
-        creds_info, scopes=['https://www.googleapis.com/auth/spreadsheets']
-    )
-    
-    return creds
+    try:
+        # Parsear JSON de credenciales desde la variable de entorno
+        creds_info = json.loads(creds_json)
+        
+        # Crear credenciales desde la información JSON
+        creds = service_account.Credentials.from_service_account_info(
+            creds_info, scopes=['https://www.googleapis.com/auth/spreadsheets']
+        )
+        
+        return creds
+    except json.JSONDecodeError as e:
+        logger.error(f"Error al decodificar las credenciales JSON: {e}")
+        raise ValueError(f"Las credenciales de Google no son un JSON válido: {e}")
+    except Exception as e:
+        logger.error(f"Error al obtener credenciales: {e}")
+        raise
 
 def get_sheet_service():
     """Crea y devuelve un servicio de Google Sheets API"""
@@ -49,8 +61,10 @@ def get_or_create_sheet():
     spreadsheet_id = os.getenv('SPREADSHEET_ID')
     
     if not spreadsheet_id:
+        logger.error("El ID de la hoja de cálculo no está configurado. Establece la variable de entorno SPREADSHEET_ID.")
         raise ValueError("El ID de la hoja de cálculo no está configurado. Establece la variable de entorno SPREADSHEET_ID.")
     
+    logger.info(f"Usando hoja de cálculo con ID: {spreadsheet_id}")
     return spreadsheet_id
 
 def initialize_sheets():
@@ -61,34 +75,40 @@ def initialize_sheets():
         
         # Verificar y configurar cada hoja
         for sheet_name, header in HEADERS.items():
-            # Obtener datos actuales
-            range_name = f"{sheet_name}!A1:Z1"
-            result = sheets.values().get(
-                spreadsheetId=spreadsheet_id,
-                range=range_name
-            ).execute()
-            
-            values = result.get('values', [])
-            
-            # Si la hoja está vacía o no tiene cabeceras, agregarlas
-            if not values:
-                sheets.values().update(
+            try:
+                # Obtener datos actuales
+                range_name = f"{sheet_name}!A1:Z1"
+                result = sheets.values().get(
                     spreadsheetId=spreadsheet_id,
-                    range=range_name,
-                    valueInputOption="RAW",
-                    body={"values": [header]}
+                    range=range_name
                 ).execute()
-                print(f"Hoja '{sheet_name}' inicializada con cabeceras")
-            else:
-                print(f"Hoja '{sheet_name}' ya tiene datos")
+                
+                values = result.get('values', [])
+                
+                # Si la hoja está vacía o no tiene cabeceras, agregarlas
+                if not values:
+                    logger.info(f"Inicializando hoja '{sheet_name}' con cabeceras: {header}")
+                    sheets.values().update(
+                        spreadsheetId=spreadsheet_id,
+                        range=range_name,
+                        valueInputOption="RAW",
+                        body={"values": [header]}
+                    ).execute()
+                    logger.info(f"Hoja '{sheet_name}' inicializada con cabeceras")
+                else:
+                    logger.info(f"Hoja '{sheet_name}' ya tiene datos: {values}")
+            except Exception as e:
+                logger.error(f"Error al inicializar la hoja '{sheet_name}': {e}")
+                raise
                 
     except Exception as e:
-        print(f"Error al inicializar las hojas: {e}")
+        logger.error(f"Error al inicializar las hojas: {e}")
         raise
 
 def append_data(sheet_name, data):
     """Añade una fila de datos a la hoja especificada"""
     if sheet_name not in HEADERS:
+        logger.error(f"Nombre de hoja inválido: {sheet_name}")
         raise ValueError(f"Nombre de hoja inválido: {sheet_name}")
     
     try:
@@ -99,8 +119,11 @@ def append_data(sheet_name, data):
         headers = HEADERS[sheet_name]
         row_data = [data.get(header, "") for header in headers]
         
+        logger.info(f"Añadiendo datos a '{sheet_name}': {data}")
+        logger.info(f"Datos formateados para Sheets: {row_data}")
+        
         range_name = f"{sheet_name}!A:Z"
-        sheets.values().append(
+        result = sheets.values().append(
             spreadsheetId=spreadsheet_id,
             range=range_name,
             valueInputOption="USER_ENTERED",
@@ -108,14 +131,16 @@ def append_data(sheet_name, data):
             body={"values": [row_data]}
         ).execute()
         
+        logger.info(f"Datos añadidos correctamente a '{sheet_name}'. Respuesta: {result}")
         return True
     except Exception as e:
-        print(f"Error al añadir datos a {sheet_name}: {e}")
+        logger.error(f"Error al añadir datos a {sheet_name}: {e}")
         return False
 
 def get_all_data(sheet_name):
     """Obtiene todos los datos de la hoja especificada"""
     if sheet_name not in HEADERS:
+        logger.error(f"Nombre de hoja inválido: {sheet_name}")
         raise ValueError(f"Nombre de hoja inválido: {sheet_name}")
     
     try:
@@ -131,6 +156,7 @@ def get_all_data(sheet_name):
         values = result.get('values', [])
         
         if not values:
+            logger.info(f"No hay datos en la hoja '{sheet_name}'")
             return []
         
         # Convertir filas a diccionarios usando las cabeceras
@@ -142,9 +168,10 @@ def get_all_data(sheet_name):
             row_padded = row + [""] * (len(headers) - len(row))
             rows.append(dict(zip(headers, row_padded)))
         
+        logger.info(f"Obtenidos {len(rows)} registros de '{sheet_name}'")
         return rows
     except Exception as e:
-        print(f"Error al obtener datos de {sheet_name}: {e}")
+        logger.error(f"Error al obtener datos de {sheet_name}: {e}")
         return []
 
 def get_filtered_data(sheet_name, filters=None, days=None):
@@ -175,4 +202,5 @@ def get_filtered_data(sheet_name, filters=None, days=None):
         # TODO: Implementar filtrado por fecha
         pass
     
+    logger.info(f"Filtrado: de {len(all_data)} registros a {len(filtered_data)} registros")
     return filtered_data
