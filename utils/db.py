@@ -1,8 +1,12 @@
 import csv
 import os
 import datetime
+import logging
 from typing import List, Dict, Any
 from utils.sheets import append_data, get_all_data, get_filtered_data, initialize_sheets
+
+# Configurar logging
+logger = logging.getLogger(__name__)
 
 def ensure_file_exists(filename: str, headers: List[str]) -> None:
     """
@@ -15,6 +19,7 @@ def ensure_file_exists(filename: str, headers: List[str]) -> None:
     """
     # Obtener el nombre de la hoja del nombre del archivo
     sheet_name = os.path.splitext(os.path.basename(filename))[0]
+    logger.info(f"Asegurando que la hoja '{sheet_name}' existe con encabezados: {headers}")
     
     # Inicializar las hojas de Google Sheets
     initialize_sheets()
@@ -31,9 +36,12 @@ def read_data(filename: str) -> List[Dict[str, Any]]:
     """
     # Obtener el nombre de la hoja del nombre del archivo
     sheet_name = os.path.splitext(os.path.basename(filename))[0]
+    logger.info(f"Leyendo datos de la hoja '{sheet_name}'")
     
     # Leer datos de Google Sheets
-    return get_all_data(sheet_name)
+    data = get_all_data(sheet_name)
+    logger.info(f"Leídos {len(data)} registros de la hoja '{sheet_name}'")
+    return data
 
 def write_data(filename: str, data: List[Dict[str, Any]], headers: List[str]) -> None:
     """
@@ -49,8 +57,8 @@ def write_data(filename: str, data: List[Dict[str, Any]], headers: List[str]) ->
     # O implementaríamos una función que borra todos los datos y los reescribe
     
     # Por ahora, imprimimos un mensaje de advertencia
-    print("write_data no está completamente implementado para Google Sheets")
-    print("Para actualizar todos los datos, considera una implementación personalizada")
+    logger.warning("write_data no está completamente implementado para Google Sheets")
+    logger.warning("Para actualizar todos los datos, considera una implementación personalizada")
 
 def append_data(filename: str, row: Dict[str, Any], headers: List[str]) -> None:
     """
@@ -63,13 +71,17 @@ def append_data(filename: str, row: Dict[str, Any], headers: List[str]) -> None:
     """
     # Obtener el nombre de la hoja del nombre del archivo
     sheet_name = os.path.splitext(os.path.basename(filename))[0]
+    logger.info(f"Añadiendo datos a la hoja '{sheet_name}': {row}")
     
     # Asegurarse de que la fila tiene una fecha (si no existe)
     if 'fecha' not in row or not row['fecha']:
         row['fecha'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        logger.info(f"Añadida fecha automática: {row['fecha']}")
     
     # Añadir la fila a Google Sheets
     result = append_data(sheet_name, row)
     
-    if not result:
-        print(f"Error al añadir datos a la hoja {sheet_name}")
+    if result:
+        logger.info(f"Datos añadidos correctamente a la hoja '{sheet_name}'")
+    else:
+        logger.error(f"Error al añadir datos a la hoja '{sheet_name}'")
