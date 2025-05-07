@@ -1,5 +1,12 @@
+import logging
+import datetime
 from telegram import Update
 from telegram.ext import CommandHandler, ConversationHandler, MessageHandler, filters, ContextTypes
+from config import PROCESO_FILE
+from utils.db import append_data
+
+# Configurar logging
+logger = logging.getLogger(__name__)
 
 # Estados para la conversación
 LOTE, ESTADO, CANTIDAD, NOTAS, CONFIRMAR = range(5)
@@ -7,8 +14,12 @@ LOTE, ESTADO, CANTIDAD, NOTAS, CONFIRMAR = range(5)
 # Datos temporales
 datos_proceso = {}
 
+# Headers para la hoja de proceso
+PROCESO_HEADERS = ["fecha", "lote", "estado", "cantidad", "notas"]
+
 async def proceso_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Inicia el proceso de registro de procesamiento"""
+    logger.info(f"Usuario {update.effective_user.id} inició comando /proceso")
     await update.message.reply_text(
         "Vamos a registrar un procesamiento de café.\n\n"
         "Por favor, ingresa el ID o nombre del lote a procesar:"
@@ -18,10 +29,13 @@ async def proceso_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def lote(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Guarda el lote y solicita el estado del procesamiento"""
     user_id = update.effective_user.id
-    datos_proceso[user_id] = {"lote": update.message.text}
+    lote_nombre = update.message.text
+    logger.info(f"Usuario {user_id} ingresó lote: {lote_nombre}")
+    
+    datos_proceso[user_id] = {"lote": lote_nombre}
     
     await update.message.reply_text(
-        f"Lote: {update.message.text}\n\n"
+        f"Lote: {lote_nombre}\n\n"
         "Ahora, indica el estado al que pasará el café:\n"
         "1 - Despulpado\n"
         "2 - Fermentado\n"
@@ -42,6 +56,8 @@ async def estado(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         
         if 1 <= estado_num <= 7:
             estado_txt = estados[estado_num - 1]
+            logger.info(f"Usuario {user_id} ingresó estado: {estado_txt} ({estado_num})")
+            
             datos_proceso[user_id]["estado"] = estado_txt
             
             await update.message.reply_text(
@@ -50,11 +66,13 @@ async def estado(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             )
             return CANTIDAD
         else:
+            logger.warning(f"Usuario {user_id} ingresó un valor fuera de rango para estado: {estado_num}")
             await update.message.reply_text(
                 "Por favor, selecciona un número del 1 al 7 para el estado."
             )
             return ESTADO
     except ValueError:
+        logger.warning(f"Usuario {user_id} ingresó un valor inválido para estado: {update.message.text}")
         await update.message.reply_text(
             "Por favor, ingresa un número válido para el estado."
         )
@@ -65,6 +83,8 @@ async def cantidad(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
     try:
         cantidad = float(update.message.text)
+        logger.info(f"Usuario {user_id} ingresó cantidad: {cantidad}")
+        
         datos_proceso[user_id]["cantidad"] = cantidad
         
         await update.message.reply_text(
@@ -73,6 +93,7 @@ async def cantidad(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         )
         return NOTAS
     except ValueError:
+        logger.warning(f"Usuario {user_id} ingresó un valor inválido para cantidad: {update.message.text}")
         await update.message.reply_text(
             "Por favor, ingresa un número válido para la cantidad."
         )
@@ -82,6 +103,8 @@ async def notas(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Guarda las notas y solicita confirmación"""
     user_id = update.effective_user.id
     notas_txt = update.message.text
+    logger.info(f"Usuario {user_id} ingresó notas: {notas_txt}")
+    
     datos_proceso[user_id]["notas"] = notas_txt
     
     # Mostrar resumen para confirmar
@@ -102,16 +125,36 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Confirma y guarda el proceso"""
     user_id = update.effective_user.id
     respuesta = update.message.text.lower()
+    logger.info(f"Usuario {user_id} respondió a confirmación: {respuesta}")
     
     if respuesta in ["sí", "si", "s", "yes", "y"]:
-        # Aquí se guardaría el proceso en el CSV
-        # Por ahora solo mostraremos un mensaje de éxito
+        # Preparar datos para guardar
+        proceso = datos_proceso[user_id].copy()
         
-        await update.message.reply_text(
-            "✅ ¡Proceso registrado exitosamente!\n\n"
-            "Usa /proceso para registrar otro proceso."
-        )
+        # Añadir fecha
+        proceso["fecha"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        logger.info(f"Guardando proceso en Google Sheets: {proceso}")
+        
+        # Guardar el proceso en Google Sheets
+        try:
+            append_data(PROCESO_FILE, proceso, PROCESO_HEADERS)
+            
+            logger.info(f"Proceso guardado exitosamente para usuario {user_id}")
+            
+            await update.message.reply_text(
+                "✅ ¡Proceso registrado exitosamente!\n\n"
+                "Usa /proceso para registrar otro proceso."
+            )
+        except Exception as e:
+            logger.error(f"Error al guardar proceso: {e}")
+            await update.message.reply_text(
+                "❌ Error al guardar el proceso. Por favor, intenta nuevamente.\n\n"
+                f"Error: {str(e)}\n\n"
+                "Contacta al administrador si el problema persiste."
+            )
     else:
+        logger.info(f"Usuario {user_id} canceló el proceso")
         await update.message.reply_text(
             "❌ Proceso cancelado.\n\n"
             "Usa /proceso para iniciar de nuevo."
@@ -126,6 +169,7 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancela la conversación"""
     user_id = update.effective_user.id
+    logger.info(f"Usuario {user_id} canceló el registro de proceso con /cancelar")
     
     # Limpiar datos temporales
     if user_id in datos_proceso:
@@ -155,3 +199,4 @@ def register_proceso_handlers(application):
     
     # Agregar el manejador al dispatcher
     application.add_handler(conv_handler)
+    logger.info("Handlers de proceso registrados")
