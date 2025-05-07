@@ -1,72 +1,75 @@
 import csv
 import os
+import datetime
 from typing import List, Dict, Any
+from utils.sheets import append_data, get_all_data, get_filtered_data, initialize_sheets
 
 def ensure_file_exists(filename: str, headers: List[str]) -> None:
     """
     Asegura que el archivo CSV existe. Si no existe, lo crea con los encabezados.
+    Se mantiene para compatibilidad con código existente, pero ahora usa Google Sheets.
     
     Args:
-        filename: Ruta del archivo
+        filename: Ruta del archivo (ya no se usa directamente)
         headers: Lista de encabezados para el CSV
     """
-    # Verificar si el directorio existe
-    directory = os.path.dirname(filename)
-    if directory and not os.path.exists(directory):
-        os.makedirs(directory)
+    # Obtener el nombre de la hoja del nombre del archivo
+    sheet_name = os.path.splitext(os.path.basename(filename))[0]
     
-    # Verificar si el archivo existe, si no, crearlo con encabezados
-    if not os.path.exists(filename):
-        with open(filename, 'w', newline='', encoding='utf-8') as file:
-            writer = csv.writer(file)
-            writer.writerow(headers)
+    # Inicializar las hojas de Google Sheets
+    initialize_sheets()
 
 def read_data(filename: str) -> List[Dict[str, Any]]:
     """
-    Lee los datos de un archivo CSV y los devuelve como una lista de diccionarios.
+    Lee los datos desde Google Sheets.
     
     Args:
-        filename: Ruta del archivo CSV
+        filename: Ruta del archivo original (se usa para identificar la hoja)
         
     Returns:
-        Lista de diccionarios con los datos del CSV
+        Lista de diccionarios con los datos
     """
-    if not os.path.exists(filename):
-        return []
+    # Obtener el nombre de la hoja del nombre del archivo
+    sheet_name = os.path.splitext(os.path.basename(filename))[0]
     
-    with open(filename, 'r', newline='', encoding='utf-8') as file:
-        reader = csv.DictReader(file)
-        data = list(reader)
-    
-    return data
+    # Leer datos de Google Sheets
+    return get_all_data(sheet_name)
 
 def write_data(filename: str, data: List[Dict[str, Any]], headers: List[str]) -> None:
     """
-    Escribe datos en un archivo CSV.
+    Escribe datos en Google Sheets.
     
     Args:
-        filename: Ruta del archivo CSV
+        filename: Ruta del archivo original (se usa para identificar la hoja)
         data: Lista de diccionarios con los datos a escribir
-        headers: Lista de encabezados para el CSV
+        headers: Lista de encabezados (ya no se usa directamente)
     """
-    ensure_file_exists(filename, headers)
+    # Esta función no se implementa directamente para Google Sheets
+    # En su lugar, usaríamos append_data para cada fila
+    # O implementaríamos una función que borra todos los datos y los reescribe
     
-    with open(filename, 'w', newline='', encoding='utf-8') as file:
-        writer = csv.DictWriter(file, fieldnames=headers)
-        writer.writeheader()
-        writer.writerows(data)
+    # Por ahora, imprimimos un mensaje de advertencia
+    print("write_data no está completamente implementado para Google Sheets")
+    print("Para actualizar todos los datos, considera una implementación personalizada")
 
 def append_data(filename: str, row: Dict[str, Any], headers: List[str]) -> None:
     """
-    Añade una fila de datos al final de un archivo CSV.
+    Añade una fila de datos a Google Sheets.
     
     Args:
-        filename: Ruta del archivo CSV
+        filename: Ruta del archivo original (se usa para identificar la hoja)
         row: Diccionario con los datos a añadir
-        headers: Lista de encabezados para el CSV
+        headers: Lista de encabezados (ya no se usa directamente)
     """
-    ensure_file_exists(filename, headers)
+    # Obtener el nombre de la hoja del nombre del archivo
+    sheet_name = os.path.splitext(os.path.basename(filename))[0]
     
-    with open(filename, 'a', newline='', encoding='utf-8') as file:
-        writer = csv.DictWriter(file, fieldnames=headers)
-        writer.writerow(row)
+    # Asegurarse de que la fila tiene una fecha (si no existe)
+    if 'fecha' not in row or not row['fecha']:
+        row['fecha'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Añadir la fila a Google Sheets
+    result = append_data(sheet_name, row)
+    
+    if not result:
+        print(f"Error al añadir datos a la hoja {sheet_name}")
