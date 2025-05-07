@@ -140,7 +140,7 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         
         # Guardar la compra en Google Sheets a través de db.py
         try:
-            # Llamar a la función para guardar los datos con el argumento headers correcto
+            # Llamar a la función para guardar los datos (ahora sin pasar el parámetro headers)
             append_data(COMPRAS_FILE, compra, COMPRAS_HEADERS)
             
             logger.info(f"Compra guardada exitosamente para usuario {user_id}")
