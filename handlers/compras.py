@@ -14,6 +14,9 @@ PROVEEDOR, CANTIDAD, PRECIO, CALIDAD, CONFIRMAR = range(5)
 # Datos temporales
 datos_compra = {}
 
+# Headers para la hoja de compras
+COMPRAS_HEADERS = ["fecha", "proveedor", "cantidad", "precio", "calidad", "total"]
+
 async def compra_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Inicia el proceso de registro de compra"""
     logger.info(f"Usuario {update.effective_user.id} inició comando /compra")
@@ -137,11 +140,8 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         
         # Guardar la compra en Google Sheets a través de db.py
         try:
-            # Lista de encabezados necesaria para la función append_data
-            headers = ["fecha", "proveedor", "cantidad", "precio", "calidad", "total"]
-            
-            # Llamar a la función para guardar los datos
-            append_data(COMPRAS_FILE, compra, headers)
+            # Llamar a la función para guardar los datos con el argumento headers correcto
+            append_data(COMPRAS_FILE, compra, COMPRAS_HEADERS)
             
             logger.info(f"Compra guardada exitosamente para usuario {user_id}")
             
