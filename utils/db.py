@@ -3,7 +3,8 @@ import os
 import datetime
 import logging
 from typing import List, Dict, Any
-from utils.sheets import append_data, get_all_data, get_filtered_data, initialize_sheets
+from utils.sheets import append_data as sheets_append_data
+from utils.sheets import get_all_data, get_filtered_data, initialize_sheets
 
 # Configurar logging
 logger = logging.getLogger(__name__)
@@ -78,10 +79,18 @@ def append_data(filename: str, row: Dict[str, Any], headers: List[str]) -> None:
         row['fecha'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         logger.info(f"Añadida fecha automática: {row['fecha']}")
     
-    # Añadir la fila a Google Sheets
-    result = append_data(sheet_name, row)
-    
-    if result:
-        logger.info(f"Datos añadidos correctamente a la hoja '{sheet_name}'")
-    else:
-        logger.error(f"Error al añadir datos a la hoja '{sheet_name}'")
+    # Añadir la fila a Google Sheets directamente, sin llamar a la función de sheets.py
+    try:
+        # Obtener el nombre de la hoja del nombre del archivo para poder llamar directamente
+        sheet_name = os.path.splitext(os.path.basename(filename))[0]
+        
+        # Llamar a la función con el nombre de la hoja y los datos
+        result = sheets_append_data(sheet_name, row)
+        
+        if result:
+            logger.info(f"Datos añadidos correctamente a la hoja '{sheet_name}'")
+        else:
+            logger.error(f"Error al añadir datos a la hoja '{sheet_name}'")
+    except Exception as e:
+        logger.error(f"Error al añadir datos a la hoja '{sheet_name}': {e}")
+        raise
