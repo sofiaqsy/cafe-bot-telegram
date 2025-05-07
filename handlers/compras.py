@@ -1,5 +1,12 @@
+import logging
+import datetime
 from telegram import Update
 from telegram.ext import CommandHandler, ConversationHandler, MessageHandler, filters, ContextTypes
+from config import COMPRAS_FILE
+from utils.db import append_data
+
+# Configurar logging
+logger = logging.getLogger(__name__)
 
 # Estados para la conversación
 PROVEEDOR, CANTIDAD, PRECIO, CALIDAD, CONFIRMAR = range(5)
@@ -9,6 +16,7 @@ datos_compra = {}
 
 async def compra_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Inicia el proceso de registro de compra"""
+    logger.info(f"Usuario {update.effective_user.id} inició comando /compra")
     await update.message.reply_text(
         "Vamos a registrar una nueva compra de café.\n\n"
         "Por favor, ingresa el nombre del proveedor:"
@@ -18,10 +26,13 @@ async def compra_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def proveedor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Guarda el proveedor y solicita la cantidad"""
     user_id = update.effective_user.id
-    datos_compra[user_id] = {"proveedor": update.message.text}
+    proveedor_nombre = update.message.text
+    logger.info(f"Usuario {user_id} ingresó proveedor: {proveedor_nombre}")
+    
+    datos_compra[user_id] = {"proveedor": proveedor_nombre}
     
     await update.message.reply_text(
-        f"Proveedor: {update.message.text}\n\n"
+        f"Proveedor: {proveedor_nombre}\n\n"
         "Ahora, ingresa la cantidad de café en kg:"
     )
     return CANTIDAD
@@ -31,6 +42,8 @@ async def cantidad(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
     try:
         cantidad = float(update.message.text)
+        logger.info(f"Usuario {user_id} ingresó cantidad: {cantidad}")
+        
         datos_compra[user_id]["cantidad"] = cantidad
         
         await update.message.reply_text(
@@ -39,6 +52,7 @@ async def cantidad(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         )
         return PRECIO
     except ValueError:
+        logger.warning(f"Usuario {user_id} ingresó un valor inválido para cantidad: {update.message.text}")
         await update.message.reply_text(
             "Por favor, ingresa un número válido para la cantidad."
         )
@@ -49,6 +63,8 @@ async def precio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
     try:
         precio = float(update.message.text)
+        logger.info(f"Usuario {user_id} ingresó precio: {precio}")
+        
         datos_compra[user_id]["precio"] = precio
         
         await update.message.reply_text(
@@ -57,6 +73,7 @@ async def precio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         )
         return CALIDAD
     except ValueError:
+        logger.warning(f"Usuario {user_id} ingresó un valor inválido para precio: {update.message.text}")
         await update.message.reply_text(
             "Por favor, ingresa un número válido para el precio."
         )
@@ -67,12 +84,17 @@ async def calidad(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
     try:
         calidad = int(update.message.text)
+        logger.info(f"Usuario {user_id} ingresó calidad: {calidad}")
+        
         if 1 <= calidad <= 5:
             datos_compra[user_id]["calidad"] = calidad
             
             # Mostrar resumen para confirmar
             compra = datos_compra[user_id]
             total = compra["cantidad"] * compra["precio"]
+            
+            # Guardar el total en los datos
+            datos_compra[user_id]["total"] = total
             
             await update.message.reply_text(
                 "📝 *Resumen de la compra*\n\n"
@@ -86,11 +108,13 @@ async def calidad(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             )
             return CONFIRMAR
         else:
+            logger.warning(f"Usuario {user_id} ingresó un valor fuera de rango para calidad: {calidad}")
             await update.message.reply_text(
                 "Por favor, ingresa un número del 1 al 5 para la calidad."
             )
             return CALIDAD
     except ValueError:
+        logger.warning(f"Usuario {user_id} ingresó un valor inválido para calidad: {update.message.text}")
         await update.message.reply_text(
             "Por favor, ingresa un número válido para la calidad."
         )
@@ -100,16 +124,40 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Confirma y guarda la compra"""
     user_id = update.effective_user.id
     respuesta = update.message.text.lower()
+    logger.info(f"Usuario {user_id} respondió a confirmación: {respuesta}")
     
     if respuesta in ["sí", "si", "s", "yes", "y"]:
-        # Aquí se guardaría la compra en el CSV
-        # Por ahora solo mostraremos un mensaje de éxito
+        # Preparar datos para guardar
+        compra = datos_compra[user_id].copy()
         
-        await update.message.reply_text(
-            "✅ ¡Compra registrada exitosamente!\n\n"
-            "Usa /compra para registrar otra compra."
-        )
+        # Añadir fecha
+        compra["fecha"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        logger.info(f"Guardando compra en Google Sheets: {compra}")
+        
+        # Guardar la compra en Google Sheets a través de db.py
+        try:
+            # Lista de encabezados necesaria para la función append_data
+            headers = ["fecha", "proveedor", "cantidad", "precio", "calidad", "total"]
+            
+            # Llamar a la función para guardar los datos
+            append_data(COMPRAS_FILE, compra, headers)
+            
+            logger.info(f"Compra guardada exitosamente para usuario {user_id}")
+            
+            await update.message.reply_text(
+                "✅ ¡Compra registrada exitosamente!\n\n"
+                "Usa /compra para registrar otra compra."
+            )
+        except Exception as e:
+            logger.error(f"Error al guardar compra: {e}")
+            await update.message.reply_text(
+                "❌ Error al guardar la compra. Por favor, intenta nuevamente.\n\n"
+                f"Error: {str(e)}\n\n"
+                "Contacta al administrador si el problema persiste."
+            )
     else:
+        logger.info(f"Usuario {user_id} canceló la compra")
         await update.message.reply_text(
             "❌ Compra cancelada.\n\n"
             "Usa /compra para iniciar de nuevo."
@@ -124,6 +172,7 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancela la conversación"""
     user_id = update.effective_user.id
+    logger.info(f"Usuario {user_id} canceló el proceso de compra con /cancelar")
     
     # Limpiar datos temporales
     if user_id in datos_compra:
@@ -153,3 +202,4 @@ def register_compras_handlers(application):
     
     # Agregar el manejador al dispatcher
     application.add_handler(conv_handler)
+    logger.info("Handlers de compras registrados")
