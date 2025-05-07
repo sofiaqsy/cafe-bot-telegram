@@ -1,8 +1,12 @@
+import logging
+import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CommandHandler, CallbackQueryHandler, ContextTypes
-import datetime
 from config import COMPRAS_FILE, PROCESO_FILE, GASTOS_FILE, VENTAS_FILE
 from utils.db import read_data
+
+# Configurar logging
+logger = logging.getLogger(__name__)
 
 # Tipos de reportes
 GENERAL = "general"
@@ -12,6 +16,8 @@ MENSUAL = "mensual"
 
 async def reporte_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Muestra opciones de reportes disponibles"""
+    logger.info(f"Usuario {update.effective_user.id} inició comando /reporte")
+    
     keyboard = [
         [
             InlineKeyboardButton("📊 General", callback_data=f"reporte_{GENERAL}"),
@@ -32,10 +38,12 @@ async def reporte_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def reporte_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Maneja los callbacks de los botones de reportes"""
     query = update.callback_query
+    user_id = query.from_user.id
     await query.answer()
     
     # Obtener el tipo de reporte de callback_data
     tipo_reporte = query.data.split("_")[1]
+    logger.info(f"Usuario {user_id} solicitó reporte de tipo: {tipo_reporte}")
     
     # Generar el reporte según el tipo
     if tipo_reporte == GENERAL:
@@ -48,7 +56,9 @@ async def reporte_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         mensaje = await generar_reporte_mensual()
     else:
         mensaje = "Tipo de reporte no válido."
+        logger.warning(f"Usuario {user_id} solicitó un tipo de reporte inválido: {tipo_reporte}")
     
+    logger.info(f"Enviando reporte de tipo {tipo_reporte} a usuario {user_id}")
     await query.edit_message_text(
         text=mensaje,
         parse_mode="Markdown"
@@ -57,11 +67,15 @@ async def reporte_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 async def generar_reporte_general() -> str:
     """Genera un reporte general con todas las operaciones"""
     try:
+        logger.info("Generando reporte general")
+        
         # Leer datos
         compras = read_data(COMPRAS_FILE)
         procesos = read_data(PROCESO_FILE)
         gastos = read_data(GASTOS_FILE)
         ventas = read_data(VENTAS_FILE)
+        
+        logger.info(f"Datos leídos para reporte general: {len(compras)} compras, {len(procesos)} procesos, {len(gastos)} gastos, {len(ventas)} ventas")
         
         # Estadísticas básicas
         total_compras = sum(float(c.get("cantidad", 0)) for c in compras)
@@ -94,11 +108,14 @@ async def generar_reporte_general() -> str:
         
         return mensaje
     except Exception as e:
+        logger.error(f"Error al generar el reporte general: {e}")
         return f"Error al generar el reporte general: {str(e)}"
 
 async def generar_reporte_diario() -> str:
     """Genera un reporte de las operaciones del día actual"""
     try:
+        logger.info("Generando reporte diario")
+        
         # Obtener fecha actual
         hoy = datetime.datetime.now().strftime("%Y-%m-%d")
         
@@ -113,6 +130,8 @@ async def generar_reporte_diario() -> str:
         procesos_hoy = [p for p in procesos if p.get("fecha", "").startswith(hoy)]
         gastos_hoy = [g for g in gastos if g.get("fecha", "").startswith(hoy)]
         ventas_hoy = [v for v in ventas if v.get("fecha", "").startswith(hoy)]
+        
+        logger.info(f"Datos filtrados para reporte diario: {len(compras_hoy)} compras, {len(procesos_hoy)} procesos, {len(gastos_hoy)} gastos, {len(ventas_hoy)} ventas")
         
         # Estadísticas básicas
         total_compras = sum(float(c.get("cantidad", 0)) for c in compras_hoy)
@@ -143,14 +162,19 @@ async def generar_reporte_diario() -> str:
         
         return mensaje
     except Exception as e:
+        logger.error(f"Error al generar el reporte diario: {e}")
         return f"Error al generar el reporte diario: {str(e)}"
 
 async def generar_reporte_semanal() -> str:
     """Genera un reporte de las operaciones de la última semana"""
     try:
+        logger.info("Generando reporte semanal")
+        
         # Obtener fechas
         hoy = datetime.datetime.now()
         hace_una_semana = hoy - datetime.timedelta(days=7)
+        fecha_inicio = hace_una_semana.strftime("%Y-%m-%d")
+        fecha_fin = hoy.strftime("%Y-%m-%d")
         
         # Leer datos
         compras = read_data(COMPRAS_FILE)
@@ -158,13 +182,23 @@ async def generar_reporte_semanal() -> str:
         gastos = read_data(GASTOS_FILE)
         ventas = read_data(VENTAS_FILE)
         
-        # Filtrar datos
-        # Nota: Esta implementación es simplista y asume que tenemos un campo 'fecha'
-        # En una implementación real deberíamos convertir las fechas a objetos datetime
-        compras_semana = []  # Aquí filtrarías las compras de la última semana
-        procesos_semana = []  # Aquí filtrarías los procesos de la última semana
-        gastos_semana = []  # Aquí filtrarías los gastos de la última semana
-        ventas_semana = []  # Aquí filtrarías las ventas de la última semana
+        # Filtrar datos de la semana (implementación simplificada)
+        # Esto asume que las fechas en los datos están en formato "YYYY-MM-DD HH:MM:SS"
+        def es_de_esta_semana(fecha_str):
+            if not fecha_str:
+                return False
+            try:
+                fecha = datetime.datetime.strptime(fecha_str.split()[0], "%Y-%m-%d")
+                return hace_una_semana <= fecha <= hoy
+            except:
+                return False
+        
+        compras_semana = [c for c in compras if es_de_esta_semana(c.get("fecha", ""))]
+        procesos_semana = [p for p in procesos if es_de_esta_semana(p.get("fecha", ""))]
+        gastos_semana = [g for g in gastos if es_de_esta_semana(g.get("fecha", ""))]
+        ventas_semana = [v for v in ventas if es_de_esta_semana(v.get("fecha", ""))]
+        
+        logger.info(f"Datos filtrados para reporte semanal: {len(compras_semana)} compras, {len(procesos_semana)} procesos, {len(gastos_semana)} gastos, {len(ventas_semana)} ventas")
         
         # Estadísticas básicas
         total_compras = sum(float(c.get("cantidad", 0)) for c in compras_semana)
@@ -177,8 +211,6 @@ async def generar_reporte_semanal() -> str:
         utilidad = monto_ventas - monto_compras - monto_gastos
         
         # Generar mensaje de reporte
-        fecha_inicio = hace_una_semana.strftime("%Y-%m-%d")
-        fecha_fin = hoy.strftime("%Y-%m-%d")
         mensaje = f"🗓️ *REPORTE SEMANAL ({fecha_inicio} al {fecha_fin})*\n\n"
         
         mensaje += "*Operaciones de la semana:*\n"
@@ -198,14 +230,19 @@ async def generar_reporte_semanal() -> str:
         
         return mensaje
     except Exception as e:
+        logger.error(f"Error al generar el reporte semanal: {e}")
         return f"Error al generar el reporte semanal: {str(e)}"
 
 async def generar_reporte_mensual() -> str:
     """Genera un reporte de las operaciones del último mes"""
     try:
+        logger.info("Generando reporte mensual")
+        
         # Obtener fechas
         hoy = datetime.datetime.now()
         hace_un_mes = hoy - datetime.timedelta(days=30)  # Aproximación simple
+        fecha_inicio = hace_un_mes.strftime("%Y-%m-%d")
+        fecha_fin = hoy.strftime("%Y-%m-%d")
         
         # Leer datos
         compras = read_data(COMPRAS_FILE)
@@ -213,13 +250,22 @@ async def generar_reporte_mensual() -> str:
         gastos = read_data(GASTOS_FILE)
         ventas = read_data(VENTAS_FILE)
         
-        # Filtrar datos
-        # Nota: Esta implementación es simplista y asume que tenemos un campo 'fecha'
-        # En una implementación real deberíamos convertir las fechas a objetos datetime
-        compras_mes = []  # Aquí filtrarías las compras del último mes
-        procesos_mes = []  # Aquí filtrarías los procesos del último mes
-        gastos_mes = []  # Aquí filtrarías los gastos del último mes
-        ventas_mes = []  # Aquí filtrarías las ventas del último mes
+        # Filtrar datos del mes (implementación simplificada)
+        def es_de_este_mes(fecha_str):
+            if not fecha_str:
+                return False
+            try:
+                fecha = datetime.datetime.strptime(fecha_str.split()[0], "%Y-%m-%d")
+                return hace_un_mes <= fecha <= hoy
+            except:
+                return False
+        
+        compras_mes = [c for c in compras if es_de_este_mes(c.get("fecha", ""))]
+        procesos_mes = [p for p in procesos if es_de_este_mes(p.get("fecha", ""))]
+        gastos_mes = [g for g in gastos if es_de_este_mes(g.get("fecha", ""))]
+        ventas_mes = [v for v in ventas if es_de_este_mes(v.get("fecha", ""))]
+        
+        logger.info(f"Datos filtrados para reporte mensual: {len(compras_mes)} compras, {len(procesos_mes)} procesos, {len(gastos_mes)} gastos, {len(ventas_mes)} ventas")
         
         # Estadísticas básicas
         total_compras = sum(float(c.get("cantidad", 0)) for c in compras_mes)
@@ -232,8 +278,6 @@ async def generar_reporte_mensual() -> str:
         utilidad = monto_ventas - monto_compras - monto_gastos
         
         # Generar mensaje de reporte
-        fecha_inicio = hace_un_mes.strftime("%Y-%m-%d")
-        fecha_fin = hoy.strftime("%Y-%m-%d")
         mensaje = f"📅 *REPORTE MENSUAL ({fecha_inicio} al {fecha_fin})*\n\n"
         
         mensaje += "*Operaciones del mes:*\n"
@@ -253,9 +297,11 @@ async def generar_reporte_mensual() -> str:
         
         return mensaje
     except Exception as e:
+        logger.error(f"Error al generar el reporte mensual: {e}")
         return f"Error al generar el reporte mensual: {str(e)}"
 
 def register_reportes_handlers(application):
     """Registra los handlers para el módulo de reportes"""
     application.add_handler(CommandHandler("reporte", reporte_command))
     application.add_handler(CallbackQueryHandler(reporte_callback, pattern="^reporte_"))
+    logger.info("Handlers de reportes registrados")
