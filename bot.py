@@ -9,7 +9,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Importar configuración
-from config import TOKEN
+from config import TOKEN, sheets_configured
+from utils.sheets import initialize_sheets
 
 # Importar handlers
 from handlers.start import start_command, help_command
@@ -21,6 +22,19 @@ from handlers.reportes import register_reportes_handlers
 
 def main():
     """Iniciar el bot"""
+    # Verificar la configuración de Google Sheets
+    if sheets_configured:
+        logger.info("Inicializando Google Sheets...")
+        try:
+            initialize_sheets()
+            logger.info("Google Sheets inicializado correctamente")
+        except Exception as e:
+            logger.error(f"Error al inicializar Google Sheets: {e}")
+            logger.warning("El bot continuará funcionando, pero los datos no se guardarán en Google Sheets")
+    else:
+        logger.warning("Google Sheets no está configurado. Los datos no se guardarán correctamente.")
+        logger.info("Asegúrate de configurar SPREADSHEET_ID y GOOGLE_CREDENTIALS en las variables de entorno")
+    
     # Crear la aplicación
     application = Application.builder().token(TOKEN).build()
     
