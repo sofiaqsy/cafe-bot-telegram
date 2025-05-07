@@ -1,12 +1,17 @@
+import os
 import logging
 from telegram.ext import Application, CommandHandler
 
-# Configuración de logging
+# Configuración de logging avanzada
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+# Asegurarse de que los logs de las bibliotecas no sean demasiado verbosos
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("telegram").setLevel(logging.WARNING)
 
 # Importar configuración
 from config import TOKEN, sheets_configured
@@ -22,6 +27,8 @@ from handlers.reportes import register_reportes_handlers
 
 def main():
     """Iniciar el bot"""
+    logger.info("Iniciando bot de Telegram para Gestión de Café")
+    
     # Verificar la configuración de Google Sheets
     if sheets_configured:
         logger.info("Inicializando Google Sheets...")
@@ -34,6 +41,25 @@ def main():
     else:
         logger.warning("Google Sheets no está configurado. Los datos no se guardarán correctamente.")
         logger.info("Asegúrate de configurar SPREADSHEET_ID y GOOGLE_CREDENTIALS en las variables de entorno")
+    
+    # Imprimir variables de entorno (solo para depuración, sin mostrar valores sensibles)
+    env_vars = [
+        "TELEGRAM_BOT_TOKEN", 
+        "SPREADSHEET_ID", 
+        "GOOGLE_CREDENTIALS"
+    ]
+    for var in env_vars:
+        value = os.getenv(var)
+        if value:
+            if var == "GOOGLE_CREDENTIALS":
+                logger.info(f"Variable de entorno {var} está configurada (valor no mostrado por seguridad)")
+            elif var == "TELEGRAM_BOT_TOKEN":
+                # Mostrar solo los primeros 10 caracteres del token, para verificar
+                logger.info(f"Variable de entorno {var} está configurada: {value[:10]}...")
+            else:
+                logger.info(f"Variable de entorno {var} está configurada: {value}")
+        else:
+            logger.warning(f"Variable de entorno {var} NO está configurada")
     
     # Crear la aplicación
     application = Application.builder().token(TOKEN).build()
@@ -51,7 +77,7 @@ def main():
     register_reportes_handlers(application)
     
     # Iniciar el bot
-    logger.info("Bot iniciado")
+    logger.info("Bot iniciado. Esperando comandos...")
     application.run_polling()
 
 if __name__ == "__main__":
