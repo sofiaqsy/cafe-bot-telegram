@@ -1,11 +1,21 @@
+import logging
+import datetime
 from telegram import Update
 from telegram.ext import CommandHandler, ConversationHandler, MessageHandler, filters, ContextTypes
+from config import VENTAS_FILE
+from utils.db import append_data
+
+# Configurar logging
+logger = logging.getLogger(__name__)
 
 # Estados para la conversación
 CLIENTE, PRODUCTO, CANTIDAD, PRECIO, CONFIRMAR = range(5)
 
 # Datos temporales
 datos_venta = {}
+
+# Headers para la hoja de ventas
+VENTAS_HEADERS = ["fecha", "cliente", "producto", "cantidad", "precio", "total"]
 
 # Productos disponibles (ejemplo)
 productos = [
@@ -15,6 +25,7 @@ productos = [
 
 async def venta_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Inicia el proceso de registro de venta"""
+    logger.info(f"Usuario {update.effective_user.id} inició comando /venta")
     await update.message.reply_text(
         "Vamos a registrar una nueva venta de café.\n\n"
         "Por favor, ingresa el nombre del cliente:"
@@ -24,7 +35,10 @@ async def venta_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 async def cliente(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Guarda el cliente y solicita el producto"""
     user_id = update.effective_user.id
-    datos_venta[user_id] = {"cliente": update.message.text}
+    cliente_nombre = update.message.text
+    logger.info(f"Usuario {user_id} ingresó cliente: {cliente_nombre}")
+    
+    datos_venta[user_id] = {"cliente": cliente_nombre}
     
     # Crear mensaje con productos disponibles
     productos_msg = "Selecciona el producto vendido:\n\n"
@@ -32,7 +46,7 @@ async def cliente(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         productos_msg += f"{i} - {prod}\n"
     
     await update.message.reply_text(
-        f"Cliente: {update.message.text}\n\n"
+        f"Cliente: {cliente_nombre}\n\n"
         f"{productos_msg}\n"
         "Ingresa el número correspondiente al producto:"
     )
@@ -46,6 +60,8 @@ async def producto(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         
         if 1 <= prod_num <= len(productos):
             producto = productos[prod_num - 1]
+            logger.info(f"Usuario {user_id} ingresó producto: {producto} ({prod_num})")
+            
             datos_venta[user_id]["producto"] = producto
             
             await update.message.reply_text(
@@ -54,11 +70,13 @@ async def producto(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             )
             return CANTIDAD
         else:
+            logger.warning(f"Usuario {user_id} ingresó un valor fuera de rango para producto: {prod_num}")
             await update.message.reply_text(
                 f"Por favor, selecciona un número del 1 al {len(productos)} para el producto."
             )
             return PRODUCTO
     except ValueError:
+        logger.warning(f"Usuario {user_id} ingresó un valor inválido para producto: {update.message.text}")
         await update.message.reply_text(
             "Por favor, ingresa un número válido para el producto."
         )
@@ -69,6 +87,8 @@ async def cantidad(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
     try:
         cantidad = float(update.message.text)
+        logger.info(f"Usuario {user_id} ingresó cantidad: {cantidad}")
+        
         datos_venta[user_id]["cantidad"] = cantidad
         
         await update.message.reply_text(
@@ -77,6 +97,7 @@ async def cantidad(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         )
         return PRECIO
     except ValueError:
+        logger.warning(f"Usuario {user_id} ingresó un valor inválido para cantidad: {update.message.text}")
         await update.message.reply_text(
             "Por favor, ingresa un número válido para la cantidad."
         )
@@ -87,6 +108,8 @@ async def precio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
     try:
         precio = float(update.message.text)
+        logger.info(f"Usuario {user_id} ingresó precio: {precio}")
+        
         datos_venta[user_id]["precio"] = precio
         
         # Calcular el total
@@ -107,6 +130,7 @@ async def precio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         )
         return CONFIRMAR
     except ValueError:
+        logger.warning(f"Usuario {user_id} ingresó un valor inválido para precio: {update.message.text}")
         await update.message.reply_text(
             "Por favor, ingresa un número válido para el precio."
         )
@@ -116,16 +140,36 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Confirma y guarda la venta"""
     user_id = update.effective_user.id
     respuesta = update.message.text.lower()
+    logger.info(f"Usuario {user_id} respondió a confirmación: {respuesta}")
     
     if respuesta in ["sí", "si", "s", "yes", "y"]:
-        # Aquí se guardaría la venta en el CSV
-        # Por ahora solo mostraremos un mensaje de éxito
+        # Preparar datos para guardar
+        venta = datos_venta[user_id].copy()
         
-        await update.message.reply_text(
-            "✅ ¡Venta registrada exitosamente!\n\n"
-            "Usa /venta para registrar otra venta."
-        )
+        # Añadir fecha
+        venta["fecha"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        logger.info(f"Guardando venta en Google Sheets: {venta}")
+        
+        # Guardar la venta en Google Sheets
+        try:
+            append_data(VENTAS_FILE, venta, VENTAS_HEADERS)
+            
+            logger.info(f"Venta guardada exitosamente para usuario {user_id}")
+            
+            await update.message.reply_text(
+                "✅ ¡Venta registrada exitosamente!\n\n"
+                "Usa /venta para registrar otra venta."
+            )
+        except Exception as e:
+            logger.error(f"Error al guardar venta: {e}")
+            await update.message.reply_text(
+                "❌ Error al guardar la venta. Por favor, intenta nuevamente.\n\n"
+                f"Error: {str(e)}\n\n"
+                "Contacta al administrador si el problema persiste."
+            )
     else:
+        logger.info(f"Usuario {user_id} canceló la venta")
         await update.message.reply_text(
             "❌ Venta cancelada.\n\n"
             "Usa /venta para iniciar de nuevo."
@@ -140,6 +184,7 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancela la conversación"""
     user_id = update.effective_user.id
+    logger.info(f"Usuario {user_id} canceló el registro de venta con /cancelar")
     
     # Limpiar datos temporales
     if user_id in datos_venta:
@@ -169,3 +214,4 @@ def register_ventas_handlers(application):
     
     # Agregar el manejador al dispatcher
     application.add_handler(conv_handler)
+    logger.info("Handlers de ventas registrados")
