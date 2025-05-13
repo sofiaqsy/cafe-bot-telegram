@@ -1,15 +1,10 @@
 import os
 import logging
+import requests
+from dotenv import load_dotenv
 from telegram.ext import Application, CommandHandler
-from telegram.ext import ExtBot
-from telegram.ext.filters import UpdateType
-import asyncio
-from tornado.httpclient import AsyncHTTPClient
-from tornado.web import Application as WebApplication, RequestHandler
-from tornado.ioloop import IOLoop
-import json
 
-# Configuración de logging avanzada
+# Configuración de logging
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
@@ -20,8 +15,11 @@ logger = logging.getLogger(__name__)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("telegram").setLevel(logging.WARNING)
 
-# Importar configuración
-from config import TOKEN, sheets_configured
+# Cargar variables de entorno directamente
+load_dotenv()
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+
+# Importar el resto de módulos después de cargar las variables de entorno
 from utils.sheets import initialize_sheets
 
 # Importar handlers
@@ -35,90 +33,51 @@ from handlers.pedidos import register_pedidos_handlers
 from handlers.adelantos import register_adelantos_handlers
 from handlers.compra_adelanto import register_compra_adelanto_handlers
 
-# Clase para manejar webhooks
-class WebhookHandler(RequestHandler):
-    def initialize(self, application):
-        self.application = application
-
-    async def post(self):
-        try:
-            # Obtener el cuerpo de la solicitud
-            body = json.loads(self.request.body)
-            # Procesar la actualización de Telegram
-            await self.application.process_update(body)
-            # Responder con éxito
-            self.set_status(200)
-        except Exception as e:
-            logger.error(f"Error al procesar la actualización: {e}")
-            self.set_status(500)
-
-# Función para eliminar el webhook antes de iniciar el bot (por seguridad)
-async def delete_webhook():
+def eliminar_webhook():
+    """Elimina cualquier webhook configurado antes de iniciar el polling"""
     try:
-        # Construir la URL para eliminar el webhook
+        logger.info("Eliminando webhook existente...")
         url = f"https://api.telegram.org/bot{TOKEN}/deleteWebhook"
-        # Hacer la solicitud HTTP
-        client = AsyncHTTPClient()
-        response = await client.fetch(url, method="POST")
-        logger.info(f"Webhook eliminado: {response.body}")
+        logger.info(f"Realizando solicitud a: {url.replace(TOKEN, TOKEN[:5] + '...')}")
+        
+        response = requests.get(url)
+        logger.info(f"Respuesta del servidor: Código {response.status_code}")
+        
+        if response.status_code == 200 and response.json().get("ok"):
+            logger.info("Webhook eliminado correctamente")
+            return True
+        else:
+            logger.error(f"Error al eliminar webhook: {response.text}")
+            return False
     except Exception as e:
-        logger.error(f"Error al eliminar webhook: {e}")
-
-# Función para configurar el webhook
-async def set_webhook(app_url):
-    try:
-        # Construir la URL para configurar el webhook
-        webhook_url = f"{app_url}/webhook/{TOKEN}"
-        url = f"https://api.telegram.org/bot{TOKEN}/setWebhook?url={webhook_url}"
-        # Hacer la solicitud HTTP
-        client = AsyncHTTPClient()
-        response = await client.fetch(url, method="POST")
-        logger.info(f"Webhook configurado en {webhook_url}: {response.body}")
-    except Exception as e:
-        logger.error(f"Error al configurar webhook: {e}")
+        logger.error(f"Excepción al eliminar webhook: {e}")
+        return False
 
 def main():
-    """Iniciar el bot para Heroku"""
+    """Iniciar el bot con polling para Heroku"""
     logger.info("Iniciando bot de Telegram para Gestión de Café en Heroku")
     
-    # Obtener la URL de la aplicación Heroku
-    app_url = os.environ.get("APP_URL")
-    if not app_url:
-        logger.error("Variable de entorno APP_URL no configurada. No se puede configurar el webhook.")
+    # Verificar el token (seguro, solo muestra los primeros 5 caracteres)
+    if not TOKEN:
+        logger.error("¡ERROR! No se encontró el token de Telegram en las variables de entorno")
         return
-    
-    # Verificar la configuración de Google Sheets
-    if sheets_configured:
-        logger.info("Inicializando Google Sheets...")
-        try:
-            initialize_sheets()
-            logger.info("Google Sheets inicializado correctamente")
-        except Exception as e:
-            logger.error(f"Error al inicializar Google Sheets: {e}")
-            logger.warning("El bot continuará funcionando, pero los datos no se guardarán en Google Sheets")
     else:
-        logger.warning("Google Sheets no está configurado. Los datos no se guardarán correctamente.")
-        logger.info("Asegúrate de configurar SPREADSHEET_ID y GOOGLE_CREDENTIALS en las variables de entorno")
+        logger.info(f"Token encontrado (primeros 5 caracteres): {TOKEN[:5]}...")
     
-    # Imprimir variables de entorno (solo para depuración, sin mostrar valores sensibles)
-    env_vars = [
-        "TELEGRAM_BOT_TOKEN", 
-        "SPREADSHEET_ID", 
-        "GOOGLE_CREDENTIALS",
-        "APP_URL",
-        "PORT"
-    ]
-    for var in env_vars:
-        value = os.getenv(var)
-        if value:
-            if var in ["GOOGLE_CREDENTIALS", "TELEGRAM_BOT_TOKEN"]:
-                logger.info(f"Variable de entorno {var} está configurada (valor no mostrado por seguridad)")
-            else:
-                logger.info(f"Variable de entorno {var} está configurada: {value}")
-        else:
-            logger.warning(f"Variable de entorno {var} NO está configurada")
+    # Eliminar webhook existente
+    if not eliminar_webhook():
+        logger.warning("No se pudo eliminar el webhook. Intentando continuar de todos modos...")
     
-    # Crear la aplicación de Telegram
+    # Inicializar Google Sheets
+    try:
+        logger.info("Inicializando Google Sheets...")
+        initialize_sheets()
+        logger.info("Google Sheets inicializado correctamente")
+    except Exception as e:
+        logger.error(f"Error al inicializar Google Sheets: {e}")
+        logger.warning("El bot continuará funcionando, pero los datos no se guardarán en Google Sheets")
+    
+    # Crear la aplicación
     application = Application.builder().token(TOKEN).build()
     
     # Registrar comandos básicos
@@ -136,24 +95,9 @@ def main():
     register_adelantos_handlers(application)
     register_compra_adelanto_handlers(application)
     
-    # Configurar la aplicación web para manejar webhooks
-    port = int(os.environ.get('PORT', 8443))
-    web_app = WebApplication([
-        (f"/webhook/{TOKEN}", WebhookHandler, dict(application=application))
-    ])
-    
-    # Eliminar y configurar el webhook
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(delete_webhook())
-    loop.run_until_complete(set_webhook(app_url))
-    
-    # Iniciar la aplicación web
-    logger.info(f"Iniciar servidor web en puerto {port}")
-    web_app.listen(port)
-    
-    # Iniciar el loop de eventos
-    logger.info("Bot iniciado con webhook configurado. Esperando comandos...")
-    IOLoop.current().start()
+    # IMPORTANTE: Usar POLLING, no webhook
+    logger.info("Bot iniciado en modo POLLING. Esperando comandos...")
+    application.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
