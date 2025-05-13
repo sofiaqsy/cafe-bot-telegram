@@ -24,6 +24,9 @@ from handlers.proceso import register_proceso_handlers
 from handlers.gastos import register_gastos_handlers
 from handlers.ventas import register_ventas_handlers
 from handlers.reportes import register_reportes_handlers
+from handlers.pedidos import register_pedidos_handlers
+from handlers.adelantos import register_adelantos_handlers
+from handlers.compra_adelanto import register_compra_adelanto_handlers
 
 def main():
     """Iniciar el bot"""
@@ -75,6 +78,9 @@ def main():
     register_gastos_handlers(application)
     register_ventas_handlers(application)
     register_reportes_handlers(application)
+    register_pedidos_handlers(application)
+    register_adelantos_handlers(application)
+    register_compra_adelanto_handlers(application)
     
     # Iniciar el bot
     logger.info("Bot iniciado. Esperando comandos...")
