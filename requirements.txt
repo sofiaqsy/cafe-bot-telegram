@@ -6,3 +6,4 @@ google-auth-oauthlib==1.0.0
 pandas==2.0.0
 pytz==2023.3
 tornado==6.3.3
+requests==2.31.0
