@@ -19,12 +19,6 @@ from utils.sheets import update_cell
 # Estados para la conversación
 PROVEEDOR, MONTO, NOTAS, CONFIRMAR = range(4)
 
-# Estados para la gestión de adelantos
-EDITAR_MONTO, EDITAR_NOTAS, CONFIRMAR_EDICION = range(4, 7)
-
-# Estados para el filtro de proveedores
-SELECCIONAR_PROVEEDOR = 7
-
 # Logger
 logger = logging.getLogger(__name__)
 
@@ -176,12 +170,19 @@ async def cancelar_adelanto(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 async def lista_adelantos_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Mostrar lista de adelantos vigentes con opciones interactivas"""
+    # Verificar si estamos manejando una actualización de mensaje o un callback
+    is_callback = update.callback_query is not None
+    
     try:
         # Obtener adelantos desde Google Sheets
         adelantos = get_all_data("adelantos")
         
+        # Verificar si hay adelantos
         if not adelantos:
-            await update.message.reply_text("No hay adelantos registrados.")
+            if is_callback:
+                await update.callback_query.edit_message_text("No hay adelantos registrados.")
+            else:
+                await update.message.reply_text("No hay adelantos registrados.")
             return
         
         # Filtrar adelantos con saldo positivo
@@ -194,8 +195,12 @@ async def lista_adelantos_command(update: Update, context: ContextTypes.DEFAULT_
             except (ValueError, TypeError):
                 continue
         
+        # Verificar si hay adelantos vigentes
         if not adelantos_vigentes:
-            await update.message.reply_text("No hay adelantos vigentes con saldo disponible.")
+            if is_callback:
+                await update.callback_query.edit_message_text("No hay adelantos vigentes con saldo disponible.")
+            else:
+                await update.message.reply_text("No hay adelantos vigentes con saldo disponible.")
             return
         
         # Agrupar adelantos por proveedor
@@ -256,15 +261,22 @@ async def lista_adelantos_command(update: Update, context: ContextTypes.DEFAULT_
         if len(mensaje) > 4000:
             mensaje = mensaje[:3950] + "...\n\n(Mensaje truncado debido a su longitud)"
         
-        await update.message.reply_text(mensaje, reply_markup=reply_markup)
+        # Enviar mensaje según el tipo de actualización
+        if is_callback:
+            await update.callback_query.edit_message_text(mensaje, reply_markup=reply_markup)
+        else:
+            await update.message.reply_text(mensaje, reply_markup=reply_markup)
         
     except Exception as e:
         logger.error(f"Error obteniendo adelantos: {e}")
         logger.error(traceback.format_exc())
-        if update.callback_query:
-            await update.callback_query.edit_message_text(f"Error al obtener los adelantos: {str(e)}")
-        else:
-            await update.message.reply_text(f"Error al obtener los adelantos: {str(e)}")
+        try:
+            if is_callback:
+                await update.callback_query.edit_message_text(f"Error al obtener los adelantos: {str(e)}")
+            else:
+                await update.message.reply_text(f"Error al obtener los adelantos: {str(e)}")
+        except Exception as e2:
+            logger.error(f"Error secundario al manejar el error original: {e2}")
 
 async def proveedor_adelantos_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Mostrar los adelantos de un proveedor específico"""
@@ -273,11 +285,13 @@ async def proveedor_adelantos_callback(update: Update, context: ContextTypes.DEF
     
     if query.data == "ver_todos":
         try:
+            # Cuando queremos volver a mostrar todos los adelantos
             await lista_adelantos_command(update, context)
+            return
         except Exception as e:
             logger.error(f"Error al mostrar todos los adelantos: {e}")
-            await query.edit_message_text(f"Error al mostrar todos los adelantos. Intenta con /adelantos")
-        return
+            await query.edit_message_text("Error al mostrar todos los adelantos. Intenta con /adelantos")
+            return
         
     # Extraer nombre del proveedor del callback_data
     proveedor = query.data.replace("proveedor_", "")
