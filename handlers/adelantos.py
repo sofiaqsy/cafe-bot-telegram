@@ -228,8 +228,6 @@ async def lista_adelantos_command(update: Update, context: ContextTypes.DEFAULT_
         
         # Crear botones para filtrar por proveedor
         keyboard = []
-        keyboard.append([InlineKeyboardButton("🔍 Buscar por proveedor", callback_data="buscar_proveedor")])
-        keyboard.append([InlineKeyboardButton("📊 Ver todos los proveedores", callback_data="ver_todos")])
         
         for proveedor, datos in proveedores.items():
             keyboard.append([InlineKeyboardButton(
@@ -250,7 +248,6 @@ async def lista_adelantos_command(update: Update, context: ContextTypes.DEFAULT_
         
         # Añadir instrucciones para usar adelantos
         mensaje += "Para usar estos adelantos en una compra, utiliza el comando /compra_adelanto.\n"
-        mensaje += "Para ver detalles o gestionar un adelanto específico, usa los botones a continuación:"
         
         # Crear teclado inline para botones
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -264,7 +261,10 @@ async def lista_adelantos_command(update: Update, context: ContextTypes.DEFAULT_
     except Exception as e:
         logger.error(f"Error obteniendo adelantos: {e}")
         logger.error(traceback.format_exc())
-        await update.message.reply_text(f"Error al obtener los adelantos: {str(e)}")
+        if update.callback_query:
+            await update.callback_query.edit_message_text(f"Error al obtener los adelantos: {str(e)}")
+        else:
+            await update.message.reply_text(f"Error al obtener los adelantos: {str(e)}")
 
 async def proveedor_adelantos_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Mostrar los adelantos de un proveedor específico"""
@@ -272,20 +272,13 @@ async def proveedor_adelantos_callback(update: Update, context: ContextTypes.DEF
     await query.answer()
     
     if query.data == "ver_todos":
-        # Volver a mostrar todos los adelantos
-        await lista_adelantos_command(update, context)
+        try:
+            await lista_adelantos_command(update, context)
+        except Exception as e:
+            logger.error(f"Error al mostrar todos los adelantos: {e}")
+            await query.edit_message_text(f"Error al mostrar todos los adelantos. Intenta con /adelantos")
         return
-    
-    if query.data == "buscar_proveedor":
-        # Iniciar búsqueda por proveedor
-        await query.edit_message_text(
-            "🔍 Introduce el nombre del proveedor que deseas buscar:",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("❌ Cancelar", callback_data="ver_todos")]
-            ])
-        )
-        return
-    
+        
     # Extraer nombre del proveedor del callback_data
     proveedor = query.data.replace("proveedor_", "")
     
@@ -306,10 +299,7 @@ async def proveedor_adelantos_callback(update: Update, context: ContextTypes.DEF
         
         if not adelantos_proveedor:
             await query.edit_message_text(
-                f"No hay adelantos vigentes para el proveedor {proveedor}.",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("⬅️ Volver", callback_data="ver_todos")]
-                ])
+                f"No hay adelantos vigentes para el proveedor {proveedor}."
             )
             return
         
@@ -323,35 +313,21 @@ async def proveedor_adelantos_callback(update: Update, context: ContextTypes.DEF
         mensaje += f"💰 Saldo disponible: {format_currency(total_saldo)}\n\n"
         mensaje += "📝 DETALLE DE ADELANTOS:\n\n"
         
-        # Crear teclado con opciones para cada adelanto
+        # Botón para volver a la lista completa
         keyboard = []
+        keyboard.append([InlineKeyboardButton("⬅️ Volver a todos los proveedores", callback_data="ver_todos")])
         
         for i, adelanto in enumerate(adelantos_proveedor):
             fecha = adelanto.get('fecha', '')
             monto = float(adelanto.get('monto', 0))
             saldo = float(adelanto.get('saldo_restante', 0))
             notas = adelanto.get('notas', 'Sin notas')
-            row_index = adelanto.get('_row_index')
             
             mensaje += f"Adelanto #{i+1}:\n"
             mensaje += f"📅 Fecha: {fecha}\n"
             mensaje += f"💲 Monto: {format_currency(monto)}\n"
             mensaje += f"💰 Saldo: {format_currency(saldo)}\n"
             mensaje += f"📝 Notas: {notas}\n\n"
-            
-            # Añadir botones para editar este adelanto
-            keyboard.append([
-                InlineKeyboardButton(
-                    f"✏️ Editar #{i+1}: {format_currency(saldo)}", 
-                    callback_data=f"editar_{row_index}"
-                )
-            ])
-        
-        # Añadir botón para volver
-        keyboard.append([InlineKeyboardButton("⬅️ Volver a todos los proveedores", callback_data="ver_todos")])
-        
-        # Añadir botón para registrar nuevo adelanto
-        keyboard.append([InlineKeyboardButton("➕ Nuevo adelanto", callback_data="nuevo_adelanto")])
         
         # Enviar mensaje con teclado inline
         await query.edit_message_text(
@@ -369,254 +345,6 @@ async def proveedor_adelantos_callback(update: Update, context: ContextTypes.DEF
             ])
         )
 
-async def editar_adelanto_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Iniciar edición de un adelanto"""
-    query = update.callback_query
-    await query.answer()
-    
-    if query.data == "nuevo_adelanto":
-        await query.edit_message_text("Para registrar un nuevo adelanto, utiliza el comando /adelanto")
-        return ConversationHandler.END
-    
-    # Extraer el row_index del adelanto
-    row_index = int(query.data.replace("editar_", ""))
-    context.user_data['row_index'] = row_index
-    
-    try:
-        # Obtener datos del adelanto
-        adelantos = get_all_data("adelantos")
-        
-        adelanto = None
-        for a in adelantos:
-            if a.get('_row_index') == row_index:
-                adelanto = a
-                break
-        
-        if not adelanto:
-            await query.edit_message_text("No se encontró el adelanto seleccionado.")
-            return ConversationHandler.END
-        
-        # Guardar datos del adelanto en el contexto
-        context.user_data['adelanto'] = adelanto
-        context.user_data['proveedor'] = adelanto.get('proveedor', '')
-        context.user_data['monto_original'] = float(adelanto.get('monto', 0))
-        context.user_data['saldo_original'] = float(adelanto.get('saldo_restante', 0))
-        context.user_data['notas_original'] = adelanto.get('notas', '')
-        
-        # Crear teclado con opciones
-        keyboard = [
-            [InlineKeyboardButton("💰 Modificar saldo", callback_data="editar_saldo")],
-            [InlineKeyboardButton("📝 Modificar notas", callback_data="editar_notas")],
-            [InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_edicion")]
-        ]
-        
-        await query.edit_message_text(
-            f"📋 EDITAR ADELANTO\n\n"
-            f"Proveedor: {context.user_data['proveedor']}\n"
-            f"Monto original: {format_currency(context.user_data['monto_original'])}\n"
-            f"Saldo actual: {format_currency(context.user_data['saldo_original'])}\n"
-            f"Notas: {context.user_data['notas_original'] or 'Sin notas'}\n\n"
-            f"Selecciona qué quieres modificar:",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-        
-        return EDITAR_MONTO
-    
-    except Exception as e:
-        logger.error(f"Error al iniciar edición de adelanto: {e}")
-        logger.error(traceback.format_exc())
-        await query.edit_message_text(
-            f"Error al editar el adelanto: {str(e)}",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("⬅️ Volver", callback_data="ver_todos")]
-            ])
-        )
-        return ConversationHandler.END
-
-async def editar_campo_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Manejar la selección del campo a editar"""
-    query = update.callback_query
-    await query.answer()
-    
-    if query.data == "cancelar_edicion":
-        await query.edit_message_text("❌ Edición cancelada.")
-        return ConversationHandler.END
-    
-    if query.data == "editar_saldo":
-        await query.edit_message_text(
-            f"Proveedor: {context.user_data['proveedor']}\n"
-            f"Saldo actual: {format_currency(context.user_data['saldo_original'])}\n\n"
-            "Ingresa el nuevo saldo para este adelanto:\n"
-            "(Envía el mensaje con el nuevo monto)"
-        )
-        return EDITAR_MONTO
-    
-    if query.data == "editar_notas":
-        await query.edit_message_text(
-            f"Proveedor: {context.user_data['proveedor']}\n"
-            f"Notas actuales: {context.user_data['notas_original'] or 'Sin notas'}\n\n"
-            "Ingresa las nuevas notas para este adelanto:\n"
-            "(Envía el mensaje con las nuevas notas)"
-        )
-        return EDITAR_NOTAS
-    
-    # Si llegamos aquí, algo salió mal
-    await query.edit_message_text("⚠️ Opción no válida.")
-    return ConversationHandler.END
-
-async def editar_monto_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Recibir el nuevo monto del adelanto"""
-    try:
-        nuevo_monto_text = update.message.text.replace(',', '.').strip()
-        nuevo_monto = float(nuevo_monto_text)
-        
-        if nuevo_monto < 0:
-            await update.message.reply_text("⚠️ El saldo no puede ser negativo. Intenta de nuevo:")
-            return EDITAR_MONTO
-        
-        if nuevo_monto > context.user_data['monto_original']:
-            await update.message.reply_text(
-                "⚠️ El nuevo saldo no puede ser mayor que el monto original del adelanto. "
-                "Si deseas aumentar el saldo, registra un nuevo adelanto."
-            )
-            return EDITAR_MONTO
-        
-        context.user_data['nuevo_saldo'] = nuevo_monto
-        
-        await update.message.reply_text(
-            f"📋 RESUMEN DE CAMBIOS:\n\n"
-            f"Proveedor: {context.user_data['proveedor']}\n"
-            f"Saldo anterior: {format_currency(context.user_data['saldo_original'])}\n"
-            f"Nuevo saldo: {format_currency(context.user_data['nuevo_saldo'])}\n\n"
-            f"¿Confirmas esta modificación? (Sí/No)"
-        )
-        return CONFIRMAR_EDICION
-    except ValueError:
-        await update.message.reply_text(
-            "⚠️ El valor ingresado no es válido. Por favor, ingresa solo números:"
-        )
-        return EDITAR_MONTO
-
-async def editar_notas_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Recibir las nuevas notas del adelanto"""
-    context.user_data['nuevas_notas'] = update.message.text.strip()
-    
-    await update.message.reply_text(
-        f"📋 RESUMEN DE CAMBIOS:\n\n"
-        f"Proveedor: {context.user_data['proveedor']}\n"
-        f"Notas anteriores: {context.user_data['notas_original'] or 'Sin notas'}\n"
-        f"Nuevas notas: {context.user_data['nuevas_notas'] or 'Sin notas'}\n\n"
-        f"¿Confirmas esta modificación? (Sí/No)"
-    )
-    return CONFIRMAR_EDICION
-
-async def confirmar_edicion_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Confirmar y guardar la edición del adelanto"""
-    respuesta = update.message.text.lower()
-    
-    if respuesta in ['sí', 'si', 's', 'yes', 'y']:
-        try:
-            row_index = context.user_data['row_index']
-            
-            # Actualizar el campo correspondiente
-            if 'nuevo_saldo' in context.user_data:
-                # Actualizar saldo
-                nuevo_saldo = context.user_data['nuevo_saldo']
-                update_cell("adelantos", row_index, "saldo_restante", nuevo_saldo)
-                
-                # Añadir nota sobre la modificación
-                fecha_mod = get_now_peru().strftime("%Y-%m-%d %H:%M")
-                usuario = update.effective_user.username or update.effective_user.first_name
-                notas_originales = context.user_data['notas_original'] or ''
-                nuevas_notas = f"{notas_originales}\n[{fecha_mod}] Saldo modificado de {format_currency(context.user_data['saldo_original'])} a {format_currency(nuevo_saldo)} por {usuario}"
-                
-                update_cell("adelantos", row_index, "notas", nuevas_notas)
-                
-                await update.message.reply_text(
-                    f"✅ Saldo actualizado correctamente de "
-                    f"{format_currency(context.user_data['saldo_original'])} a "
-                    f"{format_currency(nuevo_saldo)}.\n\n"
-                    f"Usa /adelantos para ver la lista actualizada."
-                )
-            
-            elif 'nuevas_notas' in context.user_data:
-                # Actualizar notas
-                nuevas_notas = context.user_data['nuevas_notas']
-                update_cell("adelantos", row_index, "notas", nuevas_notas)
-                
-                await update.message.reply_text(
-                    f"✅ Notas actualizadas correctamente.\n\n"
-                    f"Usa /adelantos para ver la lista actualizada."
-                )
-            
-        except Exception as e:
-            logger.error(f"Error actualizando adelanto: {e}")
-            logger.error(traceback.format_exc())
-            await update.message.reply_text(
-                f"❌ Error al actualizar el adelanto: {str(e)}"
-            )
-    else:
-        await update.message.reply_text("❌ Edición cancelada")
-    
-    # Limpiar datos de usuario
-    context.user_data.clear()
-    return ConversationHandler.END
-
-async def buscar_proveedor_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Buscar un proveedor por nombre"""
-    texto_busqueda = update.message.text.strip().lower()
-    
-    # Realizar búsqueda de adelantos por nombre de proveedor
-    try:
-        adelantos = get_all_data("adelantos")
-        
-        # Filtrar adelantos por coincidencia en el nombre del proveedor
-        proveedores_coincidentes = set()
-        for adelanto in adelantos:
-            proveedor = adelanto.get('proveedor', '').lower()
-            if texto_busqueda in proveedor and float(adelanto.get('saldo_restante', 0)) > 0:
-                proveedores_coincidentes.add(adelanto.get('proveedor'))
-        
-        if not proveedores_coincidentes:
-            await update.message.reply_text(
-                f"No se encontraron proveedores con adelantos vigentes que coincidan con '{texto_busqueda}'.\n\n"
-                f"Usa /adelantos para ver la lista completa."
-            )
-            return ConversationHandler.END
-        
-        # Crear teclado con los proveedores encontrados
-        keyboard = []
-        for proveedor in proveedores_coincidentes:
-            keyboard.append([InlineKeyboardButton(
-                f"{proveedor}", 
-                callback_data=f"proveedor_{proveedor}"
-            )])
-        
-        keyboard.append([InlineKeyboardButton("⬅️ Volver", callback_data="ver_todos")])
-        
-        await update.message.reply_text(
-            f"🔍 Resultados para '{texto_busqueda}':\n\n"
-            f"Selecciona un proveedor:",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-        
-        return ConversationHandler.END
-    
-    except Exception as e:
-        logger.error(f"Error en búsqueda de proveedor: {e}")
-        logger.error(traceback.format_exc())
-        await update.message.reply_text(
-            f"❌ Error al buscar proveedores: {str(e)}"
-        )
-        return ConversationHandler.END
-
-async def cancelar_busqueda(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Cancelar la búsqueda de proveedor"""
-    await update.message.reply_text(
-        "❌ Búsqueda cancelada.\n\nUsa /adelantos para ver la lista completa."
-    )
-    return ConversationHandler.END
-
 def register_adelantos_handlers(application):
     """Registrar handlers para adelantos"""
     logger.info("Registrando handlers de adelantos")
@@ -633,38 +361,12 @@ def register_adelantos_handlers(application):
         fallbacks=[CommandHandler("cancelar", cancelar_adelanto)],
     )
     
-    # Edición de adelantos
-    editar_adelanto_conv_handler = ConversationHandler(
-        entry_points=[CallbackQueryHandler(editar_adelanto_callback, pattern=r'^editar_\d+$')],
-        states={
-            EDITAR_MONTO: [
-                CallbackQueryHandler(editar_campo_callback, pattern=r'^editar_(saldo|notas|cancelar_edicion)$'),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, editar_monto_step)
-            ],
-            EDITAR_NOTAS: [MessageHandler(filters.TEXT & ~filters.COMMAND, editar_notas_step)],
-            CONFIRMAR_EDICION: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirmar_edicion_step)],
-        },
-        fallbacks=[CommandHandler("cancelar", cancelar_adelanto)],
-    )
-    
-    # Búsqueda de proveedor
-    buscar_proveedor_conv_handler = ConversationHandler(
-        entry_points=[CallbackQueryHandler(lambda u, c: SELECCIONAR_PROVEEDOR, pattern=r'^buscar_proveedor$')],
-        states={
-            SELECCIONAR_PROVEEDOR: [MessageHandler(filters.TEXT & ~filters.COMMAND, buscar_proveedor_step)],
-        },
-        fallbacks=[CommandHandler("cancelar", cancelar_busqueda)],
-    )
-    
     # Listar adelantos
     application.add_handler(CommandHandler("adelantos", lista_adelantos_command))
     
     # Callbacks para manejar interacciones con los botones
     application.add_handler(CallbackQueryHandler(proveedor_adelantos_callback, pattern=r'^proveedor_|^ver_todos$'))
-    application.add_handler(CallbackQueryHandler(lambda u, c: u.callback_query.edit_message_text("Usa /adelanto para registrar un nuevo adelanto"), pattern=r'^nuevo_adelanto$'))
     
     application.add_handler(adelanto_conv_handler)
-    application.add_handler(editar_adelanto_conv_handler)
-    application.add_handler(buscar_proveedor_conv_handler)
     
     logger.info("Handlers de adelantos registrados correctamente")
