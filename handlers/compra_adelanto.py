@@ -6,8 +6,8 @@ from telegram.ext import (
 )
 from datetime import datetime
 
-from utils.db import append_data
-from utils.sheets import get_all_data, update_cell
+from utils.db import append_data, get_all_data
+from utils.sheets import update_cell
 from utils.helpers import format_currency, calculate_total, get_now_peru
 
 # Estados para la conversación
@@ -26,6 +26,11 @@ COMPRAS_HEADERS = ["fecha", "hora", "proveedor", "cantidad", "precio", "calidad"
 async def compra_con_adelanto_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Iniciar proceso de registro de compra con adelanto"""
     try:
+        logger.info(f"Usuario {update.effective_user.id} inició comando /compra_adelanto")
+        
+        # Limpiar datos previos
+        context.user_data.clear()
+        
         # Obtener adelantos vigentes
         adelantos = get_all_data("adelantos")
         
@@ -60,25 +65,34 @@ async def compra_con_adelanto_command(update: Update, context: ContextTypes.DEFA
             saldo = float(adelanto.get('saldo_restante', 0))
             
             if proveedor in proveedores:
-                proveedores[proveedor] += saldo
+                proveedores[proveedor]['saldo'] += saldo
+                proveedores[proveedor]['adelantos'].append(adelanto)
             else:
-                proveedores[proveedor] = saldo
+                proveedores[proveedor] = {
+                    'saldo': saldo,
+                    'adelantos': [adelanto]
+                }
         
         # Crear teclado inline con proveedores
         keyboard = []
-        for proveedor, saldo in proveedores.items():
+        for proveedor, datos in proveedores.items():
             keyboard.append([
                 InlineKeyboardButton(
-                    f"{proveedor} - {format_currency(saldo)}", 
+                    f"{proveedor} - {format_currency(datos['saldo'])}", 
                     callback_data=f"proveedor_{proveedor}"
                 )
             ])
         
+        # Añadir botón de cancelar
         keyboard.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar")])
         reply_markup = InlineKeyboardMarkup(keyboard)
         
+        # Guardar los datos de los proveedores para uso posterior
+        context.user_data['proveedores'] = proveedores
+        
         await update.message.reply_text(
             "🔄 COMPRA CON ADELANTO\n\n"
+            "Este tipo de compra te permite utilizar el saldo de adelantos para pagar a proveedores.\n\n"
             "Selecciona el proveedor con adelanto disponible:", 
             reply_markup=reply_markup
         )
@@ -102,28 +116,25 @@ async def seleccionar_proveedor_callback(update: Update, context: ContextTypes.D
     
     # Extraer nombre del proveedor del callback data
     proveedor = query.data.replace("proveedor_", "")
-    context.user_data['proveedor'] = proveedor
     
-    # Obtener adelantos del proveedor
     try:
-        adelantos = get_all_data("adelantos")
+        # Verificar que el proveedor existe en los datos guardados
+        if 'proveedores' not in context.user_data or proveedor not in context.user_data['proveedores']:
+            await query.edit_message_text(
+                "❌ Error: Proveedor no encontrado. Por favor, inicia el proceso nuevamente."
+            )
+            return ConversationHandler.END
         
-        # Filtrar adelantos del proveedor con saldo
-        adelantos_proveedor = []
-        for adelanto in adelantos:
-            if adelanto.get('proveedor') == proveedor:
-                try:
-                    saldo = float(adelanto.get('saldo_restante', 0))
-                    if saldo > 0:
-                        adelantos_proveedor.append(adelanto)
-                except (ValueError, TypeError):
-                    continue
+        # Obtener datos del proveedor
+        datos_proveedor = context.user_data['proveedores'][proveedor]
+        saldo_total = datos_proveedor['saldo']
         
-        # Calcular saldo total
-        saldo_total = sum(float(adelanto.get('saldo_restante', 0)) for adelanto in adelantos_proveedor)
+        # Guardar datos necesarios
+        context.user_data['proveedor'] = proveedor
         context.user_data['saldo_adelanto'] = saldo_total
-        context.user_data['adelantos_proveedor'] = adelantos_proveedor
+        context.user_data['adelantos_proveedor'] = datos_proveedor['adelantos']
         
+        # Mostrar mensaje y continuar con el flujo normal de compra
         await query.edit_message_text(
             f"👨‍🌾 Proveedor seleccionado: {proveedor}\n"
             f"💰 Saldo disponible: {format_currency(saldo_total)}\n\n"
@@ -175,7 +186,7 @@ async def precio_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         
         # Calcular total
         cantidad = context.user_data['cantidad']
-        total = cantidad * precio
+        total = calculate_total(cantidad, precio)
         context.user_data['total'] = total
         
         await update.message.reply_text(
@@ -290,7 +301,11 @@ async def confirmar_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     
                     # Actualizar el saldo en Google Sheets
                     update_cell("adelantos", row_index, "saldo_restante", nuevo_saldo_adelanto)
-                    adelantos_actualizados.append({"proveedor": adelanto.get('proveedor'), "saldo_anterior": saldo_actual, "nuevo_saldo": nuevo_saldo_adelanto})
+                    adelantos_actualizados.append({
+                        "proveedor": adelanto.get('proveedor'), 
+                        "saldo_anterior": saldo_actual, 
+                        "nuevo_saldo": nuevo_saldo_adelanto
+                    })
                     
                 except (ValueError, TypeError, KeyError) as e:
                     logger.error(f"Error al procesar adelanto: {e}")
@@ -317,7 +332,7 @@ async def confirmar_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             }
             
             # Guardar la compra
-            append_data("compras", compra_data)
+            append_data("compras", compra_data, COMPRAS_HEADERS)
             
             # Mostrar estrellas para la calidad
             estrellas = '⭐' * calidad
@@ -377,3 +392,4 @@ def register_compra_adelanto_handlers(application):
     
     # Agregar el manejador a la aplicación
     application.add_handler(compra_adelanto_conv_handler)
+    logger.info("Handlers de compra con adelanto registrados")
