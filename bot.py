@@ -1,5 +1,6 @@
 import os
 import logging
+import requests
 from telegram.ext import Application, CommandHandler
 
 # Configuración de logging avanzada
@@ -27,6 +28,26 @@ from handlers.reportes import register_reportes_handlers
 from handlers.pedidos import register_pedidos_handlers
 from handlers.adelantos import register_adelantos_handlers
 from handlers.compra_adelanto import register_compra_adelanto_handlers
+
+def eliminar_webhook():
+    """Elimina cualquier webhook configurado antes de iniciar el polling"""
+    try:
+        logger.info("Eliminando webhook existente...")
+        url = f"https://api.telegram.org/bot{TOKEN}/deleteWebhook"
+        logger.info(f"Realizando solicitud a: {url.replace(TOKEN, TOKEN[:5] + '...')}")
+        
+        response = requests.get(url)
+        logger.info(f"Respuesta del servidor: Código {response.status_code}")
+        
+        if response.status_code == 200 and response.json().get("ok"):
+            logger.info("Webhook eliminado correctamente")
+            return True
+        else:
+            logger.error(f"Error al eliminar webhook: {response.text}")
+            return False
+    except Exception as e:
+        logger.error(f"Excepción al eliminar webhook: {e}")
+        return False
 
 def main():
     """Iniciar el bot"""
@@ -82,9 +103,13 @@ def main():
     register_adelantos_handlers(application)
     register_compra_adelanto_handlers(application)
     
+    # Eliminar webhook existente
+    if not eliminar_webhook():
+        logger.warning("No se pudo eliminar el webhook. Intentando continuar de todos modos...")
+    
     # Iniciar el bot
     logger.info("Bot iniciado. Esperando comandos...")
-    application.run_polling()
+    application.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
