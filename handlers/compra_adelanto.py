@@ -135,10 +135,11 @@ async def seleccionar_proveedor_callback(update: Update, context: ContextTypes.D
         context.user_data['saldo_adelanto'] = saldo_total
         context.user_data['adelantos_proveedor'] = datos_proveedor['adelantos']
         
-        # Mostrar mensaje simplificado y solicitar la cantidad de café directamente
+        # Mostrar mensaje de proveedor seleccionado y solicitar la cantidad de café
         await query.edit_message_text(
-            f"👨‍🌾 Proveedor: {proveedor} - {format_currency(saldo_total)}\n\n"
-            f"¿Cuántos kilogramos de café estás comprando?"
+            f"👨‍🌾 Proveedor seleccionado: {proveedor}\n"
+            f"💰 Saldo disponible: {format_currency(saldo_total)}\n\n"
+            f"Ahora, ingresa la cantidad de café en kg:"
         )
         
         return CANTIDAD
