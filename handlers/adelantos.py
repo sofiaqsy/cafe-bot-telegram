@@ -243,12 +243,6 @@ async def lista_adelantos_command(update: Update, context: ContextTypes.DEFAULT_
             mensaje += f"👨‍🌾 Proveedor: {proveedor}\n"
             mensaje += f"💵 Total adelantado: {format_currency(datos['total_monto'])}\n"
             mensaje += f"💰 Saldo disponible: {format_currency(datos['total_saldo'])}\n"
-            mensaje += "📝 Detalle de adelantos:\n"
-            
-            for adelanto in datos['adelantos']:
-                mensaje += f"   • {adelanto['fecha']}: {format_currency(adelanto['monto'])} " \
-                           f"(Saldo: {format_currency(adelanto['saldo'])})\n"
-            
             mensaje += "\n"
         
         # Añadir instrucciones para usar adelantos
@@ -292,6 +286,16 @@ async def proveedor_adelantos_callback(update: Update, context: ContextTypes.DEF
             logger.error(f"Error al mostrar todos los adelantos: {e}")
             await query.edit_message_text("Error al mostrar todos los adelantos. Intenta con /adelantos")
             return
+    
+    # Si es un comando para iniciar una compra con adelanto, pasamos directamente al proceso de compra
+    if query.data.startswith("compra_adelanto_"):
+        proveedor = query.data.replace("compra_adelanto_", "")
+        # Aquí iría el código para iniciar el proceso de compra con adelanto
+        # Por ahora solo mostramos un mensaje informativo
+        await query.edit_message_text(
+            f"Iniciando compra con adelanto para el proveedor {proveedor}..."
+        )
+        return
         
     # Extraer nombre del proveedor del callback_data
     proveedor = query.data.replace("proveedor_", "")
@@ -321,27 +325,14 @@ async def proveedor_adelantos_callback(update: Update, context: ContextTypes.DEF
         total_monto = sum(float(adelanto.get('monto', 0)) for adelanto in adelantos_proveedor)
         total_saldo = sum(float(adelanto.get('saldo_restante', 0)) for adelanto in adelantos_proveedor)
         
-        # Crear mensaje detallado
+        # Crear mensaje simplificado
         mensaje = f"📋 ADELANTOS DE {proveedor.upper()}\n\n"
         mensaje += f"💵 Total adelantado: {format_currency(total_monto)}\n"
         mensaje += f"💰 Saldo disponible: {format_currency(total_saldo)}\n\n"
-        mensaje += "📝 DETALLE DE ADELANTOS:\n\n"
         
-        # Botón para volver a la lista completa
+        # Botones para navegar y acciones
         keyboard = []
         keyboard.append([InlineKeyboardButton("⬅️ Volver a todos los proveedores", callback_data="ver_todos")])
-        
-        for i, adelanto in enumerate(adelantos_proveedor):
-            fecha = adelanto.get('fecha', '')
-            monto = float(adelanto.get('monto', 0))
-            saldo = float(adelanto.get('saldo_restante', 0))
-            notas = adelanto.get('notas', 'Sin notas')
-            
-            mensaje += f"Adelanto #{i+1}:\n"
-            mensaje += f"📅 Fecha: {fecha}\n"
-            mensaje += f"💲 Monto: {format_currency(monto)}\n"
-            mensaje += f"💰 Saldo: {format_currency(saldo)}\n"
-            mensaje += f"📝 Notas: {notas}\n\n"
         
         # Enviar mensaje con teclado inline
         await query.edit_message_text(
@@ -379,7 +370,7 @@ def register_adelantos_handlers(application):
     application.add_handler(CommandHandler("adelantos", lista_adelantos_command))
     
     # Callbacks para manejar interacciones con los botones
-    application.add_handler(CallbackQueryHandler(proveedor_adelantos_callback, pattern=r'^proveedor_|^ver_todos$'))
+    application.add_handler(CallbackQueryHandler(proveedor_adelantos_callback, pattern=r'^proveedor_|^ver_todos$|^compra_adelanto_'))
     
     application.add_handler(adelanto_conv_handler)
     
