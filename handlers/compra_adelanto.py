@@ -112,7 +112,7 @@ async def seleccionar_proveedor_callback(update: Update, context: ContextTypes.D
     
     if query.data == "cancelar":
         await query.edit_message_text("❌ Operación cancelada.")
-        context.user_data.clear()  # Limpiar datos para evitar problemas
+        context.user_data.clear()
         return ConversationHandler.END
     
     # Extraer nombre del proveedor del callback data
@@ -135,11 +135,10 @@ async def seleccionar_proveedor_callback(update: Update, context: ContextTypes.D
         context.user_data['saldo_adelanto'] = saldo_total
         context.user_data['adelantos_proveedor'] = datos_proveedor['adelantos']
         
-        # Mostrar mensaje y continuar con el flujo normal de compra
+        # Mostrar mensaje simplificado y solicitar la cantidad de café directamente
         await query.edit_message_text(
-            f"👨‍🌾 Proveedor seleccionado: {proveedor}\n"
-            f"💰 Saldo disponible: {format_currency(saldo_total)}\n\n"
-            f"Ahora, ¿cuántos kilogramos de café estás comprando?"
+            f"👨‍🌾 Proveedor: {proveedor} - {format_currency(saldo_total)}\n\n"
+            f"¿Cuántos kilogramos de café estás comprando?"
         )
         
         return CANTIDAD
@@ -148,7 +147,7 @@ async def seleccionar_proveedor_callback(update: Update, context: ContextTypes.D
         await query.edit_message_text(
             "❌ Error al procesar la selección. Por favor, intenta nuevamente usando /compra_adelanto."
         )
-        context.user_data.clear()  # Limpiar datos en caso de error
+        context.user_data.clear()
         return ConversationHandler.END
 
 async def cantidad_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -339,12 +338,7 @@ async def confirmar_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             # Mostrar estrellas para la calidad
             estrellas = '⭐' * calidad
             
-            # Detalles de los adelantos actualizados
-            adelantos_text = ""
-            for a in adelantos_actualizados:
-                adelantos_text += f"  - {a['proveedor']}: {format_currency(a['saldo_anterior'])} → {format_currency(a['nuevo_saldo'])}\n"
-            
-            # Confirmación al usuario
+            # Confirmación al usuario (simplificada)
             await update.message.reply_text(
                 "✅ Compra registrada correctamente:\n\n"
                 f"👨‍🌾 Proveedor: {proveedor}\n"
@@ -354,8 +348,7 @@ async def confirmar_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 f"💰 Total: {format_currency(total)}\n\n"
                 f"💳 Pagado con adelanto: {format_currency(monto_adelanto)}\n"
                 f"💵 Pagado en efectivo: {format_currency(monto_efectivo)}\n"
-                f"💰 Nuevo saldo de adelanto: {format_currency(nuevo_saldo)}\n\n"
-                f"Adelantos actualizados:\n{adelantos_text}"
+                f"💰 Nuevo saldo de adelanto: {format_currency(nuevo_saldo)}"
             )
         except Exception as e:
             logger.error(f"Error al procesar compra con adelanto: {e}")
