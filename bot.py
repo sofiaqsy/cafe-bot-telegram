@@ -70,7 +70,8 @@ def main():
     env_vars = [
         "TELEGRAM_BOT_TOKEN", 
         "SPREADSHEET_ID", 
-        "GOOGLE_CREDENTIALS"
+        "GOOGLE_CREDENTIALS",
+        "APP_URL"
     ]
     for var in env_vars:
         value = os.getenv(var)
@@ -103,13 +104,36 @@ def main():
     register_adelantos_handlers(application)
     register_compra_adelanto_handlers(application)
     
-    # Eliminar webhook existente
-    if not eliminar_webhook():
-        logger.warning("No se pudo eliminar el webhook. Intentando continuar de todos modos...")
+    # Determinar si se debe usar webhook (Heroku) o polling (desarrollo local)
+    # Verificamos si existe la variable APP_URL que se configura en Heroku
+    APP_URL = os.getenv("APP_URL")
     
-    # Iniciar el bot
+    if APP_URL:
+        # Modo producción con webhook (Heroku)
+        logger.info(f"Iniciando bot en modo webhook en {APP_URL}")
+        
+        # Configurar puerto de Heroku
+        PORT = int(os.getenv("PORT", 8443))
+        
+        # Iniciar webhook
+        application.run_webhook(
+            listen="0.0.0.0",
+            port=PORT,
+            url_path=TOKEN,
+            webhook_url=f"{APP_URL}/{TOKEN}"
+        )
+    else:
+        # Modo desarrollo con polling
+        logger.info("Iniciando bot en modo polling (desarrollo local)")
+        
+        # Eliminar webhook existente
+        if not eliminar_webhook():
+            logger.warning("No se pudo eliminar el webhook. Intentando continuar de todos modos...")
+        
+        # Iniciar el bot con polling
+        application.run_polling(drop_pending_updates=True)
+    
     logger.info("Bot iniciado. Esperando comandos...")
-    application.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
