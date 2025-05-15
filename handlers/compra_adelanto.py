@@ -31,6 +31,9 @@ async def compra_con_adelanto_command(update: Update, context: ContextTypes.DEFA
         # Limpiar datos previos
         context.user_data.clear()
         
+        # Indicar que estamos en el flujo de compra con adelanto
+        context.user_data['en_compra_adelanto'] = True
+        
         # Obtener adelantos vigentes
         adelantos = get_all_data("adelantos")
         
@@ -79,12 +82,12 @@ async def compra_con_adelanto_command(update: Update, context: ContextTypes.DEFA
             keyboard.append([
                 InlineKeyboardButton(
                     f"{proveedor} - {format_currency(datos['saldo'])}", 
-                    callback_data=f"proveedor_{proveedor}"
+                    callback_data=f"compra_proveedor_{proveedor}"
                 )
             ])
         
         # Añadir botón de cancelar
-        keyboard.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar")])
+        keyboard.append([InlineKeyboardButton("❌ Cancelar", callback_data="compra_cancelar")])
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         # Guardar los datos de los proveedores para uso posterior
@@ -110,13 +113,13 @@ async def seleccionar_proveedor_callback(update: Update, context: ContextTypes.D
     query = update.callback_query
     await query.answer()
     
-    if query.data == "cancelar":
+    if query.data == "compra_cancelar":
         await query.edit_message_text("❌ Operación cancelada.")
         context.user_data.clear()
         return ConversationHandler.END
     
     # Extraer nombre del proveedor del callback data
-    proveedor = query.data.replace("proveedor_", "")
+    proveedor = query.data.replace("compra_proveedor_", "")
     
     try:
         # Verificar que el proveedor existe en los datos guardados
@@ -377,7 +380,7 @@ def register_compra_adelanto_handlers(application):
     compra_adelanto_conv_handler = ConversationHandler(
         entry_points=[CommandHandler("compra_adelanto", compra_con_adelanto_command)],
         states={
-            SELECCIONAR_PROVEEDOR: [CallbackQueryHandler(seleccionar_proveedor_callback, pattern=r'^proveedor_|^cancelar$')],
+            SELECCIONAR_PROVEEDOR: [CallbackQueryHandler(seleccionar_proveedor_callback, pattern=r'^compra_proveedor_|^compra_cancelar$')],
             CANTIDAD: [MessageHandler(filters.TEXT & ~filters.COMMAND, cantidad_step)],
             PRECIO: [MessageHandler(filters.TEXT & ~filters.COMMAND, precio_step)],
             CALIDAD: [MessageHandler(filters.TEXT & ~filters.COMMAND, calidad_step)],
