@@ -112,6 +112,7 @@ async def seleccionar_proveedor_callback(update: Update, context: ContextTypes.D
     
     if query.data == "cancelar":
         await query.edit_message_text("❌ Operación cancelada.")
+        context.user_data.clear()  # Limpiar datos para evitar problemas
         return ConversationHandler.END
     
     # Extraer nombre del proveedor del callback data
@@ -145,8 +146,9 @@ async def seleccionar_proveedor_callback(update: Update, context: ContextTypes.D
     except Exception as e:
         logger.error(f"Error procesando selección de proveedor: {e}")
         await query.edit_message_text(
-            "❌ Error al procesar la selección. Por favor, intenta nuevamente."
+            "❌ Error al procesar la selección. Por favor, intenta nuevamente usando /compra_adelanto."
         )
+        context.user_data.clear()  # Limpiar datos en caso de error
         return ConversationHandler.END
 
 async def cantidad_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -381,13 +383,15 @@ def register_compra_adelanto_handlers(application):
     compra_adelanto_conv_handler = ConversationHandler(
         entry_points=[CommandHandler("compra_adelanto", compra_con_adelanto_command)],
         states={
-            SELECCIONAR_PROVEEDOR: [CallbackQueryHandler(seleccionar_proveedor_callback)],
+            SELECCIONAR_PROVEEDOR: [CallbackQueryHandler(seleccionar_proveedor_callback, pattern=r'^proveedor_|^cancelar$')],
             CANTIDAD: [MessageHandler(filters.TEXT & ~filters.COMMAND, cantidad_step)],
             PRECIO: [MessageHandler(filters.TEXT & ~filters.COMMAND, precio_step)],
             CALIDAD: [MessageHandler(filters.TEXT & ~filters.COMMAND, calidad_step)],
             CONFIRMAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirmar_step)],
         },
         fallbacks=[CommandHandler("cancelar", cancelar)],
+        # Añadir opción para permitir que se caigan las conversaciones después de cierto tiempo de inactividad
+        conversation_timeout=900  # 15 minutos - para evitar conversaciones colgadas
     )
     
     # Agregar el manejador a la aplicación
