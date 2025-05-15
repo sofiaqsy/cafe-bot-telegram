@@ -277,6 +277,11 @@ async def proveedor_adelantos_callback(update: Update, context: ContextTypes.DEF
     query = update.callback_query
     await query.answer()
     
+    # Ignorar los callbacks relacionados con compra_adelanto
+    if query.data.startswith("compra_proveedor_") or query.data == "compra_cancelar":
+        # Estos son manejados por el ConversationHandler de compra_adelanto.py
+        return
+    
     if query.data == "ver_todos":
         try:
             # Cuando queremos volver a mostrar todos los adelantos
@@ -370,6 +375,7 @@ def register_adelantos_handlers(application):
     application.add_handler(CommandHandler("adelantos", lista_adelantos_command))
     
     # Callbacks para manejar interacciones con los botones
+    # Modificado para ignorar los callbacks de compra_adelanto
     application.add_handler(CallbackQueryHandler(proveedor_adelantos_callback, pattern=r'^proveedor_|^ver_todos$|^compra_adelanto_'))
     
     application.add_handler(adelanto_conv_handler)
