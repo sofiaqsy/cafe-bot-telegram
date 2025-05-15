@@ -17,15 +17,15 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await update.message.reply_text(
         "🤖 *Comandos disponibles* 🤖\n\n"
         "*/compra* - Registrar una nueva compra de café\n"
-        "*/proceso* - Registrar procesamiento de café\n"
+        "*/compra_adelanto* - Compra con adelanto\n"
         "*/gasto* - Registrar gastos\n"
+        "*/adelanto* - Registrar adelanto a proveedor\n"
+        "*/proceso* - Registrar procesamiento de café\n"
         "*/venta* - Registrar una venta\n"
         "*/reporte* - Ver reportes y estadísticas\n"
         "*/pedido* - Registrar pedido de cliente\n"
         "*/pedidos* - Ver pedidos pendientes\n"
-        "*/adelanto* - Registrar adelanto a proveedor\n"
         "*/adelantos* - Ver adelantos vigentes\n"
-        "*/compra_adelanto* - Compra con adelanto\n"
         "*/ayuda* - Ver esta ayuda\n\n"
         "Para más información, consulta la documentación completa.",
         parse_mode="Markdown"
