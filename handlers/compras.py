@@ -4,7 +4,7 @@ from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import CommandHandler, ConversationHandler, MessageHandler, filters, ContextTypes
 from config import COMPRAS_FILE
 from utils.db import append_data
-from utils.helpers import get_now_peru
+from utils.helpers import get_now_peru, safe_float
 
 # Configurar logging
 logger = logging.getLogger(__name__)
@@ -20,18 +20,6 @@ COMPRAS_HEADERS = ["fecha", "tipo_cafe", "proveedor", "cantidad", "precio", "tot
 
 # Tipos de café predefinidos - solo 3 opciones fijas
 TIPOS_CAFE = ["CEREZO", "MOTE", "PERGAMINO"]
-
-# Función auxiliar para convertir texto a número seguro
-def safe_float(text):
-    """Convierte un texto a número float, manejando comas como separador decimal"""
-    if not text:
-        return 0.0
-    try:
-        # Reemplazar comas por puntos para la conversión
-        return float(str(text).replace(',', '.').strip())
-    except (ValueError, TypeError):
-        logger.warning(f"Error al convertir '{text}' a float, retornando 0.0")
-        return 0.0
 
 async def compra_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Inicia el proceso de registro de compra solicitando primero el tipo de café"""
