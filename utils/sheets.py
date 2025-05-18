@@ -29,7 +29,7 @@ TRANSICIONES_PERMITIDAS = {
 # Cabeceras para las hojas
 HEADERS = {
     "compras": ["id", "fecha", "tipo_cafe", "proveedor", "cantidad", "precio", "preciototal", "registrado_por", "notas"],
-    "proceso": ["fecha", "origen", "destino", "cantidad", "compras_ids", "merma", "notas", "registrado_por"],
+    "proceso": ["fecha", "origen", "destino", "cantidad", "compras_ids", "merma", "merma_estimada", "cantidad_resultante_esperada", "cantidad_resultante", "notas", "registrado_por"],
     "gastos": ["fecha", "categoria", "monto", "descripcion", "registrado_por"],
     "ventas": ["fecha", "cliente", "tipo_cafe", "peso", "precio_kg", "total", "notas", "registrado_por"],
     "pedidos": ["fecha", "cliente", "tipo_cafe", "cantidad", "precio_kg", "total", "estado", "fecha_entrega", "notas", "registrado_por"],
@@ -303,7 +303,7 @@ def append_data(sheet_name, data):
                 # Valores por defecto según el campo
                 if header == 'tipo_cafe' or header == 'tipo_cafe_origen':
                     data[header] = "No especificado"
-                elif header in ['cantidad', 'precio', 'total', 'cantidad_actual', 'merma', 'preciototal']:
+                elif header in ['cantidad', 'precio', 'total', 'cantidad_actual', 'merma', 'merma_estimada', 'cantidad_resultante', 'cantidad_resultante_esperada', 'preciototal']:
                     data[header] = "0"
                 elif header == 'fase_actual' and sheet_name == 'almacen' and 'tipo_cafe_origen' in data:
                     # Si es almacén, la fase_actual es la misma que la fase
