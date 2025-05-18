@@ -257,15 +257,20 @@ def append_data(sheet_name, data):
         service = get_sheet_service()
         
         # Para compras, asegurar que tenga un ID único
-        if sheet_name == 'compras' and 'id' not in data:
-            data['id'] = generate_unique_id()
-            logger.info(f"Generado ID único para compra: {data['id']}")
+        if sheet_name == 'compras':
+            # Siempre asignar un ID único, incluso si ya existe uno
+            if not data.get('id'):
+                data['id'] = generate_unique_id()
+                logger.info(f"Generado ID único para compra: {data['id']}")
             
-            # Calcular precio total si no está especificado
-            if 'preciototal' not in data and 'cantidad' in data and 'precio' in data:
+            # Calcular precio total si no está especificado o es 0
+            if ('preciototal' not in data or not data.get('preciototal') or safe_float(data.get('preciototal')) == 0) and 'cantidad' in data and 'precio' in data:
                 try:
                     cantidad = float(str(data.get('cantidad', '0')).replace(',', '.'))
                     precio = float(str(data.get('precio', '0')).replace(',', '.'))
+                    # Asegurar que el precio no sea 0
+                    if precio <= 0:
+                        logger.warning(f"Precio está configurado a {precio}, podría ser un error. Se guardará como está.")
                     data['preciototal'] = str(round(cantidad * precio, 2))
                     logger.info(f"Calculado precio total para compra: {data['preciototal']}")
                 except (ValueError, TypeError) as e:
