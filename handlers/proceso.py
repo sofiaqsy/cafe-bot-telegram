@@ -148,7 +148,7 @@ async def seleccionar_destino(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Filtrar solo los que tienen kg disponibles
     almacen_disponible = []
     for registro in almacen_registros:
-        kg_disponibles = safe_float(registro.get('kg_disponibles', 0))
+        kg_disponibles = safe_float(registro.get('cantidad_actual', 0))
         if kg_disponibles > 0:
             almacen_disponible.append(registro)
     
@@ -177,7 +177,7 @@ async def seleccionar_destino(update: Update, context: ContextTypes.DEFAULT_TYPE
     for i, registro in enumerate(almacen_disponible):
         # Extraer información del registro
         compra_id = registro.get('compra_id', 'Sin ID')
-        kg_disponibles = safe_float(registro.get('kg_disponibles', 0))
+        kg_disponibles = safe_float(registro.get('cantidad_actual', 0))
         fecha = registro.get('fecha', 'Sin fecha')
         registro_id = registro.get('id', f"R{registro.get('_row_index', 'X')}")
         
@@ -224,12 +224,12 @@ async def seleccionar_registros_callback(update: Update, context: ContextTypes.D
         # Seleccionar todos los registros
         context.user_data['registros_seleccionados'] = almacen_disponible
         # Calcular total de kg disponibles
-        total_kg = sum(safe_float(registro.get('kg_disponibles', 0)) for registro in almacen_disponible)
+        total_kg = sum(safe_float(registro.get('cantidad_actual', 0)) for registro in almacen_disponible)
         
         # Formatear mensaje con los registros seleccionados
         seleccionados_info = []
         for registro in almacen_disponible:
-            kg = safe_float(registro.get('kg_disponibles', 0))
+            kg = safe_float(registro.get('cantidad_actual', 0))
             registro_id = registro.get('id', 'Sin ID')
             seleccionados_info.append(f"ID: {registro_id} ({kg} kg)")
         
@@ -255,7 +255,7 @@ async def seleccionar_registros_callback(update: Update, context: ContextTypes.D
         # Crear un nuevo teclado con checkboxes para selección múltiple
         keyboard = []
         for i, registro in enumerate(almacen_disponible):
-            kg_disponibles = safe_float(registro.get('kg_disponibles', 0))
+            kg_disponibles = safe_float(registro.get('cantidad_actual', 0))
             registro_id = registro.get('id', 'Sin ID')
             
             # Estado inicial: no seleccionado
@@ -299,7 +299,7 @@ async def seleccionar_registros_callback(update: Update, context: ContextTypes.D
         # Recreate keyboard with updated checkbox states
         keyboard = []
         for i, registro in enumerate(almacen_disponible):
-            kg_disponibles = safe_float(registro.get('kg_disponibles', 0))
+            kg_disponibles = safe_float(registro.get('cantidad_actual', 0))
             registro_id = registro.get('id', 'Sin ID')
             
             # Checkbox state based on selection
@@ -347,12 +347,12 @@ async def seleccionar_registros_callback(update: Update, context: ContextTypes.D
         context.user_data['registros_seleccionados'] = registros_seleccionados
         
         # Calcular total de kg disponibles
-        total_kg = sum(safe_float(registro.get('kg_disponibles', 0)) for registro in registros_seleccionados)
+        total_kg = sum(safe_float(registro.get('cantidad_actual', 0)) for registro in registros_seleccionados)
         
         # Formatear mensaje con los registros seleccionados
         seleccionados_info = []
         for registro in registros_seleccionados:
-            kg = safe_float(registro.get('kg_disponibles', 0))
+            kg = safe_float(registro.get('cantidad_actual', 0))
             registro_id = registro.get('id', 'Sin ID')
             seleccionados_info.append(f"ID: {registro_id} ({kg} kg)")
         
@@ -377,11 +377,11 @@ async def seleccionar_registros_callback(update: Update, context: ContextTypes.D
         # Seleccionar un registro específico
         indice = int(query.data.split('_')[1])
         context.user_data['registros_seleccionados'] = [almacen_disponible[indice]]
-        total_kg = safe_float(almacen_disponible[indice].get('kg_disponibles', 0))
+        total_kg = safe_float(almacen_disponible[indice].get('cantidad_actual', 0))
         
         # Formatear mensaje
         registro = almacen_disponible[indice]
-        kg = safe_float(registro.get('kg_disponibles', 0))
+        kg = safe_float(registro.get('cantidad_actual', 0))
         registro_id = registro.get('id', 'Sin ID')
         
         await query.edit_message_text(
@@ -521,7 +521,7 @@ async def agregar_notas(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     # Formatear información de registros
     registros_info = []
     for registro in registros_seleccionados:
-        kg = safe_float(registro.get('kg_disponibles', 0))
+        kg = safe_float(registro.get('cantidad_actual', 0))
         registro_id = registro.get('id', 'Sin ID')
         # Si hay compra_id, buscar el proveedor
         compra_id = registro.get('compra_id', '')
@@ -616,7 +616,7 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             
             for registro in registros_seleccionados:
                 row_index = registro.get('_row_index')
-                kg_disponibles = safe_float(registro.get('kg_disponibles', 0))
+                kg_disponibles = safe_float(registro.get('cantidad_actual', 0))
                 registro_id = registro.get('id', '')
                 
                 if cantidad_restante <= 0:
@@ -635,9 +635,9 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                     cantidad_restante = 0
                 
                 # Actualizar kg_disponibles en el registro de almacén
-                update_cell("almacen", row_index, "kg_disponibles", nuevo_kg_disponibles)
+                update_cell("almacen", row_index, "cantidad_actual", nuevo_kg_disponibles)
                 
-                logger.info(f"Actualizado registro de almacén {registro_id} (fila {row_index}), nuevo kg_disponibles: {nuevo_kg_disponibles}")
+                logger.info(f"Actualizado registro de almacén {registro_id} (fila {row_index}), nuevo cantidad_actual: {nuevo_kg_disponibles}")
             
             # 3. Crear nuevo registro en el almacén para la fase de destino
             cantidad_resultante = cantidad - merma

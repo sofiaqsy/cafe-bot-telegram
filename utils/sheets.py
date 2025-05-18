@@ -32,7 +32,7 @@ HEADERS = {
     "ventas": ["fecha", "cliente", "tipo_cafe", "peso", "precio_kg", "total", "notas", "registrado_por"],
     "pedidos": ["fecha", "cliente", "tipo_cafe", "cantidad", "precio_kg", "total", "estado", "fecha_entrega", "notas", "registrado_por"],
     "adelantos": ["fecha", "hora", "cliente", "monto", "notas", "registrado_por"],
-    "almacen": ["id", "compra_id", "fase", "fecha", "cantidad", "fase_actual", "kg_disponibles", "notas"]
+    "almacen": ["id", "compra_id", "tipo_cafe_origen", "fecha", "cantidad", "fase_actual", "cantidad_actual", "notas"]
 }
 
 # Variables globales para el servicio de Google Sheets
@@ -111,7 +111,7 @@ def initialize_sheets():
             
             # Verificar si la hoja tiene cabeceras
             range_name = f"{sheet_name}!A1:Z1"
-            result = sheets.values().get(
+            result = sheets.spreadsheets().values().get(
                 spreadsheetId=spreadsheet_id,
                 range=range_name
             ).execute()
@@ -121,7 +121,7 @@ def initialize_sheets():
             if not values or len(values[0]) < len(headers):
                 # Escribir las cabeceras
                 logger.info(f"Escribiendo cabeceras para la hoja '{sheet_name}'...")
-                sheets.values().update(
+                sheets.spreadsheets().values().update(
                     spreadsheetId=spreadsheet_id,
                     range=range_name,
                     valueInputOption="RAW",
@@ -155,11 +155,11 @@ def initialize_sheets():
                             append_data('almacen', {
                                 'id': generate_almacen_id(),
                                 'compra_id': compra.get('id'),
-                                'fase': fase,
+                                'tipo_cafe_origen': fase,
                                 'fecha': now,
                                 'cantidad': compra.get('cantidad', 0),
                                 'fase_actual': fase,
-                                'kg_disponibles': kg_disponibles,
+                                'cantidad_actual': kg_disponibles,
                                 'notas': f"Migración automática desde compra ID: {compra.get('id')}"
                             })
                             logger.info(f"Creado registro en almacén para compra {compra.get('id')} con {kg_disponibles} kg en fase {fase}")
@@ -167,7 +167,7 @@ def initialize_sheets():
             elif sheet_name == 'almacen':
                 # Para el almacén, asegurarse de que todas las fases estén inicializadas
                 almacen_data = get_all_data('almacen')
-                fases_existentes = {str(item.get('fase', '')).strip().upper() for item in almacen_data}
+                fases_existentes = {str(item.get('fase_actual', '')).strip().upper() for item in almacen_data}
                 
                 # Verificar si es necesario sincronizar
                 fases_faltantes = set(FASES_CAFE) - fases_existentes
@@ -180,11 +180,11 @@ def initialize_sheets():
                         append_data('almacen', {
                             'id': generate_almacen_id(),
                             'compra_id': '',
-                            'fase': fase,
+                            'tipo_cafe_origen': fase,
                             'fecha': now,
                             'cantidad': 0,
                             'fase_actual': fase,
-                            'kg_disponibles': 0,
+                            'cantidad_actual': 0,
                             'notas': 'Inicialización automática'
                         })
         
@@ -299,13 +299,13 @@ def append_data(sheet_name, data):
                 logger.warning(f"Campo '{header}' faltante o vacío en los datos. Usando valor por defecto.")
                 
                 # Valores por defecto según el campo
-                if header == 'tipo_cafe':
+                if header == 'tipo_cafe' or header == 'tipo_cafe_origen':
                     data[header] = "No especificado"
-                elif header in ['cantidad', 'precio', 'total', 'kg_disponibles', 'merma', 'preciototal']:
+                elif header in ['cantidad', 'precio', 'total', 'cantidad_actual', 'merma', 'preciototal']:
                     data[header] = "0"
-                elif header == 'fase_actual' and sheet_name == 'almacen' and 'fase' in data:
+                elif header == 'fase_actual' and sheet_name == 'almacen' and 'tipo_cafe_origen' in data:
                     # Si es almacén, la fase_actual es la misma que la fase
-                    data[header] = data.get('fase', "")
+                    data[header] = data.get('tipo_cafe_origen', "")
                 else:
                     data[header] = ""
         
@@ -392,11 +392,11 @@ def append_data(sheet_name, data):
                     nuevo_almacen = {
                         'id': generate_almacen_id(),
                         'compra_id': data.get('id', ''),
-                        'fase': fase,
+                        'tipo_cafe_origen': fase,
                         'fecha': now,
                         'cantidad': cantidad,
                         'fase_actual': fase,
-                        'kg_disponibles': cantidad,
+                        'cantidad_actual': cantidad,
                         'notas': f"Compra inicial ID: {data.get('id', 'sin ID')}"
                     }
                     
@@ -613,10 +613,18 @@ def get_all_data(sheet_name):
         sheets = get_sheet_service()
         
         range_name = f"{sheet_name}!A:Z"
-        result = sheets.values().get(
-            spreadsheetId=spreadsheet_id,
-            range=range_name
-        ).execute()
+        
+        # Usar la llamada directa a sheets.spreadsheets().values().get()
+        result = None
+        try:
+            result = sheets.spreadsheets().values().get(
+                spreadsheetId=spreadsheet_id,
+                range=range_name
+            ).execute()
+        except Exception as e:
+            logger.error(f"Error al ejecutar values().get() para {sheet_name}: {e}")
+            # Si hay un error específico con values(), intentar otra aproximación
+            return handle_values_attribute_error(sheet_name, spreadsheet_id, sheets)
         
         values = result.get('values', [])
         
@@ -640,6 +648,64 @@ def get_all_data(sheet_name):
         return rows
     except Exception as e:
         logger.error(f"Error al obtener datos de {sheet_name}: {e}")
+        return []
+
+def handle_values_attribute_error(sheet_name, spreadsheet_id, sheets_service):
+    """Maneja el error 'Resource' object has no attribute 'values'"""
+    logger.info(f"Usando método alternativo para obtener datos de la hoja '{sheet_name}'")
+    
+    try:
+        # 1. Obtener metadatos de la hoja
+        sheet_metadata = sheets_service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+        target_sheet = None
+        
+        # Buscar la hoja específica
+        for sheet in sheet_metadata.get('sheets', []):
+            if sheet['properties']['title'] == sheet_name:
+                target_sheet = sheet
+                break
+        
+        if not target_sheet:
+            logger.warning(f"No se encontró la hoja '{sheet_name}' en el spreadsheet")
+            return []
+        
+        # 2. Usar batchGet para obtener datos
+        # Este método es más robusto y evita usar directamente el atributo 'values'
+        result = sheets_service.spreadsheets().values().batchGet(
+            spreadsheetId=spreadsheet_id,
+            ranges=[f"{sheet_name}!A:Z"]
+        ).execute()
+        
+        # Extraer los valores del resultado
+        value_ranges = result.get('valueRanges', [])
+        if not value_ranges or 'values' not in value_ranges[0]:
+            logger.warning(f"No se encontraron datos en la hoja '{sheet_name}'")
+            return []
+        
+        values = value_ranges[0]['values']
+        
+        # Procesar los valores como antes
+        if not values:
+            logger.info(f"No hay datos en la hoja '{sheet_name}'")
+            return []
+        
+        # Convertir filas a diccionarios usando las cabeceras
+        headers = values[0]
+        rows = []
+        
+        for i, row in enumerate(values[1:]):  # Saltar la fila de cabeceras
+            # Asegurarse de que la fila tenga la misma longitud que las cabeceras
+            row_padded = row + [""] * (len(headers) - len(row))
+            # Añadir el _row_index para referencia futura (basado en 0)
+            row_dict = dict(zip(headers, row_padded))
+            row_dict['_row_index'] = i
+            rows.append(row_dict)
+        
+        logger.info(f"Obtenidos {len(rows)} registros de '{sheet_name}' usando método alternativo")
+        return rows
+        
+    except Exception as e:
+        logger.error(f"Error en método alternativo para obtener datos: {e}")
         return []
 
 def get_filtered_data(sheet_name, filters=None, days=None):
@@ -716,18 +782,18 @@ def get_compras_por_fase(fase):
         almacen_data = get_filtered_data('almacen', {'fase_actual': fase})
         
         if not almacen_data:
-            logger.warning(f"No hay registros en almacén para la fase {fase}")
+            logger.warning(f"No se encontró la fase {fase} en el almacén")
             return []
         
         # Filtrar solo aquellos que tienen kg disponibles
         almacen_con_disponible = []
         for registro in almacen_data:
             try:
-                kg_disponibles = float(str(registro.get('kg_disponibles', '0')).replace(',', '.'))
+                kg_disponibles = float(str(registro.get('cantidad_actual', '0')).replace(',', '.'))
                 if kg_disponibles > 0:
                     almacen_con_disponible.append(registro)
             except (ValueError, TypeError) as e:
-                logger.warning(f"Error al convertir kg_disponibles: {e}. Valor: {registro.get('kg_disponibles')}")
+                logger.warning(f"Error al convertir cantidad_actual: {e}. Valor: {registro.get('cantidad_actual')}")
         
         if not almacen_con_disponible:
             logger.warning(f"No hay registros en almacén con kg disponibles para la fase {fase}")
@@ -747,7 +813,7 @@ def get_compras_por_fase(fase):
                 if compra.get('id') == compra_id:
                     # Añadir kg_disponibles del almacén a la compra
                     compra_con_disponible = compra.copy()
-                    compra_con_disponible['kg_disponibles'] = registro_almacen.get('kg_disponibles', '0')
+                    compra_con_disponible['cantidad_actual'] = registro_almacen.get('cantidad_actual', '0')
                     compra_con_disponible['almacen_registro_id'] = registro_almacen.get('id', '')
                     compra_con_disponible['almacen_row_index'] = registro_almacen.get('_row_index', 0)
                     compras_disponibles.append(compra_con_disponible)
@@ -784,10 +850,10 @@ def get_almacen_cantidad(fase):
         total_disponible = 0.0
         for registro in almacen_data:
             try:
-                kg_disponibles = float(str(registro.get('kg_disponibles', '0')).replace(',', '.'))
+                kg_disponibles = float(str(registro.get('cantidad_actual', '0')).replace(',', '.'))
                 total_disponible += kg_disponibles
             except (ValueError, TypeError) as e:
-                logger.error(f"Error al convertir kg_disponibles: {e}")
+                logger.error(f"Error al convertir cantidad_actual: {e}")
         
         logger.info(f"Cantidad total en almacén para fase {fase_buscada}: {total_disponible} kg")
         return total_disponible
@@ -823,11 +889,11 @@ def update_almacen(fase, cantidad_cambio, operacion="sumar", notas="", compra_id
         nueva_entrada = {
             "id": generate_almacen_id(),
             "compra_id": compra_id,
-            "fase": fase_normalizada,
+            "tipo_cafe_origen": fase_normalizada,
             "fecha": now,
             "cantidad": cantidad_cambio if operacion in ["sumar", "establecer"] else -cantidad_cambio,
             "fase_actual": fase_normalizada,
-            "kg_disponibles": cantidad_cambio if operacion in ["sumar", "establecer"] else 0,
+            "cantidad_actual": cantidad_cambio if operacion in ["sumar", "establecer"] else 0,
             "notas": f"Operación: {operacion}. {notas}"
         }
         
@@ -929,11 +995,11 @@ def sincronizar_almacen_con_compras():
                         resultado = append_data('almacen', {
                             'id': generate_almacen_id(),
                             'compra_id': compra_id,
-                            'fase': fase,
+                            'tipo_cafe_origen': fase,
                             'fecha': now,
                             'cantidad': cantidad,
                             'fase_actual': fase,
-                            'kg_disponibles': cantidad,
+                            'cantidad_actual': cantidad,
                             'notas': f"Sincronización automática - Compra ID: {compra_id}"
                         })
                         resultados.append(resultado)
@@ -966,8 +1032,20 @@ def leer_almacen_para_proceso():
     try:
         logger.info("Leyendo registros de almacén para proceso")
         
-        # Obtener todos los registros de almacén
-        almacen_data = get_all_data('almacen')
+        # Obtener todos los registros de almacén usando el método alternativo
+        # que evita el error 'Resource' object has no attribute 'values'
+        almacen_data = None
+        try:
+            sheets = get_sheet_service()
+            spreadsheet_id = get_or_create_sheet()
+            almacen_data = handle_values_attribute_error('almacen', spreadsheet_id, sheets)
+        except Exception as e:
+            logger.error(f"Error al obtener datos de almacen: {e}")
+            return {}
+        
+        if not almacen_data:
+            logger.error(f"No se pudieron obtener datos de almacén")
+            return {}
         
         # Agrupar y sumar por fase_actual
         resultados = {}
@@ -976,7 +1054,7 @@ def leer_almacen_para_proceso():
             if fase_actual in FASES_CAFE:
                 # Sumar las cantidades disponibles por fase
                 try:
-                    kg_disponibles = float(str(registro.get('kg_disponibles', '0')).replace(',', '.'))
+                    kg_disponibles = float(str(registro.get('cantidad_actual', '0')).replace(',', '.'))
                     if fase_actual not in resultados:
                         resultados[fase_actual] = {
                             'cantidad_total': 0,
@@ -987,7 +1065,7 @@ def leer_almacen_para_proceso():
                         resultados[fase_actual]['cantidad_total'] += kg_disponibles
                         resultados[fase_actual]['registros'].append(registro)
                 except (ValueError, TypeError) as e:
-                    logger.error(f"Error al procesar kg_disponibles en almacén: {e}")
+                    logger.error(f"Error al procesar cantidad_actual en almacén: {e}")
         
         return resultados
     except Exception as e:
