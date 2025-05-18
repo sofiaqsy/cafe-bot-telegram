@@ -100,6 +100,15 @@ async def seleccionar_origen(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if origen in TRANSICIONES_PERMITIDAS:
         destinos_posibles = TRANSICIONES_PERMITIDAS[origen]
         
+        # Si no hay destinos posibles, informar al usuario
+        if not destinos_posibles:
+            await update.message.reply_text(
+                f"⚠️ La fase {origen} no tiene transformaciones posibles.\n"
+                f"Por favor, inicia el proceso nuevamente con otra fase de origen.",
+                reply_markup=ReplyKeyboardRemove()
+            )
+            return ConversationHandler.END
+        
         # Crear teclado con destinos posibles
         keyboard = [[destino] for destino in destinos_posibles]
         reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
@@ -113,7 +122,7 @@ async def seleccionar_origen(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return SELECCIONAR_DESTINO
     else:
         await update.message.reply_text(
-            f"⚠️ La fase {origen} no tiene transformaciones posibles."
+            f"⚠️ La fase {origen} no tiene transformaciones posibles.\n"
             f"Por favor, inicia el proceso nuevamente con otra fase de origen.",
             reply_markup=ReplyKeyboardRemove()
         )
@@ -439,9 +448,7 @@ async def ingresar_cantidad(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     mermas_sugeridas = {
         "CEREZO_MOTE": 0.85,      # 85% de pérdida de peso cerezo a mote
         "MOTE_PERGAMINO": 0.20,   # 20% de pérdida de mote a pergamino
-        "PERGAMINO_TOSTADO": 0.18, # 18% de pérdida de pergamino a tostado
-        "TOSTADO_MOLIDO": 0.02,   # 2% de pérdida de tostado a molido
-        "PERGAMINO_MOLIDO": 0.20  # ~20% para transición directa pergamino a molido
+        "PERGAMINO_VERDE": 0.18,  # 18% de pérdida de pergamino a verde
     }
     
     transicion = f"{origen}_{destino}"
