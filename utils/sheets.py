@@ -26,7 +26,7 @@ TRANSICIONES_PERMITIDAS = {
 
 # Cabeceras para las hojas
 HEADERS = {
-    "compras": ["id", "fecha", "tipo_cafe", "proveedor", "cantidad", "precio", "preciototal", "notas", "registrado_por"],
+    "compras": ["id", "fecha", "tipo_cafe", "proveedor", "cantidad", "precio", "registrado_por", "preciototal", "notas"],
     "proceso": ["fecha", "origen", "destino", "cantidad", "compras_ids", "merma", "notas", "registrado_por"],
     "gastos": ["fecha", "categoria", "monto", "descripcion", "registrado_por"],
     "ventas": ["fecha", "cliente", "tipo_cafe", "peso", "precio_kg", "total", "notas", "registrado_por"],
