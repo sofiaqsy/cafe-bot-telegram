@@ -4,6 +4,7 @@ from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import CommandHandler, ConversationHandler, MessageHandler, filters, ContextTypes
 from config import COMPRAS_FILE
 from utils.db import append_data
+from utils.helpers import get_now_peru
 
 # Configurar logging
 logger = logging.getLogger(__name__)
@@ -14,8 +15,8 @@ TIPO_CAFE, PROVEEDOR, CANTIDAD, PRECIO, CONFIRMAR = range(5)
 # Datos temporales
 datos_compra = {}
 
-# Headers para la hoja de compras
-COMPRAS_HEADERS = ["fecha", "tipo_cafe", "proveedor", "cantidad", "precio", "total"]
+# Headers para la hoja de compras - actualizado para incluir fase_actual y kg_disponibles
+COMPRAS_HEADERS = ["fecha", "tipo_cafe", "proveedor", "cantidad", "precio", "total", "fase_actual", "kg_disponibles"]
 
 # Tipos de café predefinidos - solo 3 opciones fijas
 TIPOS_CAFE = ["CEREZO", "MOTE", "PERGAMINO"]
@@ -136,6 +137,12 @@ async def precio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         # Guardar el total en los datos
         datos_compra[user_id]["total"] = total
         
+        # Inicializar fase_actual con el tipo de café
+        datos_compra[user_id]["fase_actual"] = compra["tipo_cafe"]
+        
+        # Inicializar kg_disponibles con la cantidad total
+        datos_compra[user_id]["kg_disponibles"] = compra["cantidad"]
+        
         # Crear teclado para confirmación
         keyboard = [["Sí", "No"]]
         reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
@@ -171,11 +178,12 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         # Preparar datos para guardar
         compra = datos_compra[user_id].copy()
         
-        # Añadir fecha
-        compra["fecha"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # Añadir fecha actualizada
+        now = get_now_peru()
+        compra["fecha"] = now.strftime("%Y-%m-%d %H:%M:%S")
         
         # Verificar que todos los datos requeridos estén presentes
-        campos_requeridos = ["tipo_cafe", "proveedor", "cantidad", "precio", "total"]
+        campos_requeridos = ["tipo_cafe", "proveedor", "cantidad", "precio", "total", "fase_actual", "kg_disponibles"]
         datos_completos = all(campo in compra for campo in campos_requeridos)
         
         if not datos_completos:
@@ -193,11 +201,6 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         
         # Guardar la compra en Google Sheets a través de db.py
         try:
-            # Convertir valores numéricos a string para evitar problemas
-            compra["cantidad"] = str(compra["cantidad"]).replace('.', ',')
-            compra["precio"] = str(compra["precio"]).replace('.', ',')
-            compra["total"] = str(compra["total"]).replace('.', ',')
-            
             # Llamar a la función para guardar los datos
             result = append_data(COMPRAS_FILE, compra, COMPRAS_HEADERS)
             
