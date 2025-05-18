@@ -16,13 +16,25 @@ SHEET_IDS = {
     'adelantos': 4  # Añadimos la hoja de adelantos con índice 4
 }
 
-# Cabeceras para cada hoja
+# Cabeceras para cada hoja - Añadimos fase_actual a compras
 HEADERS = {
-    'compras': ['fecha', 'tipo_cafe', 'proveedor', 'cantidad', 'precio', 'total'],
-    'proceso': ['fecha', 'lote', 'estado', 'cantidad', 'notas'],
+    'compras': ['fecha', 'tipo_cafe', 'proveedor', 'cantidad', 'precio', 'total', 'fase_actual', 'kg_disponibles'],
+    'proceso': ['fecha', 'origen', 'destino', 'cantidad', 'compras_ids', 'merma', 'notas', 'registrado_por'],
     'gastos': ['fecha', 'concepto', 'monto', 'categoria', 'notas'],
     'ventas': ['fecha', 'cliente', 'producto', 'cantidad', 'precio', 'total'],
-    'adelantos': ['fecha', 'hora', 'proveedor', 'monto', 'saldo_restante', 'notas', 'registrado_por']  # Añadimos cabeceras para adelantos
+    'adelantos': ['fecha', 'hora', 'proveedor', 'monto', 'saldo_restante', 'notas', 'registrado_por']
+}
+
+# Definir las fases posibles del café
+FASES_CAFE = ["CEREZO", "MOTE", "PERGAMINO", "VERDE", "TOSTADO", "MOLIDO"]
+
+# Definir las transiciones permitidas entre fases
+TRANSICIONES_PERMITIDAS = {
+    "CEREZO": ["MOTE", "PERGAMINO"],
+    "MOTE": ["PERGAMINO"],
+    "PERGAMINO": ["VERDE"],
+    "VERDE": ["TOSTADO"],
+    "TOSTADO": ["MOLIDO"]
 }
 
 def get_credentials():
@@ -102,8 +114,69 @@ def initialize_sheets():
                     logger.info(f"Cabeceras existentes en hoja '{sheet_name}': {values[0]}")
                     logger.info(f"Cabeceras esperadas: {header}")
                     
-                    # Si las cabeceras no coinciden, actualizar la primera fila
-                    if values[0] != header:
+                    # Para compras, añadir columnas fase_actual y kg_disponibles si no existen
+                    if sheet_name == 'compras' and len(values[0]) < len(header):
+                        # Si hay que actualizar las cabeceras
+                        logger.warning(f"Actualizando cabeceras de '{sheet_name}' para incluir nuevos campos")
+                        
+                        # Actualizar cabeceras
+                        sheets.values().update(
+                            spreadsheetId=spreadsheet_id,
+                            range=range_name,
+                            valueInputOption="RAW",
+                            body={"values": [header]}
+                        ).execute()
+                        
+                        # Inicializar nuevas columnas para filas existentes
+                        data_range_name = f"{sheet_name}!A2:Z"
+                        existing_data = sheets.values().get(
+                            spreadsheetId=spreadsheet_id,
+                            range=data_range_name
+                        ).execute()
+                        
+                        existing_rows = existing_data.get('values', [])
+                        if existing_rows:
+                            # Para cada fila existente, actualizar fase_actual con tipo_cafe
+                            for i, row in enumerate(existing_rows):
+                                row_num = i + 2  # +2 porque empezamos en la fila 2 (después de las cabeceras)
+                                
+                                # Si la fila tiene al menos el campo tipo_cafe (índice 1)
+                                if len(row) > 1 and row[1]:
+                                    tipo_cafe = row[1]
+                                    
+                                    # Si no existe fase_actual o está vacía
+                                    if len(row) <= 6 or not row[6]:  # 6 sería el índice de fase_actual
+                                        # Actualizar fase_actual = tipo_cafe
+                                        sheets.values().update(
+                                            spreadsheetId=spreadsheet_id,
+                                            range=f"{sheet_name}!G{row_num}",  # G es fase_actual (columna 7)
+                                            valueInputOption="RAW",
+                                            body={"values": [[tipo_cafe]]}
+                                        ).execute()
+                                        logger.info(f"Actualizada fase_actual en fila {row_num}")
+                                    
+                                    # Si no existe kg_disponibles o está vacía
+                                    if len(row) <= 7 or not row[7]:  # 7 sería el índice de kg_disponibles
+                                        # Si tenemos cantidad (índice 3)
+                                        if len(row) > 3 and row[3]:
+                                            try:
+                                                kg_disponibles = row[3]  # Usar el mismo valor que cantidad
+                                                sheets.values().update(
+                                                    spreadsheetId=spreadsheet_id,
+                                                    range=f"{sheet_name}!H{row_num}",  # H es kg_disponibles (columna 8)
+                                                    valueInputOption="RAW",
+                                                    body={"values": [[kg_disponibles]]}
+                                                ).execute()
+                                                logger.info(f"Actualizada kg_disponibles en fila {row_num}")
+                                            except Exception as e:
+                                                logger.error(f"Error al actualizar kg_disponibles en fila {row_num}: {e}")
+                        
+                        logger.info(f"Actualización de datos existentes completada para '{sheet_name}'")
+                    else:
+                        logger.info(f"No hay datos existentes que actualizar en '{sheet_name}'")
+                    
+                    # Si hay otras diferencias, actualizar las cabeceras
+                    elif values[0] != header:
                         logger.warning(f"Las cabeceras existentes no coinciden con las esperadas. Actualizando...")
                         sheets.values().update(
                             spreadsheetId=spreadsheet_id,
@@ -142,10 +215,15 @@ def append_data(sheet_name, data):
         for header in headers:
             if header not in data or not data[header]:
                 logger.warning(f"Campo '{header}' faltante o vacío en los datos. Usando valor por defecto.")
+                
+                # Valores por defecto según el campo
                 if header == 'tipo_cafe':
                     data[header] = "No especificado"
-                elif header in ['cantidad', 'precio', 'total']:
+                elif header in ['cantidad', 'precio', 'total', 'kg_disponibles', 'merma']:
                     data[header] = "0"
+                elif header == 'fase_actual' and sheet_name == 'compras' and 'tipo_cafe' in data:
+                    # Si es una compra, la fase inicial es el tipo de café
+                    data[header] = data.get('tipo_cafe', "No especificado")
                 else:
                     data[header] = ""
         
@@ -322,3 +400,18 @@ def get_filtered_data(sheet_name, filters=None, days=None):
     
     logger.info(f"Filtrado: de {len(all_data)} registros a {len(filtered_data)} registros")
     return filtered_data
+
+def es_transicion_valida(origen, destino):
+    """Verifica si la transición de fase es válida
+    
+    Args:
+        origen: Fase de origen
+        destino: Fase de destino
+        
+    Returns:
+        bool: True si la transición es válida, False en caso contrario
+    """
+    if origen not in TRANSICIONES_PERMITIDAS:
+        return False
+    
+    return destino in TRANSICIONES_PERMITIDAS[origen]
