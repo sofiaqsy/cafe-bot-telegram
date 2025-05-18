@@ -4,7 +4,7 @@ from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import CommandHandler, ConversationHandler, MessageHandler, filters, ContextTypes
 from config import COMPRAS_FILE
 from utils.db import append_data
-from utils.sheets import append_data as append_sheets
+from utils.sheets import append_data as append_sheets, generate_unique_id
 from utils.helpers import get_now_peru, safe_float, format_date_for_sheets
 
 # Configurar logging
@@ -16,8 +16,8 @@ TIPO_CAFE, PROVEEDOR, CANTIDAD, PRECIO, CONFIRMAR = range(5)
 # Datos temporales
 datos_compra = {}
 
-# Headers para la hoja de compras - restructuración: id, fecha, tipo_cafe, proveedor, cantidad, preciototal, notas, registrado_por
-COMPRAS_HEADERS = ["id", "fecha", "tipo_cafe", "proveedor", "cantidad", "preciototal", "notas", "registrado_por"]
+# Headers para la hoja de compras - restructuración: id, fecha, tipo_cafe, proveedor, cantidad, precio, preciototal, notas, registrado_por
+COMPRAS_HEADERS = ["id", "fecha", "tipo_cafe", "proveedor", "cantidad", "precio", "preciototal", "notas", "registrado_por"]
 
 # Tipos de café predefinidos - solo 3 opciones fijas
 TIPOS_CAFE = ["CEREZO", "MOTE", "PERGAMINO"]
@@ -123,9 +123,12 @@ async def precio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         precio = safe_float(update.message.text)
         logger.info(f"Usuario {user_id} ingresó precio: {precio}")
         
-        if precio <= 0:
-            await update.message.reply_text("El precio debe ser mayor que cero. Intenta nuevamente:")
+        # Permitir precio 0 para pruebas, pero advertir
+        if precio < 0:
+            await update.message.reply_text("El precio no puede ser negativo. Intenta nuevamente:")
             return PRECIO
+        elif precio == 0:
+            logger.warning(f"Usuario {user_id} ingresó precio cero. Posible prueba.")
         
         # Guardar el precio
         datos_compra[user_id]["precio"] = precio
@@ -172,6 +175,10 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         # Preparar datos para guardar
         compra = datos_compra[user_id].copy()
         
+        # Generar un ID único para esta compra
+        compra["id"] = generate_unique_id()
+        logger.info(f"Generado ID único para compra: {compra['id']}")
+        
         # Añadir fecha actualizada con formato protegido para Google Sheets
         now = get_now_peru()
         fecha_formateada = now.strftime("%Y-%m-%d %H:%M")
@@ -209,6 +216,7 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                 "tipo_cafe": compra.get("tipo_cafe", ""),
                 "proveedor": compra.get("proveedor", ""),
                 "cantidad": compra.get("cantidad", ""),
+                "precio": compra.get("precio", ""),
                 "preciototal": compra.get("preciototal", ""),
                 "notas": compra.get("notas", ""),
                 "registrado_por": compra.get("registrado_por", "")
@@ -222,6 +230,8 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                 
                 await update.message.reply_text(
                     "✅ ¡Compra registrada exitosamente!\n\n"
+                    f"ID: {compra['id']}\n"
+                    f"Total: {compra['preciototal']}\n\n"
                     "Usa /compra para registrar otra compra.",
                     reply_markup=ReplyKeyboardRemove()
                 )
