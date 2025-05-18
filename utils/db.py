@@ -79,11 +79,15 @@ def append_data(filename: str, row: Dict[str, Any], headers: List[str]) -> None:
         row['fecha'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         logger.info(f"Añadida fecha automática: {row['fecha']}")
     
-    # Añadir la fila a Google Sheets directamente, sin llamar a la función de sheets.py
+    # Verificar que todos los campos necesarios existan
+    # Si faltan, asignar valores por defecto
+    if sheet_name == 'compras':
+        if 'tipo_cafe' not in row or not row['tipo_cafe']:
+            row['tipo_cafe'] = "No especificado"
+            logger.info(f"Añadido tipo de café por defecto: {row['tipo_cafe']}")
+    
+    # Añadir la fila a Google Sheets
     try:
-        # Obtener el nombre de la hoja del nombre del archivo para poder llamar directamente
-        sheet_name = os.path.splitext(os.path.basename(filename))[0]
-        
         # Llamar a la función con el nombre de la hoja y los datos
         result = sheets_append_data(sheet_name, row)
         
