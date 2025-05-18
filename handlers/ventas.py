@@ -4,6 +4,7 @@ from telegram import Update
 from telegram.ext import CommandHandler, ConversationHandler, MessageHandler, filters, ContextTypes
 from config import VENTAS_FILE
 from utils.db import append_data
+from utils.helpers import safe_float
 
 # Configurar logging
 logger = logging.getLogger(__name__)
@@ -22,18 +23,6 @@ productos = [
     "Café en grano", "Café molido", "Café premium", 
     "Café especial", "Café orgánico"
 ]
-
-# Función auxiliar para convertir texto a número seguro
-def safe_float(text):
-    """Convierte un texto a número float, manejando comas como separador decimal"""
-    if not text:
-        return 0.0
-    try:
-        # Reemplazar comas por puntos para la conversión
-        return float(str(text).replace(',', '.').strip())
-    except (ValueError, TypeError):
-        logger.warning(f"Error al convertir '{text}' a float, retornando 0.0")
-        return 0.0
 
 async def venta_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Inicia el proceso de registro de venta"""
