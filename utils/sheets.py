@@ -332,3 +332,401 @@ def append_data(sheet_name, data):
     except Exception as e:
         logger.error(f"Error global al añadir datos a {sheet_name}: {e}")
         return False
+
+def update_cell(sheet_name, row_index, column_name, value):
+    """Actualiza una celda específica en la hoja de cálculo.
+    
+    Args:
+        sheet_name: Nombre de la hoja
+        row_index: Índice de la fila (basado en 0 para las filas de datos, excluyendo las cabeceras)
+        column_name: Nombre de la columna
+        value: Nuevo valor para la celda
+    
+    Returns:
+        bool: True si se actualizó correctamente, False en caso contrario
+    """
+    if sheet_name not in HEADERS:
+        logger.error(f"Nombre de hoja inválido: {sheet_name}")
+        raise ValueError(f"Nombre de hoja inválido: {sheet_name}")
+    
+    try:
+        spreadsheet_id = get_or_create_sheet()
+        sheets = get_sheet_service()
+        
+        # Obtener índice de la columna
+        headers = HEADERS[sheet_name]
+        if column_name not in headers:
+            logger.error(f"Nombre de columna inválido: {column_name}")
+            raise ValueError(f"Nombre de columna inválido: {column_name}")
+        
+        column_index = headers.index(column_name)
+        
+        # Convertir índice de fila (desde 0) a número de fila real en la hoja (desde 1, contando cabeceras)
+        # Fila 1 son las cabeceras, los datos comienzan en la fila 2
+        real_row = row_index + 2
+        
+        # Convertir índice de columna a letra de columna de Excel (A, B, C, ...)
+        column_letter = chr(65 + column_index)  # 65 es el código ASCII para 'A'
+        cell_reference = f"{column_letter}{real_row}"
+        
+        # Pre-procesamiento para campos específicos
+        if (sheet_name == 'adelantos' and column_name == 'fecha') or column_name == 'fecha':
+            value = format_date_for_sheets(value)
+        
+        logger.info(f"Actualizando celda {cell_reference} en hoja '{sheet_name}' con valor: {value}")
+        
+        # Actualizar celda
+        sheets.values().update(
+            spreadsheetId=spreadsheet_id,
+            range=f"{sheet_name}!{cell_reference}",
+            valueInputOption="USER_ENTERED",
+            body={"values": [[value]]}
+        ).execute()
+        
+        logger.info(f"Celda actualizada correctamente: {sheet_name}!{cell_reference}")
+        return True
+    except Exception as e:
+        logger.error(f"Error al actualizar celda: {e}")
+        return False
+
+def get_all_data(sheet_name):
+    """Obtiene todos los datos de la hoja especificada"""
+    if sheet_name not in HEADERS:
+        logger.error(f"Nombre de hoja inválido: {sheet_name}")
+        raise ValueError(f"Nombre de hoja inválido: {sheet_name}")
+    
+    try:
+        spreadsheet_id = get_or_create_sheet()
+        sheets = get_sheet_service()
+        
+        range_name = f"{sheet_name}!A:Z"
+        result = sheets.values().get(
+            spreadsheetId=spreadsheet_id,
+            range=range_name
+        ).execute()
+        
+        values = result.get('values', [])
+        
+        if not values:
+            logger.info(f"No hay datos en la hoja '{sheet_name}'")
+            return []
+        
+        # Convertir filas a diccionarios usando las cabeceras
+        headers = values[0]
+        rows = []
+        
+        for i, row in enumerate(values[1:]):  # Saltar la fila de cabeceras
+            # Asegurarse de que la fila tenga la misma longitud que las cabeceras
+            row_padded = row + [""] * (len(headers) - len(row))
+            # Añadir el _row_index para referencia futura (basado en 0)
+            row_dict = dict(zip(headers, row_padded))
+            row_dict['_row_index'] = i
+            rows.append(row_dict)
+        
+        logger.info(f"Obtenidos {len(rows)} registros de '{sheet_name}'")
+        return rows
+    except Exception as e:
+        logger.error(f"Error al obtener datos de {sheet_name}: {e}")
+        return []
+
+def get_filtered_data(sheet_name, filters=None, days=None):
+    """
+    Obtiene datos filtrados de la hoja especificada
+    
+    Args:
+        sheet_name: Nombre de la hoja
+        filters: Diccionario de filtros campo:valor
+        days: Si se proporciona, filtra por entradas en los últimos X días
+    """
+    all_data = get_all_data(sheet_name)
+    
+    if not all_data:
+        return []
+    
+    filtered_data = all_data
+    
+    # Aplicar filtros
+    if filters:
+        # Para cada clave:valor de filtro, verificar coincidencia
+        filtered_data = []
+        for row in all_data:
+            match = True
+            for key, value in filters.items():
+                # Normalizar valores para comparación (convertir a mayúsculas y eliminar espacios adicionales)
+                row_value = str(row.get(key, '')).strip().upper()
+                filter_value = str(value).strip().upper()
+                
+                if row_value != filter_value:
+                    match = False
+                    break
+            
+            if match:
+                filtered_data.append(row)
+    
+    # Aplicar filtro de fecha (para futura implementación)
+    if days:
+        # TODO: Implementar filtrado por fecha
+        pass
+    
+    logger.info(f"Filtrado: de {len(all_data)} registros a {len(filtered_data)} registros")
+    return filtered_data
+
+def es_transicion_valida(origen, destino):
+    """Verifica si la transición de fase es válida
+    
+    Args:
+        origen: Fase de origen
+        destino: Fase de destino
+        
+    Returns:
+        bool: True si la transición es válida, False en caso contrario
+    """
+    if origen not in TRANSICIONES_PERMITIDAS:
+        return False
+    
+    return destino in TRANSICIONES_PERMITIDAS[origen]
+
+def get_compras_por_fase(fase):
+    """
+    Obtiene todas las compras en una fase específica con kg disponibles
+    
+    Args:
+        fase: Fase actual del café (CEREZO, MOTE, PERGAMINO, etc.)
+        
+    Returns:
+        Lista de compras en la fase especificada que aún tienen kg disponibles
+    """
+    try:
+        logger.info(f"Buscando compras en fase: {fase}")
+        # Obtener todas las compras
+        all_compras = get_all_data('compras')
+        
+        # Filtrar manualmente para evitar problemas de formato
+        compras_disponibles = []
+        for compra in all_compras:
+            # Normalizar fase para comparación
+            fase_actual = str(compra.get('fase_actual', '')).strip().upper()
+            fase_buscada = str(fase).strip().upper()
+            
+            # Verificar si hay coincidencia de fase
+            if fase_actual == fase_buscada:
+                try:
+                    # Verificar kg disponibles
+                    kg_disponibles = float(str(compra.get('kg_disponibles', '0')).replace(',', '.'))
+                    if kg_disponibles > 0:
+                        # Agregar a la lista de compras disponibles
+                        logger.info(f"Compra encontrada: {compra.get('proveedor')} - {kg_disponibles} kg - ID: {compra.get('id')}")
+                        compras_disponibles.append(compra)
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"Error al convertir kg_disponibles: {e}. Valor: {compra.get('kg_disponibles')}")
+                    continue
+        
+        logger.info(f"Total compras encontradas en fase {fase}: {len(compras_disponibles)}")
+        return compras_disponibles
+    except Exception as e:
+        logger.error(f"Error al obtener compras en fase {fase}: {e}")
+        return []
+
+def get_almacen_cantidad(fase):
+    """
+    Obtiene la cantidad disponible de una fase específica del almacén
+    
+    Args:
+        fase: Fase del café (CEREZO, MOTE, PERGAMINO, etc.)
+    
+    Returns:
+        float: Cantidad disponible en kg
+    """
+    try:
+        # Normalizar fase para búsqueda
+        fase_buscada = fase.strip().upper()
+        
+        # Obtener datos de almacén filtrados por fase
+        almacen_data = get_filtered_data('almacen', {'fase': fase_buscada})
+        
+        if not almacen_data:
+            logger.warning(f"No se encontró la fase {fase_buscada} en el almacén")
+            return 0.0
+        
+        # Tomar el primer registro que coincida
+        registro = almacen_data[0]
+        
+        # Convertir cantidad a float
+        try:
+            cantidad = float(str(registro.get('cantidad', '0')).replace(',', '.'))
+            logger.info(f"Cantidad en almacén para fase {fase_buscada}: {cantidad} kg")
+            return cantidad
+        except (ValueError, TypeError) as e:
+            logger.error(f"Error al convertir cantidad en almacén: {e}")
+            return 0.0
+    except Exception as e:
+        logger.error(f"Error al obtener cantidad en almacén para fase {fase}: {e}")
+        return 0.0
+
+def update_almacen(fase, cantidad_cambio, operacion="sumar", notas=""):
+    """
+    Actualiza la cantidad disponible en el almacén para una fase específica
+    
+    Args:
+        fase: Fase del café (CEREZO, MOTE, PERGAMINO, etc.)
+        cantidad_cambio: Cantidad a sumar o restar
+        operacion: "sumar" para añadir, "restar" para disminuir, "establecer" para fijar valor
+        notas: Notas adicionales sobre la operación
+    
+    Returns:
+        bool: True si se actualizó correctamente, False en caso contrario
+    """
+    try:
+        import datetime
+        
+        logger.info(f"Actualizando almacén - Fase: {fase}, Cambio: {cantidad_cambio} kg, Operación: {operacion}")
+        
+        # Normalizar fase
+        fase_normalizada = fase.strip().upper()
+        
+        # Obtener datos actuales del almacén para esta fase
+        almacen_data = get_filtered_data('almacen', {'fase': fase_normalizada})
+        
+        # Si no existe la fase, verificar si es válida y añadirla
+        if not almacen_data:
+            if fase_normalizada in FASES_CAFE:
+                logger.info(f"Fase {fase_normalizada} no encontrada en almacén. Creando...")
+                
+                # Crear nuevo registro para esta fase
+                now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                cantidad_final = cantidad_cambio if operacion in ["sumar", "establecer"] else 0
+                
+                nueva_entrada = {
+                    "fase": fase_normalizada,
+                    "cantidad": cantidad_final,
+                    "ultima_actualizacion": now,
+                    "notas": f"Fase creada. {notas}"
+                }
+                
+                # Añadir a la hoja
+                return append_data("almacen", nueva_entrada)
+            else:
+                logger.error(f"Fase {fase_normalizada} no válida para almacén")
+                return False
+        
+        # Obtener registro y su índice
+        registro = almacen_data[0]
+        row_index = registro.get('_row_index')
+        
+        # Convertir cantidad actual a float
+        try:
+            cantidad_actual = float(str(registro.get('cantidad', '0')).replace(',', '.'))
+        except (ValueError, TypeError):
+            logger.warning(f"Cantidad actual no válida: {registro.get('cantidad')}. Usando 0.")
+            cantidad_actual = 0.0
+        
+        # Calcular nueva cantidad según la operación
+        if operacion == "sumar":
+            nueva_cantidad = cantidad_actual + float(cantidad_cambio)
+        elif operacion == "restar":
+            nueva_cantidad = max(0, cantidad_actual - float(cantidad_cambio))  # Nunca menor que 0
+        elif operacion == "establecer":
+            nueva_cantidad = max(0, float(cantidad_cambio))  # Nunca menor que 0
+        else:
+            logger.error(f"Operación no válida: {operacion}")
+            return False
+        
+        # Redondear a 2 decimales
+        nueva_cantidad = round(nueva_cantidad, 2)
+        
+        # Actualizar campos
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Actualizar cantidad
+        update_cell("almacen", row_index, "cantidad", nueva_cantidad)
+        
+        # Actualizar fecha
+        update_cell("almacen", row_index, "ultima_actualizacion", now)
+        
+        # Actualizar notas (añadir a las existentes)
+        notas_actuales = registro.get('notas', '')
+        nuevas_notas = f"{notas_actuales}; {now}: {operacion.capitalize()} {cantidad_cambio} kg - {notas}"[:250]  # Limitar longitud
+        update_cell("almacen", row_index, "notas", nuevas_notas)
+        
+        logger.info(f"Almacén actualizado - Fase: {fase_normalizada}, Nueva cantidad: {nueva_cantidad} kg")
+        return True
+    except Exception as e:
+        logger.error(f"Error al actualizar almacén: {e}")
+        return False
+
+def actualizar_almacen_desde_proceso(origen, destino, cantidad, merma):
+    """
+    Actualiza el almacén basado en un proceso de transformación
+    
+    Args:
+        origen: Fase de origen del café
+        destino: Fase de destino del café
+        cantidad: Cantidad procesada en kg
+        merma: Cantidad de merma en kg
+    
+    Returns:
+        bool: True si se actualizó correctamente, False en caso contrario
+    """
+    try:
+        logger.info(f"Actualizando almacén desde proceso - Origen: {origen}, Destino: {destino}, Cantidad: {cantidad} kg, Merma: {merma} kg")
+        
+        # 1. Restar la cantidad procesada de la fase de origen
+        resultado_origen = update_almacen(
+            fase=origen,
+            cantidad_cambio=cantidad,
+            operacion="restar",
+            notas=f"Proceso a {destino}"
+        )
+        
+        # 2. Calcular cantidad resultante (restando merma)
+        cantidad_resultante = max(0, float(cantidad) - float(merma))
+        
+        # 3. Sumar la cantidad resultante a la fase de destino
+        resultado_destino = update_almacen(
+            fase=destino,
+            cantidad_cambio=cantidad_resultante,
+            operacion="sumar",
+            notas=f"Procesado desde {origen}"
+        )
+        
+        return resultado_origen and resultado_destino
+    except Exception as e:
+        logger.error(f"Error al actualizar almacén desde proceso: {e}")
+        return False
+
+def sincronizar_almacen_con_compras():
+    """
+    Sincroniza el almacén con las existencias actuales en las compras.
+    Útil para inicializar o corregir discrepancias.
+    
+    Returns:
+        bool: True si se sincronizó correctamente, False en caso contrario
+    """
+    try:
+        logger.info("Iniciando sincronización de almacén con compras")
+        
+        # Para cada fase, calcular la suma total de kg disponibles
+        totales_por_fase = {}
+        for fase in FASES_CAFE:
+            compras = get_compras_por_fase(fase)
+            total_kg = sum(float(str(compra.get('kg_disponibles', '0')).replace(',', '.')) for compra in compras)
+            totales_por_fase[fase] = round(total_kg, 2)
+            logger.info(f"Fase {fase}: {total_kg} kg disponibles en compras")
+        
+        # Actualizar cada fase en el almacén
+        import datetime
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        for fase, total in totales_por_fase.items():
+            update_almacen(
+                fase=fase,
+                cantidad_cambio=total,
+                operacion="establecer",
+                notas=f"Sincronización automática con compras ({now})"
+            )
+        
+        logger.info("Sincronización de almacén completada")
+        return True
+    except Exception as e:
+        logger.error(f"Error al sincronizar almacén: {e}")
+        return False
