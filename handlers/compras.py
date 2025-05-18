@@ -176,9 +176,9 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         # Preparar datos para guardar
         compra = datos_compra[user_id].copy()
         
-        # Añadir fecha actualizada
+        # Añadir fecha actualizada - CORREGIDO: Formato de fecha cambiado para coincidir con el formato esperado
         now = get_now_peru()
-        compra["fecha"] = now.strftime("%Y-%m-%d %H:%M:%S")
+        compra["fecha"] = now.strftime("%Y-%m-%d %H:%M")
         
         # Verificar que todos los datos requeridos estén presentes
         campos_requeridos = ["tipo_cafe", "proveedor", "cantidad", "precio", "total", "fase_actual", "kg_disponibles"]
