@@ -176,7 +176,7 @@ def initialize_sheets():
                         logger.info(f"No hay datos existentes que actualizar en '{sheet_name}'")
                     
                     # Si hay otras diferencias, actualizar las cabeceras
-                    if values[0] != header:
+                    if values and values[0] != header:
                         logger.warning(f"Las cabeceras existentes no coinciden con las esperadas. Actualizando...")
                         sheets.values().update(
                             spreadsheetId=spreadsheet_id,
