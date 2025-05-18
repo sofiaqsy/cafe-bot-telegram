@@ -141,7 +141,263 @@ async def seleccionar_origen(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         return ConversationHandler.END
 
-# El resto de las funciones se mantienen igual hasta la función confirmar
+async def seleccionar_destino(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Guarda la fase de destino y muestra las compras disponibles"""
+    destino = update.message.text.strip().upper()
+    origen = context.user_data['origen']
+    
+    # Verificar que la fase de destino sea válida
+    if not es_transicion_valida(origen, destino):
+        # Mostrar error y regresar a selección de destino
+        destinos_posibles = TRANSICIONES_PERMITIDAS.get(origen, [])
+        keyboard = [[destino] for destino in destinos_posibles]
+        reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+        
+        await update.message.reply_text(
+            f"⚠️ Transición de {origen} a {destino} no es válida.\n\n"
+            "Por favor, selecciona una de las opciones disponibles:",
+            reply_markup=reply_markup
+        )
+        return SELECCIONAR_DESTINO
+    
+    # Guardar la fase de destino
+    context.user_data['destino'] = destino
+    logger.info(f"Usuario {update.effective_user.id} seleccionó fase de destino: {destino}")
+    
+    # Obtener las compras disponibles para esta fase
+    compras_disponibles = context.user_data['compras_disponibles']
+    
+    # Mostrar información de las compras disponibles y preguntar cuáles quiere procesar
+    mensaje = f"🔍 Compras en fase {origen} disponibles para procesar:\n\n"
+    
+    # Crear teclado inline con las compras disponibles
+    keyboard = []
+    for i, compra in enumerate(compras_disponibles):
+        # Extraer información de la compra
+        proveedor = compra.get('proveedor', 'Desconocido')
+        kg_disponibles = safe_float(compra.get('kg_disponibles', 0))
+        fecha = compra.get('fecha', 'Sin fecha')
+        compra_id = compra.get('id', f"R{compra.get('_row_index', 'X')}")  # Usar ID o índice como fallback
+        
+        # Añadir fila de información
+        mensaje += f"{i+1}. {proveedor}: {kg_disponibles} kg ({fecha}) - ID: {compra_id}\n"
+        
+        # Añadir botón para seleccionar todas las compras
+        if i == 0:
+            keyboard.append([
+                InlineKeyboardButton("Seleccionar todas", callback_data="todas")
+            ])
+        
+        # Crear botón para esta compra
+        keyboard.append([
+            InlineKeyboardButton(f"{i+1}. {proveedor} ({kg_disponibles} kg)", callback_data=f"compra_{i}")
+        ])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(
+        mensaje + "\n¿Qué compras deseas procesar?",
+        reply_markup=reply_markup
+    )
+    return SELECCIONAR_COMPRAS
+
+async def seleccionar_compras_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Procesa la selección de compras a través de botones inline"""
+    query = update.callback_query
+    await query.answer()
+    
+    compras_disponibles = context.user_data['compras_disponibles']
+    origen = context.user_data['origen']
+    destino = context.user_data['destino']
+    
+    if query.data == "todas":
+        # Seleccionar todas las compras
+        context.user_data['compras_seleccionadas'] = compras_disponibles
+        # Calcular total de kg disponibles
+        total_kg = sum(safe_float(compra.get('kg_disponibles', 0)) for compra in compras_disponibles)
+    else:
+        # Seleccionar una compra específica
+        indice = int(query.data.split('_')[1])
+        context.user_data['compras_seleccionadas'] = [compras_disponibles[indice]]
+        total_kg = safe_float(compras_disponibles[indice].get('kg_disponibles', 0))
+    
+    # Formatear mensaje de compras seleccionadas
+    compras_info = []
+    for compra in context.user_data['compras_seleccionadas']:
+        proveedor = compra.get('proveedor', 'Desconocido')
+        kg = safe_float(compra.get('kg_disponibles', 0))
+        compra_id = compra.get('id', f"R{compra.get('_row_index', 'X')}")
+        compras_info.append(f"{proveedor} ({kg} kg) - ID: {compra_id}")
+    
+    compras_texto = "\n- ".join([""] + compras_info)
+    
+    await query.edit_message_text(
+        f"🛒 Has seleccionado las siguientes compras:{compras_texto}\n\n"
+        f"Total disponible: {total_kg} kg\n\n"
+        f"¿Cuántos kg de café {origen} deseas transformar a {destino}?"
+    )
+    
+    # Preguntar la cantidad a procesar
+    await update.effective_chat.send_message(
+        f"📝 Ingresa la cantidad en kg a procesar (máximo {total_kg} kg):",
+        reply_markup=ReplyKeyboardRemove()
+    )
+    
+    context.user_data['kg_disponibles'] = total_kg
+    return INGRESAR_CANTIDAD
+
+async def ingresar_cantidad(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Procesa la cantidad ingresada y solicita confirmar la merma"""
+    # Obtener la cantidad ingresada
+    try:
+        texto_cantidad = update.message.text.strip().replace(',', '.')
+        cantidad = float(texto_cantidad)
+    except ValueError:
+        await update.message.reply_text(
+            "⚠️ La cantidad ingresada no es válida. Por favor, ingresa un número."
+        )
+        return INGRESAR_CANTIDAD
+    
+    # Verificar que la cantidad sea positiva
+    if cantidad <= 0:
+        await update.message.reply_text(
+            "⚠️ La cantidad debe ser mayor que 0. Por favor, ingresa un valor válido."
+        )
+        return INGRESAR_CANTIDAD
+    
+    # Verificar que no exceda la cantidad disponible
+    kg_disponibles = context.user_data['kg_disponibles']
+    if cantidad > kg_disponibles:
+        await update.message.reply_text(
+            f"⚠️ La cantidad ingresada ({cantidad} kg) excede la cantidad disponible ({kg_disponibles} kg).\n"
+            "Por favor, ingresa una cantidad menor o igual a la disponible."
+        )
+        return INGRESAR_CANTIDAD
+    
+    # Guardar la cantidad
+    context.user_data['cantidad'] = cantidad
+    logger.info(f"Usuario {update.effective_user.id} ingresó cantidad: {cantidad} kg")
+    
+    # Calcular merma sugerida según la transición
+    origen = context.user_data['origen']
+    destino = context.user_data['destino']
+    
+    # Porcentajes aproximados de merma por tipo de transición
+    mermas_sugeridas = {
+        "CEREZO_MOTE": 0.85,      # 85% de pérdida de peso cerezo a mote
+        "MOTE_PERGAMINO": 0.20,   # 20% de pérdida de mote a pergamino
+        "PERGAMINO_TOSTADO": 0.18, # 18% de pérdida de pergamino a tostado
+        "TOSTADO_MOLIDO": 0.02,   # 2% de pérdida de tostado a molido
+        "PERGAMINO_MOLIDO": 0.20  # ~20% para transición directa pergamino a molido
+    }
+    
+    transicion = f"{origen}_{destino}"
+    merma_sugerida = round(cantidad * mermas_sugeridas.get(transicion, 0.15), 2)  # Usar 15% como valor por defecto
+    
+    # Solicitar confirmación de merma
+    await update.message.reply_text(
+        f"⚖️ ESTIMACIÓN DE MERMA\n\n"
+        f"Transformar {cantidad} kg de {origen} a {destino} tiene una merma estimada de {merma_sugerida} kg.\n\n"
+        "Por favor, ingresa la merma real o presiona enter para aceptar la sugerida:"
+    )
+    
+    # Guardar la merma sugerida
+    context.user_data['merma_sugerida'] = merma_sugerida
+    
+    return CONFIRMAR_MERMA
+
+async def confirmar_merma(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Confirma la merma y solicita notas adicionales"""
+    texto_merma = update.message.text.strip()
+    
+    # Si el usuario no ingresó nada, usar la merma sugerida
+    if not texto_merma:
+        merma = context.user_data['merma_sugerida']
+    else:
+        # Intentar convertir a número
+        try:
+            merma = float(texto_merma.replace(',', '.'))
+            # Verificar que la merma sea no negativa y no mayor que la cantidad
+            cantidad = context.user_data['cantidad']
+            if merma < 0:
+                await update.message.reply_text(
+                    "⚠️ La merma no puede ser negativa. Usando 0 como merma."
+                )
+                merma = 0
+            elif merma > cantidad:
+                await update.message.reply_text(
+                    f"⚠️ La merma ({merma} kg) no puede ser mayor que la cantidad a procesar ({cantidad} kg).\n"
+                    "Usando cantidad total como merma (pérdida total)."
+                )
+                merma = cantidad
+        except ValueError:
+            await update.message.reply_text(
+                f"⚠️ Valor de merma no válido. Usando la merma sugerida de {context.user_data['merma_sugerida']} kg."
+            )
+            merma = context.user_data['merma_sugerida']
+    
+    # Guardar la merma
+    context.user_data['merma'] = merma
+    logger.info(f"Usuario {update.effective_user.id} confirmó merma: {merma} kg")
+    
+    # Solicitar notas adicionales
+    await update.message.reply_text(
+        "📝 Por favor, ingresa notas adicionales para este proceso (opcional):"
+    )
+    
+    return AGREGAR_NOTAS
+
+async def agregar_notas(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Guardar las notas y mostrar resumen para confirmación final"""
+    notas = update.message.text.strip()
+    
+    # Guardar las notas
+    context.user_data['notas'] = notas
+    logger.info(f"Usuario {update.effective_user.id} ingresó notas: {notas}")
+    
+    # Obtener datos para resumen
+    origen = context.user_data['origen']
+    destino = context.user_data['destino']
+    cantidad = context.user_data['cantidad']
+    merma = context.user_data['merma']
+    compras_seleccionadas = context.user_data['compras_seleccionadas']
+    
+    # Calcular cantidad resultante
+    cantidad_resultante = cantidad - merma
+    
+    # Formatear información de compras
+    compras_info = []
+    for compra in compras_seleccionadas:
+        proveedor = compra.get('proveedor', 'Desconocido')
+        kg = safe_float(compra.get('kg_disponibles', 0))
+        compra_id = compra.get('id', f"R{compra.get('_row_index', 'X')}")
+        compras_info.append(f"{proveedor} ({kg} kg) - ID: {compra_id}")
+    
+    compras_texto = "\n- ".join([""] + compras_info)
+    
+    # Crear resumen
+    resumen = (
+        "📋 RESUMEN DEL PROCESO\n\n"
+        f"Origen: {origen}\n"
+        f"Destino: {destino}\n"
+        f"Cantidad: {cantidad} kg\n"
+        f"Merma: {merma} kg\n"
+        f"Cantidad resultante: {cantidad_resultante} kg\n"
+        f"Compras:{compras_texto}\n\n"
+        f"Notas: {notas or 'Sin notas adicionales'}\n\n"
+        "¿Confirmas este proceso? (sí/no)"
+    )
+    
+    # Crear teclado de confirmación
+    keyboard = [["sí", "no"]]
+    reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+    
+    await update.message.reply_text(
+        resumen,
+        reply_markup=reply_markup
+    )
+    
+    return CONFIRMAR
 
 async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Confirma y guarda el proceso"""
