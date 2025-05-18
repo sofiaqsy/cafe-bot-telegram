@@ -28,11 +28,11 @@ HEADERS = {
 # Definir las fases posibles del café
 FASES_CAFE = ["CEREZO", "MOTE", "PERGAMINO", "VERDE", "TOSTADO", "MOLIDO"]
 
-# Definir las transiciones permitidas entre fases
+# Definir las transiciones permitidas entre fases - Actualizado para permitir PERGAMINO -> TOSTADO
 TRANSICIONES_PERMITIDAS = {
     "CEREZO": ["MOTE", "PERGAMINO"],
     "MOTE": ["PERGAMINO"],
-    "PERGAMINO": ["VERDE"],
+    "PERGAMINO": ["VERDE", "TOSTADO"],  # Ahora PERGAMINO puede ir a VERDE o directamente a TOSTADO
     "VERDE": ["TOSTADO"],
     "TOSTADO": ["MOLIDO"]
 }
