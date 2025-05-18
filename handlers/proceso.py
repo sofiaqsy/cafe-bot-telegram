@@ -419,7 +419,7 @@ async def seleccionar_registros_callback(update: Update, context: ContextTypes.D
         return INGRESAR_CANTIDAD
 
 async def ingresar_cantidad(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Procesa la cantidad ingresada y solicita confirmar la merma"""
+    """Procesa la cantidad ingresada y solicita la cantidad de kilos resultantes"""
     # Obtener la cantidad ingresada
     try:
         texto_cantidad = update.message.text.strip().replace(',', '.')
@@ -462,53 +462,48 @@ async def ingresar_cantidad(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     context.user_data['merma_sugerida'] = merma_sugerida
     context.user_data['cantidad_resultante_esperada'] = cantidad_resultante_esperada
     
-    # Solicitar confirmación de merma
+    # Solicitar la cantidad de kilos resultantes en lugar de la merma
     await update.message.reply_text(
-        f"⚖️ ESTIMACIÓN DE MERMA\n\n"
-        f"Transformar {cantidad} kg de {origen} a {destino} tiene una merma estimada de {merma_sugerida} kg.\n"
-        f"Cantidad resultante esperada: {cantidad_resultante_esperada} kg\n\n"
-        "Por favor, ingresa la merma real o presiona enter para aceptar la sugerida:"
+        f"⚖️ ESTIMACIÓN DE CANTIDAD RESULTANTE\n\n"
+        f"Transformar {cantidad} kg de {origen} a {destino} generaría aproximadamente {cantidad_resultante_esperada} kg de café.\n\n"
+        f"Por favor, ingresa la cantidad de kilos resultante real:"
     )
     
     return CONFIRMAR_MERMA
 
 async def confirmar_merma(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Confirma la merma y solicita notas adicionales"""
-    texto_merma = update.message.text.strip()
+    """Confirma la cantidad de kilos resultante y calcula la merma"""
+    texto_cantidad_resultante = update.message.text.strip()
     
-    # Si el usuario no ingresó nada, usar la merma sugerida
-    if not texto_merma:
-        merma = context.user_data['merma_sugerida']
-    else:
-        # Intentar convertir a número
-        try:
-            merma = float(texto_merma.replace(',', '.'))
-            # Verificar que la merma sea no negativa y no mayor que la cantidad
-            cantidad = context.user_data['cantidad']
-            if merma < 0:
-                await update.message.reply_text(
-                    "⚠️ La merma no puede ser negativa. Usando 0 como merma."
-                )
-                merma = 0
-            elif merma > cantidad:
-                await update.message.reply_text(
-                    f"⚠️ La merma ({merma} kg) no puede ser mayor que la cantidad a procesar ({cantidad} kg).\n"
-                    "Usando cantidad total como merma (pérdida total)."
-                )
-                merma = cantidad
-        except ValueError:
+    # Intentar convertir a número
+    try:
+        cantidad_resultante = float(texto_cantidad_resultante.replace(',', '.'))
+        # Verificar que la cantidad resultante sea no negativa y no mayor que la cantidad
+        cantidad = context.user_data['cantidad']
+        if cantidad_resultante < 0:
             await update.message.reply_text(
-                f"⚠️ Valor de merma no válido. Usando la merma sugerida de {context.user_data['merma_sugerida']} kg."
+                "⚠️ La cantidad resultante no puede ser negativa. Usando 0 como cantidad resultante."
             )
-            merma = context.user_data['merma_sugerida']
+            cantidad_resultante = 0
+        elif cantidad_resultante > cantidad:
+            await update.message.reply_text(
+                f"⚠️ La cantidad resultante ({cantidad_resultante} kg) no puede ser mayor que la cantidad a procesar ({cantidad} kg).\n"
+                f"Usando la cantidad a procesar ({cantidad} kg) como cantidad resultante."
+            )
+            cantidad_resultante = cantidad
+    except ValueError:
+        await update.message.reply_text(
+            f"⚠️ Valor de cantidad resultante no válido. Usando la cantidad resultante esperada de {context.user_data['cantidad_resultante_esperada']} kg."
+        )
+        cantidad_resultante = context.user_data['cantidad_resultante_esperada']
     
-    # Guardar la merma y calcular la cantidad resultante real
-    context.user_data['merma'] = merma
-    cantidad = context.user_data['cantidad']
-    cantidad_resultante = cantidad - merma
+    # Guardar la cantidad resultante y calcular la merma real
     context.user_data['cantidad_resultante'] = cantidad_resultante
+    cantidad = context.user_data['cantidad']
+    merma = cantidad - cantidad_resultante
+    context.user_data['merma'] = merma
     
-    logger.info(f"Usuario {update.effective_user.id} confirmó merma: {merma} kg, cantidad resultante: {cantidad_resultante} kg")
+    logger.info(f"Usuario {update.effective_user.id} ingresó cantidad resultante: {cantidad_resultante} kg, merma calculada: {merma} kg")
     
     # Solicitar notas adicionales
     await update.message.reply_text(
