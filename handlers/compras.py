@@ -21,6 +21,18 @@ COMPRAS_HEADERS = ["fecha", "tipo_cafe", "proveedor", "cantidad", "precio", "tot
 # Tipos de café predefinidos - solo 3 opciones fijas
 TIPOS_CAFE = ["CEREZO", "MOTE", "PERGAMINO"]
 
+# Función auxiliar para convertir texto a número seguro
+def safe_float(text):
+    """Convierte un texto a número float, manejando comas como separador decimal"""
+    if not text:
+        return 0.0
+    try:
+        # Reemplazar comas por puntos para la conversión
+        return float(str(text).replace(',', '.').strip())
+    except (ValueError, TypeError):
+        logger.warning(f"Error al convertir '{text}' a float, retornando 0.0")
+        return 0.0
+
 async def compra_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Inicia el proceso de registro de compra solicitando primero el tipo de café"""
     user_id = update.effective_user.id
@@ -94,8 +106,7 @@ async def cantidad(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Guarda la cantidad y solicita el precio"""
     user_id = update.effective_user.id
     try:
-        cantidad_text = update.message.text.replace(',', '.').strip()
-        cantidad = float(cantidad_text)
+        cantidad = safe_float(update.message.text)
         logger.info(f"Usuario {user_id} ingresó cantidad: {cantidad}")
         
         if cantidad <= 0:
@@ -120,8 +131,7 @@ async def precio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Guarda el precio y solicita confirmación"""
     user_id = update.effective_user.id
     try:
-        precio_text = update.message.text.replace(',', '.').strip()
-        precio = float(precio_text)
+        precio = safe_float(update.message.text)
         logger.info(f"Usuario {user_id} ingresó precio: {precio}")
         
         if precio <= 0:
