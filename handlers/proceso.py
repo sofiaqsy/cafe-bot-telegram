@@ -9,7 +9,8 @@ from config import PROCESO_FILE
 from utils.db import append_data, get_all_data
 from utils.sheets import (
     update_cell, FASES_CAFE, TRANSICIONES_PERMITIDAS, es_transicion_valida, 
-    get_compras_por_fase, get_almacen_cantidad, actualizar_almacen_desde_proceso
+    get_compras_por_fase, get_almacen_cantidad, actualizar_almacen_desde_proceso,
+    leer_almacen_para_proceso
 )
 from utils.helpers import format_currency, get_now_peru, safe_float
 
@@ -32,10 +33,15 @@ async def proceso_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     # Crear teclado con las fases disponibles como origen
     keyboard = []
     
+    # Leer datos del almacén para mostrar disponibilidad
+    almacen_data = leer_almacen_para_proceso()
+    
     # Mostrar información de disponibilidad en el almacén para cada fase
     for fase in FASES_CAFE:
         # Obtener cantidad disponible en el almacén para esta fase
-        cantidad_disponible = get_almacen_cantidad(fase)
+        cantidad_disponible = 0
+        if fase in almacen_data:
+            cantidad_disponible = almacen_data[fase]['cantidad_total']
         
         if cantidad_disponible > 0:
             keyboard.append([f"{fase} ({cantidad_disponible} kg)"])
