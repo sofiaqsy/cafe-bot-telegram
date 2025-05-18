@@ -449,6 +449,10 @@ async def ingresar_cantidad(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         "CEREZO_MOTE": 0.85,      # 85% de pérdida de peso cerezo a mote
         "MOTE_PERGAMINO": 0.20,   # 20% de pérdida de mote a pergamino
         "PERGAMINO_VERDE": 0.18,  # 18% de pérdida de pergamino a verde
+        "PERGAMINO_TOSTADO": 0.20, # 20% de pérdida de pergamino a tostado
+        "PERGAMINO_MOLIDO": 0.25, # 25% de pérdida de pergamino a molido
+        "VERDE_TOSTADO": 0.15,    # 15% de pérdida de verde a tostado
+        "TOSTADO_MOLIDO": 0.05    # 5% de pérdida de tostado a molido
     }
     
     transicion = f"{origen}_{destino}"
