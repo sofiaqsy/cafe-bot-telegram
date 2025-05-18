@@ -213,7 +213,7 @@ def append_data(sheet_name, data):
     
     try:
         spreadsheet_id = get_or_create_sheet()
-        sheets = get_sheet_service()
+        service = get_sheet_service()
         
         # Para compras, asegurar que tenga un ID único
         if sheet_name == 'compras' and 'id' not in data:
@@ -267,68 +267,119 @@ def append_data(sheet_name, data):
         logger.info(f"Añadiendo datos a '{sheet_name}': {data}")
         logger.info(f"Datos formateados para Sheets: {row_data}")
         
-        # Usar el enfoque manual: obtener el número de filas actuales y añadir en la siguiente fila
-        # Este método evita el uso de append() que está causando problemas
+        # ENFOQUE COMPLETAMENTE NUEVO
         try:
-            # Primero, contar cuántas filas hay actualmente 
-            range_name = f"{sheet_name}!A:A"
-            response = sheets.values().get(
+            # 1. Primero obtenemos el ID de la hoja
+            sheet_metadata = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+            sheets = sheet_metadata.get('sheets', '')
+            sheet_id = None
+            for sheet in sheets:
+                if sheet['properties']['title'] == sheet_name:
+                    sheet_id = sheet['properties']['sheetId']
+                    break
+            
+            if sheet_id is None:
+                logger.error(f"No se pudo encontrar el ID de la hoja '{sheet_name}'")
+                return False
+            
+            logger.info(f"Usando sheet_id: {sheet_id} para '{sheet_name}'")
+            
+            # 2. Usamos appendCells directamente en el API en lugar del helper append()
+            # Este enfoque evita completamente el problema de 'Resource' object has no attribute 'values'
+            request_body = {
+                "requests": [
+                    {
+                        "appendCells": {
+                            "sheetId": sheet_id,
+                            "rows": [
+                                {
+                                    "values": [
+                                        {"userEnteredValue": {"stringValue": str(value) if value is not None else ""}} 
+                                        for value in row_data
+                                    ]
+                                }
+                            ],
+                            "fields": "userEnteredValue"
+                        }
+                    }
+                ]
+            }
+            
+            # Ejecutar el batchUpdate con la solicitud de appendCells
+            response = service.spreadsheets().batchUpdate(
                 spreadsheetId=spreadsheet_id,
-                range=range_name
+                body=request_body
             ).execute()
             
-            # Determinar la próxima fila a usar (filas actuales + 1)
-            values = response.get('values', [])
-            next_row = len(values) + 1
-            logger.info(f"Se añadirán datos en la fila {next_row}")
-            
-            # Construir el rango que abarcará todos los datos
-            update_range = f"{sheet_name}!A{next_row}"
-            
-            # Escribir los datos directamente
-            sheets.values().update(
-                spreadsheetId=spreadsheet_id,
-                range=update_range,
-                valueInputOption="USER_ENTERED",
-                body={"values": [row_data]}
-            ).execute()
-            
-            logger.info(f"Datos añadidos correctamente a '{sheet_name}' en la fila {next_row}")
+            logger.info(f"Datos añadidos correctamente a '{sheet_name}' usando appendCells")
             return True
         except Exception as e:
-            logger.error(f"Error al añadir datos: {e}")
-            # Si falla el método manual, intentar otro enfoque
+            logger.error(f"Error al usar appendCells: {e}")
+            
+            # Si falla el método principal, intentar un método de respaldo
             try:
-                logger.info("Intentando método alternativo de añadir al final...")
+                logger.info("Intentando método de respaldo con batchUpdate...")
                 
-                # Calcular un rango muy grande que abarque toda la hoja
-                # Esto es menos eficiente pero puede funcionar como último recurso
-                all_data_range = f"{sheet_name}!A1:Z1000"
-                response = sheets.values().get(
+                # Obtener todas las filas para determinar el índice de la próxima fila
+                response = service.spreadsheets().values().get(
                     spreadsheetId=spreadsheet_id,
-                    range=all_data_range
+                    range=f"{sheet_name}!A:A"
                 ).execute()
                 
-                # Determinar la próxima fila a usar
-                all_values = response.get('values', [])
-                next_row = len(all_values) + 1
+                # Determinar la próxima fila (la cantidad de filas actuales + 1)
+                next_row = len(response.get('values', [])) + 1
+                logger.info(f"Siguiente fila disponible: {next_row}")
                 
-                # Construir un rango específico para esta fila
-                final_range = f"{sheet_name}!A{next_row}:Z{next_row}"
-                
-                # Hacer la actualización
-                sheets.values().update(
+                # Actualizar esa fila específica
+                update_response = service.spreadsheets().values().update(
                     spreadsheetId=spreadsheet_id,
-                    range=final_range,
+                    range=f"{sheet_name}!A{next_row}:Z{next_row}",
                     valueInputOption="USER_ENTERED",
                     body={"values": [row_data]}
                 ).execute()
                 
-                logger.info(f"Datos añadidos con método alternativo a '{sheet_name}' en la fila {next_row}")
+                logger.info(f"Datos añadidos correctamente a '{sheet_name}' en la fila {next_row} usando método de respaldo")
                 return True
-            except Exception as alt_e:
-                logger.error(f"Error total al añadir datos: {alt_e}")
-                return False
+            except Exception as backup_error:
+                logger.error(f"Error con método de respaldo: {backup_error}")
+                
+                # Último intento: crear fila por fila manualmente (enfoque extremadamente básico)
+                try:
+                    logger.info("Intentando método de último recurso...")
+                    
+                    # Construir una solicitud sin usar métodos auxiliares
+                    from googleapiclient.http import build_http
+                    
+                    # Crear el objeto Http
+                    http = build_http()
+                    
+                    # URL para el API de Sheets
+                    url = f"https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}/values/{sheet_name}!A:A:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS"
+                    
+                    # Datos a enviar
+                    data = {
+                        "values": [row_data]
+                    }
+                    
+                    # Headers con token de autorización
+                    headers = {
+                        "Authorization": f"Bearer {service._http.credentials.token}",
+                        "Content-Type": "application/json"
+                    }
+                    
+                    # Realizar la solicitud POST
+                    import requests
+                    response = requests.post(url, json=data, headers=headers)
+                    
+                    if response.status_code == 200:
+                        logger.info(f"Datos añadidos correctamente a '{sheet_name}' usando método de último recurso")
+                        return True
+                    else:
+                        logger.error(f"Error con método de último recurso: {response.text}")
+                        return False
+                except Exception as final_error:
+                    logger.error(f"Error con método de último recurso: {final_error}")
+                    return False
     except Exception as e:
         logger.error(f"Error global al añadir datos a {sheet_name}: {e}")
         return False
