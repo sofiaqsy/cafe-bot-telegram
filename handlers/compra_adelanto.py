@@ -1,5 +1,5 @@
 import logging
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import (
     ContextTypes, CommandHandler, ConversationHandler, 
     MessageHandler, filters, CallbackQueryHandler
@@ -10,8 +10,8 @@ from utils.db import append_data, get_all_data
 from utils.sheets import update_cell
 from utils.helpers import format_currency, calculate_total, get_now_peru
 
-# Estados para la conversación
-SELECCIONAR_PROVEEDOR, CANTIDAD, PRECIO, CALIDAD, CONFIRMAR = range(5)
+# Estados para la conversación - actualizado para incluir tipo_cafe y quitar calidad
+SELECCIONAR_PROVEEDOR, TIPO_CAFE, CANTIDAD, PRECIO, CONFIRMAR = range(5)
 
 # Logger
 logger = logging.getLogger(__name__)
@@ -19,8 +19,11 @@ logger = logging.getLogger(__name__)
 # Estado pendiente para compras
 ESTADO_PENDIENTE = "Pendiente"
 
-# Headers para la hoja de compras con adelanto
-COMPRAS_HEADERS = ["fecha", "hora", "proveedor", "cantidad", "precio", "calidad", "total", 
+# Tipos de café predefinidos - solo 3 opciones fijas (copiado de compras.py)
+TIPOS_CAFE = ["CEREZO", "MOTE", "PERGAMINO"]
+
+# Headers para la hoja de compras con adelanto - Se eliminó 'calidad' de la lista
+COMPRAS_HEADERS = ["fecha", "hora", "tipo_cafe", "proveedor", "cantidad", "precio", "total", 
                    "monto_adelanto", "monto_efectivo", "kg_disponibles", "estado", "notas", "registrado_por"]
 
 async def compra_con_adelanto_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -138,14 +141,24 @@ async def seleccionar_proveedor_callback(update: Update, context: ContextTypes.D
         context.user_data['saldo_adelanto'] = saldo_total
         context.user_data['adelantos_proveedor'] = datos_proveedor['adelantos']
         
-        # Mostrar mensaje de proveedor seleccionado y solicitar la cantidad de café
+        # Crear teclado con las 3 opciones predefinidas para tipo de café
+        keyboard = [[tipo] for tipo in TIPOS_CAFE]
+        reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+        
+        # Mostrar mensaje de proveedor seleccionado y solicitar tipo de café
         await query.edit_message_text(
             f"👨‍🌾 Proveedor seleccionado: {proveedor}\n"
-            f"💰 Saldo disponible: {format_currency(saldo_total)}\n\n"
-            f"Ahora, ingresa la cantidad de café en kg:"
+            f"💰 Saldo disponible: {format_currency(saldo_total)}"
         )
         
-        return CANTIDAD
+        # Solicitar tipo de café con teclado
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="Selecciona el tipo de café:",
+            reply_markup=reply_markup
+        )
+        
+        return TIPO_CAFE
     except Exception as e:
         logger.error(f"Error procesando selección de proveedor: {e}")
         await query.edit_message_text(
@@ -153,6 +166,34 @@ async def seleccionar_proveedor_callback(update: Update, context: ContextTypes.D
         )
         context.user_data.clear()
         return ConversationHandler.END
+
+async def tipo_cafe_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Guardar el tipo de café y solicitar la cantidad"""
+    selected_tipo = update.message.text.strip().upper()
+    
+    # Verificar que sea uno de los tipos permitidos
+    if selected_tipo not in TIPOS_CAFE:
+        # Si no es un tipo válido, volver a mostrar las opciones
+        keyboard = [[tipo] for tipo in TIPOS_CAFE]
+        reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+        
+        await update.message.reply_text(
+            f"Tipo de café no válido. Por favor, selecciona una de las opciones disponibles:",
+            reply_markup=reply_markup
+        )
+        return TIPO_CAFE
+    
+    # Guardar el tipo de café
+    context.user_data['tipo_cafe'] = selected_tipo
+    logger.info(f"Usuario {update.effective_user.id} seleccionó tipo de café: {selected_tipo}")
+    
+    # Solicitar la cantidad de café
+    await update.message.reply_text(
+        f"Tipo de café: {selected_tipo}\n\n"
+        "Ahora, ingresa la cantidad de café en kg:",
+        reply_markup=ReplyKeyboardRemove()
+    )
+    return CANTIDAD
 
 async def cantidad_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Guardar la cantidad y solicitar el precio"""
@@ -178,7 +219,7 @@ async def cantidad_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         return CANTIDAD
 
 async def precio_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Guardar el precio y solicitar la calidad"""
+    """Guardar el precio y mostrar resumen para confirmar"""
     try:
         precio_text = update.message.text.replace(',', '.').strip()
         precio = float(precio_text)
@@ -194,35 +235,10 @@ async def precio_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         total = calculate_total(cantidad, precio)
         context.user_data['total'] = total
         
-        await update.message.reply_text(
-            f"💵 Precio: {format_currency(precio)} por kg\n"
-            f"💰 Total: {format_currency(total)}\n\n"
-            "¿Cuál es la calidad del café (1-5 estrellas)?"
-        )
-        return CALIDAD
-    except ValueError:
-        await update.message.reply_text(
-            "⚠️ Por favor, ingresa un número válido para el precio."
-        )
-        return PRECIO
-
-async def calidad_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Guardar la calidad y mostrar resumen para confirmar"""
-    try:
-        calidad = int(update.message.text.strip())
-        
-        if not (1 <= calidad <= 5):
-            await update.message.reply_text(
-                "⚠️ La calidad debe ser un número del 1 al 5. Intenta nuevamente:"
-            )
-            return CALIDAD
-        
-        context.user_data['calidad'] = calidad
-        
         # Obtener datos para el resumen
         proveedor = context.user_data['proveedor']
+        tipo_cafe = context.user_data['tipo_cafe']
         saldo_adelanto = context.user_data['saldo_adelanto']
-        total = context.user_data['total']
         
         # Calcular cuánto se pagará con adelanto y cuánto en efectivo
         if total <= saldo_adelanto:
@@ -238,28 +254,30 @@ async def calidad_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         context.user_data['monto_efectivo'] = monto_efectivo
         context.user_data['nuevo_saldo'] = nuevo_saldo
         
-        # Mostrar estrellas para la calidad
-        estrellas = '⭐' * calidad
+        # Crear teclado para confirmación
+        keyboard = [["Sí", "No"]]
+        reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
         
         # Mostrar resumen para confirmar
         await update.message.reply_text(
             "📋 RESUMEN DE COMPRA CON ADELANTO\n\n"
             f"👨‍🌾 Proveedor: {proveedor}\n"
+            f"☕ Tipo de café: {tipo_cafe}\n"
             f"📦 Cantidad: {context.user_data['cantidad']} kg\n"
             f"💵 Precio por kg: {format_currency(context.user_data['precio'])}\n"
-            f"🏆 Calidad: {estrellas}\n"
             f"💰 Total: {format_currency(total)}\n\n"
             f"💳 Pago con adelanto: {format_currency(monto_adelanto)}\n"
             f"💵 Pago en efectivo: {format_currency(monto_efectivo)}\n"
             f"💰 Saldo restante: {format_currency(nuevo_saldo)}\n\n"
-            "¿Confirmas esta compra? (Sí/No)"
+            "¿Confirmas esta compra?",
+            reply_markup=reply_markup
         )
         return CONFIRMAR
     except ValueError:
         await update.message.reply_text(
-            "⚠️ Por favor, ingresa un número del 1 al 5 para la calidad."
+            "⚠️ Por favor, ingresa un número válido para el precio."
         )
-        return CALIDAD
+        return PRECIO
 
 async def confirmar_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Confirmar y registrar la compra con adelanto"""
@@ -269,9 +287,9 @@ async def confirmar_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         try:
             # Obtener datos para la compra
             proveedor = context.user_data['proveedor']
+            tipo_cafe = context.user_data['tipo_cafe']
             cantidad = context.user_data['cantidad']
             precio = context.user_data['precio']
-            calidad = context.user_data['calidad']
             total = context.user_data['total']
             monto_adelanto = context.user_data['monto_adelanto']
             monto_efectivo = context.user_data['monto_efectivo']
@@ -323,10 +341,10 @@ async def confirmar_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             compra_data = {
                 "fecha": now.strftime("%Y-%m-%d"),
                 "hora": now.strftime("%H:%M:%S"),
+                "tipo_cafe": tipo_cafe,
                 "proveedor": proveedor,
                 "cantidad": cantidad,
                 "precio": precio,
-                "calidad": calidad,
                 "total": total,
                 "monto_adelanto": monto_adelanto,
                 "monto_efectivo": monto_efectivo,
@@ -339,28 +357,30 @@ async def confirmar_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             # Guardar la compra
             append_data("compras", compra_data, COMPRAS_HEADERS)
             
-            # Mostrar estrellas para la calidad
-            estrellas = '⭐' * calidad
-            
             # Confirmación al usuario (simplificada)
             await update.message.reply_text(
                 "✅ Compra registrada correctamente:\n\n"
                 f"👨‍🌾 Proveedor: {proveedor}\n"
+                f"☕ Tipo de café: {tipo_cafe}\n"
                 f"📦 Cantidad: {cantidad} kg\n"
                 f"💵 Precio por kg: {format_currency(precio)}\n"
-                f"🏆 Calidad: {estrellas}\n"
                 f"💰 Total: {format_currency(total)}\n\n"
                 f"💳 Pagado con adelanto: {format_currency(monto_adelanto)}\n"
                 f"💵 Pagado en efectivo: {format_currency(monto_efectivo)}\n"
-                f"💰 Nuevo saldo de adelanto: {format_currency(nuevo_saldo)}"
+                f"💰 Nuevo saldo de adelanto: {format_currency(nuevo_saldo)}",
+                reply_markup=ReplyKeyboardRemove()
             )
         except Exception as e:
             logger.error(f"Error al procesar compra con adelanto: {e}")
             await update.message.reply_text(
-                "❌ Error al registrar la compra. Por favor, intenta nuevamente."
+                "❌ Error al registrar la compra. Por favor, intenta nuevamente.",
+                reply_markup=ReplyKeyboardRemove()
             )
     else:
-        await update.message.reply_text("❌ Compra cancelada")
+        await update.message.reply_text(
+            "❌ Compra cancelada",
+            reply_markup=ReplyKeyboardRemove()
+        )
     
     # Limpiar datos de usuario
     context.user_data.clear()
@@ -369,7 +389,8 @@ async def confirmar_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancelar la conversación"""
     await update.message.reply_text(
-        "❌ Operación cancelada."
+        "❌ Operación cancelada.",
+        reply_markup=ReplyKeyboardRemove()
     )
     context.user_data.clear()
     return ConversationHandler.END
@@ -381,9 +402,9 @@ def register_compra_adelanto_handlers(application):
         entry_points=[CommandHandler("compra_adelanto", compra_con_adelanto_command)],
         states={
             SELECCIONAR_PROVEEDOR: [CallbackQueryHandler(seleccionar_proveedor_callback, pattern=r'^compra_proveedor_|^compra_cancelar$')],
+            TIPO_CAFE: [MessageHandler(filters.TEXT & ~filters.COMMAND, tipo_cafe_step)],
             CANTIDAD: [MessageHandler(filters.TEXT & ~filters.COMMAND, cantidad_step)],
             PRECIO: [MessageHandler(filters.TEXT & ~filters.COMMAND, precio_step)],
-            CALIDAD: [MessageHandler(filters.TEXT & ~filters.COMMAND, calidad_step)],
             CONFIRMAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirmar_step)],
         },
         fallbacks=[CommandHandler("cancelar", cancelar)],
