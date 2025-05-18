@@ -125,17 +125,18 @@ async def seleccionar_destino(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Inicializar lista para guardar las compras seleccionadas
     context.user_data['compras_seleccionadas'] = []
     
-    # Crear teclado con las compras disponibles
+    # Crear teclado con las compras disponibles - NUEVA ESTRUCTURA
     keyboard = []
     for i, compra in enumerate(compras_disponibles):
-        fecha = compra.get('fecha', '')
-        proveedor = compra.get('proveedor', '')
+        proveedor = compra.get('proveedor', 'Sin proveedor')
         kg_disponibles = safe_float(compra.get('kg_disponibles', 0))
+        fecha = compra.get('fecha', '')
         compra_id = compra.get('id', f"ID-{i}")  # Usar el ID único si existe, o generar uno temporal
         
+        # Nuevo formato: primero nombre/proveedor, luego kg, fecha y al final ID
         keyboard.append([
             InlineKeyboardButton(
-                f"{fecha} - {proveedor} ({kg_disponibles} kg) [ID: {compra_id}]",
+                f"{proveedor} ({kg_disponibles} kg) {fecha} [ID: {compra_id}]",
                 callback_data=f"select_compra_{i}"
             )
         ])
@@ -222,20 +223,21 @@ async def seleccionar_compras_callback(update: Update, context: ContextTypes.DEF
             # Actualizar lista en el contexto
             context.user_data['compras_seleccionadas'] = compras_seleccionadas
             
-            # Actualizar teclado marcando las seleccionadas
+            # Actualizar teclado marcando las seleccionadas - NUEVA ESTRUCTURA
             keyboard = []
             for i, compra in enumerate(compras_disponibles):
-                fecha = compra.get('fecha', '')
-                proveedor = compra.get('proveedor', '')
+                proveedor = compra.get('proveedor', 'Sin proveedor')
                 kg_disponibles = safe_float(compra.get('kg_disponibles', 0))
+                fecha = compra.get('fecha', '')
                 compra_id = compra.get('id', f"ID-{i}")  # Usar el ID único si existe
                 
                 # Marcar con un check si está seleccionada
                 prefix = "✅ " if compra in compras_seleccionadas else ""
                 
+                # Nuevo formato: primero nombre/proveedor, luego kg, fecha y al final ID
                 keyboard.append([
                     InlineKeyboardButton(
-                        f"{prefix}{fecha} - {proveedor} ({kg_disponibles} kg) [ID: {compra_id}]",
+                        f"{prefix}{proveedor} ({kg_disponibles} kg) {fecha} [ID: {compra_id}]",
                         callback_data=f"select_compra_{i}"
                     )
                 ])
@@ -405,15 +407,16 @@ async def agregar_notas(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         f"Notas: {notas}\n\n"
     )
     
-    # Añadir detalles de las compras seleccionadas
+    # Añadir detalles de las compras seleccionadas - NUEVA ESTRUCTURA
     mensaje += "📋 COMPRAS SELECCIONADAS:\n"
     for i, compra in enumerate(compras_seleccionadas):
-        fecha = compra.get('fecha', '')
-        proveedor = compra.get('proveedor', '')
+        proveedor = compra.get('proveedor', 'Sin proveedor')
         kg_disponibles = safe_float(compra.get('kg_disponibles', 0))
+        fecha = compra.get('fecha', '')
         compra_id = compra.get('id', f"ID-{i}")
         
-        mensaje += f"{i+1}. {fecha} - {proveedor} ({kg_disponibles} kg) [ID: {compra_id}]\n"
+        # Nuevo formato: primero nombre/proveedor, luego kg, fecha y al final ID
+        mensaje += f"{i+1}. {proveedor} ({kg_disponibles} kg) {fecha} [ID: {compra_id}]\n"
     
     # Añadir pregunta de confirmación
     mensaje += "\n¿Confirmas este proceso? (Sí/No)"
