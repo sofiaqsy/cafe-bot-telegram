@@ -172,10 +172,7 @@ def initialize_sheets():
                                                 logger.error(f"Error al actualizar kg_disponibles en fila {row_num}: {e}")
                         
                         logger.info(f"Actualización de datos existentes completada para '{sheet_name}'")
-                    else:
-                        logger.info(f"No hay datos existentes que actualizar en '{sheet_name}'")
-                    
-                    # Si hay otras diferencias, actualizar las cabeceras
+                    # Si las cabeceras no coinciden por otras razones, actualizar cabeceras
                     elif values[0] != header:
                         logger.warning(f"Las cabeceras existentes no coinciden con las esperadas. Actualizando...")
                         sheets.values().update(
@@ -185,6 +182,8 @@ def initialize_sheets():
                             body={"values": [header]}
                         ).execute()
                         logger.info(f"Cabeceras actualizadas en hoja '{sheet_name}'")
+                    else:
+                        logger.info(f"No hay datos existentes que actualizar en '{sheet_name}'")
             except Exception as e:
                 logger.error(f"Error al inicializar la hoja '{sheet_name}': {e}")
                 raise
