@@ -18,7 +18,7 @@ from utils.helpers import format_currency, get_now_peru, safe_float
 logger = logging.getLogger(__name__)
 
 # Estados para la conversación
-SELECCIONAR_ORIGEN, SELECCIONAR_DESTINO, SELECCIONAR_REGISTROS_ALMACEN, INGRESAR_CANTIDAD, CONFIRMAR_MERMA, AGREGAR_NOTAS, CONFIRMAR = range(7)
+SELECCIONAR_ORIGEN, SELECCIONAR_DESTINO, SELECCIONAR_REGISTROS_ALMACEN, INGRESAR_CANTIDAD, CONFIRMAR_CANTIDAD_RESULTANTE, AGREGAR_NOTAS, CONFIRMAR = range(7)
 
 # Porcentajes aproximados de merma por tipo de transición
 MERMAS_SUGERIDAS = {
@@ -419,7 +419,7 @@ async def seleccionar_registros_callback(update: Update, context: ContextTypes.D
         return INGRESAR_CANTIDAD
 
 async def ingresar_cantidad(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Procesa la cantidad ingresada y solicita confirmar la merma"""
+    """Procesa la cantidad ingresada y solicita la cantidad resultante"""
     # Obtener la cantidad ingresada
     try:
         texto_cantidad = update.message.text.strip().replace(',', '.')
@@ -450,65 +450,62 @@ async def ingresar_cantidad(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     context.user_data['cantidad'] = cantidad
     logger.info(f"Usuario {update.effective_user.id} ingresó cantidad: {cantidad} kg")
     
-    # Calcular merma sugerida según la transición
+    # Calcular merma sugerida y cantidad resultante esperada según la transición
     origen = context.user_data['origen']
     destino = context.user_data['destino']
     
     transicion = f"{origen}_{destino}"
     merma_sugerida = round(cantidad * MERMAS_SUGERIDAS.get(transicion, 0.15), 2)  # Usar 15% como valor por defecto
-    cantidad_resultante_esperada = cantidad - merma_sugerida
+    cantidad_resultante_esperada = round(cantidad - merma_sugerida, 2)
     
     # Guardar la merma sugerida y cantidad resultante esperada
     context.user_data['merma_sugerida'] = merma_sugerida
     context.user_data['cantidad_resultante_esperada'] = cantidad_resultante_esperada
     
-    # Solicitar confirmación de merma
+    # Solicitar la cantidad resultante real
     await update.message.reply_text(
-        f"⚖️ ESTIMACIÓN DE MERMA\n\n"
-        f"Transformar {cantidad} kg de {origen} a {destino} tiene una merma estimada de {merma_sugerida} kg.\n"
-        f"Cantidad resultante esperada: {cantidad_resultante_esperada} kg\n\n"
-        "Por favor, ingresa la merma real o presiona enter para aceptar la sugerida:"
+        f"⚖️ ESTIMACIÓN DE RESULTADOS\n\n"
+        f"Para transformar {cantidad} kg de {origen} a {destino}:\n"
+        f"• Merma estimada: {merma_sugerida} kg\n"
+        f"• Cantidad resultante esperada: {cantidad_resultante_esperada} kg\n\n"
+        f"Por favor, ingresa la cantidad de kilos que realmente obtuviste:"
     )
     
-    return CONFIRMAR_MERMA
+    return CONFIRMAR_CANTIDAD_RESULTANTE
 
-async def confirmar_merma(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Confirma la merma y solicita notas adicionales"""
-    texto_merma = update.message.text.strip()
+async def confirmar_cantidad_resultante(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Confirma la cantidad resultante y calcula la merma real"""
+    texto_cantidad = update.message.text.strip()
     
-    # Si el usuario no ingresó nada, usar la merma sugerida
-    if not texto_merma:
-        merma = context.user_data['merma_sugerida']
-    else:
-        # Intentar convertir a número
-        try:
-            merma = float(texto_merma.replace(',', '.'))
-            # Verificar que la merma sea no negativa y no mayor que la cantidad
-            cantidad = context.user_data['cantidad']
-            if merma < 0:
-                await update.message.reply_text(
-                    "⚠️ La merma no puede ser negativa. Usando 0 como merma."
-                )
-                merma = 0
-            elif merma > cantidad:
-                await update.message.reply_text(
-                    f"⚠️ La merma ({merma} kg) no puede ser mayor que la cantidad a procesar ({cantidad} kg).\n"
-                    "Usando cantidad total como merma (pérdida total)."
-                )
-                merma = cantidad
-        except ValueError:
+    # Intentar convertir a número
+    try:
+        cantidad_resultante = float(texto_cantidad.replace(',', '.'))
+        # Verificar que la cantidad resultante sea no negativa y no mayor que la cantidad original
+        cantidad = context.user_data['cantidad']
+        if cantidad_resultante < 0:
             await update.message.reply_text(
-                f"⚠️ Valor de merma no válido. Usando la merma sugerida de {context.user_data['merma_sugerida']} kg."
+                "⚠️ La cantidad resultante no puede ser negativa. Usando 0 como cantidad resultante."
             )
-            merma = context.user_data['merma_sugerida']
+            cantidad_resultante = 0
+        elif cantidad_resultante > cantidad:
+            await update.message.reply_text(
+                f"⚠️ La cantidad resultante ({cantidad_resultante} kg) no puede ser mayor que la cantidad procesada ({cantidad} kg).\n"
+                f"Usando {cantidad} kg como cantidad resultante."
+            )
+            cantidad_resultante = cantidad
+    except ValueError:
+        await update.message.reply_text(
+            f"⚠️ Valor de cantidad resultante no válido. Usando la cantidad estimada de {context.user_data['cantidad_resultante_esperada']} kg."
+        )
+        cantidad_resultante = context.user_data['cantidad_resultante_esperada']
     
-    # Guardar la merma y calcular la cantidad resultante real
-    context.user_data['merma'] = merma
-    cantidad = context.user_data['cantidad']
-    cantidad_resultante = cantidad - merma
+    # Guardar la cantidad resultante y calcular la merma real
     context.user_data['cantidad_resultante'] = cantidad_resultante
+    cantidad = context.user_data['cantidad']
+    merma = cantidad - cantidad_resultante
+    context.user_data['merma'] = merma
     
-    logger.info(f"Usuario {update.effective_user.id} confirmó merma: {merma} kg, cantidad resultante: {cantidad_resultante} kg")
+    logger.info(f"Usuario {update.effective_user.id} confirmó cantidad resultante: {cantidad_resultante} kg, merma calculada: {merma} kg")
     
     # Solicitar notas adicionales
     await update.message.reply_text(
@@ -560,9 +557,9 @@ async def agregar_notas(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         f"Destino: {destino}\n"
         f"Cantidad: {cantidad} kg\n"
         f"Merma estimada: {merma_sugerida} kg\n"
-        f"Merma real: {merma} kg\n"
+        f"Merma real (calculada): {merma} kg\n"
         f"Cantidad resultante esperada: {cantidad_resultante_esperada} kg\n"
-        f"Cantidad resultante: {cantidad_resultante} kg\n"
+        f"Cantidad resultante real: {cantidad_resultante} kg\n"
         f"Registros:{registros_texto}\n\n"
         f"Notas: {notas or 'Sin notas adicionales'}\n\n"
         "¿Confirmas este proceso? (sí/no)"
@@ -688,13 +685,34 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             nueva_cantidad_origen = get_almacen_cantidad(origen)
             nueva_cantidad_destino = get_almacen_cantidad(destino)
             
+            # Calcular diferencias porcentuales
+            diferencia_merma = round(((merma - merma_sugerida) / merma_sugerida) * 100, 2) if merma_sugerida > 0 else 0
+            diferencia_cantidad = round(((cantidad_resultante - cantidad_resultante_esperada) / cantidad_resultante_esperada) * 100, 2) if cantidad_resultante_esperada > 0 else 0
+            
+            # Preparar mensajes de comparación
+            comparacion_merma = ""
+            if diferencia_merma > 0:
+                comparacion_merma = f"(+{diferencia_merma}% mayor a lo estimado)"
+            elif diferencia_merma < 0:
+                comparacion_merma = f"({abs(diferencia_merma)}% menor a lo estimado)"
+            else:
+                comparacion_merma = "(igual a lo estimado)"
+                
+            comparacion_cantidad = ""
+            if diferencia_cantidad > 0:
+                comparacion_cantidad = f"(+{diferencia_cantidad}% mayor a lo esperado)"
+            elif diferencia_cantidad < 0:
+                comparacion_cantidad = f"({abs(diferencia_cantidad)}% menor a lo esperado)"
+            else:
+                comparacion_cantidad = "(igual a lo esperado)"
+            
             await update.message.reply_text(
                 "✅ Proceso registrado correctamente.\n\n"
                 f"Se ha transformado {cantidad} kg de café de {origen} a {destino}.\n"
                 f"Merma estimada: {merma_sugerida} kg\n"
-                f"Merma real: {merma} kg\n"
+                f"Merma real: {merma} kg {comparacion_merma}\n"
                 f"Cantidad resultante esperada: {cantidad_resultante_esperada} kg\n"
-                f"Cantidad resultante: {cantidad_resultante} kg\n\n"
+                f"Cantidad resultante real: {cantidad_resultante} kg {comparacion_cantidad}\n\n"
                 f"📊 ALMACÉN ACTUALIZADO:\n"
                 f"- {origen}: {nueva_cantidad_origen} kg disponibles\n"
                 f"- {destino}: {nueva_cantidad_destino} kg disponibles",
@@ -737,7 +755,7 @@ def register_proceso_handlers(application):
             SELECCIONAR_DESTINO: [MessageHandler(filters.TEXT & ~filters.COMMAND, seleccionar_destino)],
             SELECCIONAR_REGISTROS_ALMACEN: [CallbackQueryHandler(seleccionar_registros_callback)],
             INGRESAR_CANTIDAD: [MessageHandler(filters.TEXT & ~filters.COMMAND, ingresar_cantidad)],
-            CONFIRMAR_MERMA: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirmar_merma)],
+            CONFIRMAR_CANTIDAD_RESULTANTE: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirmar_cantidad_resultante)],
             AGREGAR_NOTAS: [MessageHandler(filters.TEXT & ~filters.COMMAND, agregar_notas)],
             CONFIRMAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirmar)],
         },
