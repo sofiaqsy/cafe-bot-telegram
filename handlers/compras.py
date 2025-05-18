@@ -127,11 +127,12 @@ async def precio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             await update.message.reply_text("El precio debe ser mayor que cero. Intenta nuevamente:")
             return PRECIO
         
+        # Guardar el precio
         datos_compra[user_id]["precio"] = precio
         
         # Calcular el total
         compra = datos_compra[user_id]
-        total = compra["cantidad"] * compra["precio"]
+        total = round(compra["cantidad"] * precio, 2)
         
         # Guardar el total como preciototal
         datos_compra[user_id]["preciototal"] = total
@@ -146,7 +147,7 @@ async def precio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             f"Tipo de café: {compra['tipo_cafe']}\n"
             f"Proveedor: {compra['proveedor']}\n"
             f"Cantidad: {compra['cantidad']} kg\n"
-            f"Precio: {compra['precio']} por kg\n"
+            f"Precio: {precio} por kg\n"
             f"Total: {total}\n\n"
             "¿Confirmar esta compra?",
             parse_mode="Markdown",
@@ -183,7 +184,7 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         compra["notas"] = ""
         
         # Verificar que todos los datos requeridos estén presentes
-        campos_requeridos = ["tipo_cafe", "proveedor", "cantidad", "preciototal"]
+        campos_requeridos = ["tipo_cafe", "proveedor", "cantidad", "precio", "preciototal"]
         datos_completos = all(campo in compra for campo in campos_requeridos)
         
         if not datos_completos:
@@ -201,8 +202,20 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         
         # Guardar la compra en Google Sheets
         try:
+            # Crear objeto de datos limpio con los campos correctos
+            datos_limpios = {
+                "id": compra.get("id", ""),
+                "fecha": compra.get("fecha", ""),
+                "tipo_cafe": compra.get("tipo_cafe", ""),
+                "proveedor": compra.get("proveedor", ""),
+                "cantidad": compra.get("cantidad", ""),
+                "preciototal": compra.get("preciototal", ""),
+                "notas": compra.get("notas", ""),
+                "registrado_por": compra.get("registrado_por", "")
+            }
+            
             # Usar append_sheets directamente
-            result = append_sheets("compras", compra)
+            result = append_sheets("compras", datos_limpios)
             
             if result:
                 logger.info(f"Compra guardada exitosamente para usuario {user_id}")
