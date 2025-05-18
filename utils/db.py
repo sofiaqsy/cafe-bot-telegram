@@ -82,10 +82,21 @@ def append_data(filename: str, row: Dict[str, Any], headers: List[str]) -> bool:
     if campos_faltantes:
         logger.warning(f"Campos faltantes en los datos: {campos_faltantes}. Se usarán valores por defecto.")
     
-    # Asegurarse de que la fila tiene una fecha (si no existe)
-    if 'fecha' not in row or not row['fecha']:
-        row['fecha'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        logger.info(f"Añadida fecha automática: {row['fecha']}")
+    # Asegurarse de que la fila tiene una fecha y hora (si no existe)
+    # Manejo especial para la hoja de adelantos que tiene campos separados para fecha y hora
+    if sheet_name == 'adelantos':
+        if 'fecha' not in row or not row['fecha']:
+            row['fecha'] = datetime.datetime.now().strftime("%Y-%m-%d")
+            logger.info(f"Añadida fecha automática para adelantos: {row['fecha']}")
+        
+        if 'hora' not in row or not row['hora']:
+            row['hora'] = datetime.datetime.now().strftime("%H:%M:%S")
+            logger.info(f"Añadida hora automática para adelantos: {row['hora']}")
+    else:
+        # Para otras hojas, mantener el formato combinado de fecha y hora
+        if 'fecha' not in row or not row['fecha']:
+            row['fecha'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            logger.info(f"Añadida fecha automática: {row['fecha']}")
     
     # Asegurarse de que todos los campos requeridos tengan al menos un valor por defecto
     for campo in headers:
