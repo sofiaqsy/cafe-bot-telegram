@@ -37,7 +37,16 @@ async def proceso_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     almacen_data = leer_almacen_para_proceso()
     
     # Mostrar información de disponibilidad en el almacén para cada fase
+    # Solo mostrar fases que pueden tener destino (tienen transiciones permitidas)
     for fase in FASES_CAFE:
+        # No incluir MOLIDO ya que es un estado final sin transiciones
+        if fase == "MOLIDO":
+            continue
+            
+        # Verificar si la fase tiene transiciones permitidas
+        if fase not in TRANSICIONES_PERMITIDAS or not TRANSICIONES_PERMITIDAS[fase]:
+            continue
+            
         # Obtener cantidad disponible en el almacén para esta fase
         cantidad_disponible = 0
         if fase in almacen_data:
@@ -68,6 +77,14 @@ async def seleccionar_origen(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if origen not in FASES_CAFE:
         keyboard = []
         for fase in FASES_CAFE:
+            # No incluir MOLIDO ya que es un estado final
+            if fase == "MOLIDO":
+                continue
+                
+            # Verificar si la fase tiene transiciones permitidas
+            if fase not in TRANSICIONES_PERMITIDAS or not TRANSICIONES_PERMITIDAS[fase]:
+                continue
+                
             cantidad_disponible = get_almacen_cantidad(fase)
             if cantidad_disponible > 0:
                 keyboard.append([f"{fase} ({cantidad_disponible} kg)"])
