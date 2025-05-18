@@ -8,7 +8,7 @@ from telegram.ext import (
 from config import PROCESO_FILE
 from utils.db import append_data, get_all_data
 from utils.sheets import update_cell, FASES_CAFE, TRANSICIONES_PERMITIDAS, es_transicion_valida
-from utils.helpers import format_currency, get_now_peru
+from utils.helpers import format_currency, get_now_peru, safe_float
 
 # Configurar logging
 logger = logging.getLogger(__name__)
@@ -18,18 +18,6 @@ SELECCIONAR_ORIGEN, SELECCIONAR_DESTINO, SELECCIONAR_COMPRAS, INGRESAR_CANTIDAD,
 
 # Headers para la hoja de proceso
 PROCESO_HEADERS = ["fecha", "origen", "destino", "cantidad", "compras_ids", "merma", "notas", "registrado_por"]
-
-# Función auxiliar para convertir texto a número seguro
-def safe_float(text):
-    """Convierte un texto a número float, manejando comas como separador decimal"""
-    if not text:
-        return 0.0
-    try:
-        # Reemplazar comas por puntos para la conversión
-        return float(str(text).replace(',', '.').strip())
-    except (ValueError, TypeError):
-        logger.warning(f"Error al convertir '{text}' a float, retornando 0.0")
-        return 0.0
 
 async def proceso_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Inicia el proceso de registro de procesamiento"""
@@ -286,8 +274,7 @@ async def seleccionar_compras_callback(update: Update, context: ContextTypes.DEF
 async def ingresar_cantidad(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Procesar la cantidad ingresada y calcular la merma"""
     try:
-        cantidad_text = update.message.text.replace(',', '.').strip()
-        cantidad = float(cantidad_text)
+        cantidad = safe_float(update.message.text)
         
         # Verificar que la cantidad sea válida
         if cantidad <= 0:
@@ -363,7 +350,7 @@ async def ingresar_cantidad(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 async def confirmar_merma(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Confirmar o corregir la merma"""
     try:
-        merma_text = update.message.text.replace(',', '.').strip()
+        merma_text = update.message.text.strip()
         
         # Si es un guión, mantener la merma calculada
         if merma_text == '-':
@@ -371,7 +358,7 @@ async def confirmar_merma(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             pass
         else:
             # Intentar convertir a número
-            merma = float(merma_text)
+            merma = safe_float(merma_text)
             
             # Verificar que la merma sea válida
             if merma < 0:
