@@ -312,6 +312,34 @@ def append_data(sheet_name, data):
             ).execute()
             
             logger.info(f"Datos añadidos correctamente a '{sheet_name}' usando appendCells")
+            
+            # Si se agregó exitosamente una compra, actualizar también el almacén
+            if sheet_name == 'compras' and 'tipo_cafe' in data and 'kg_disponibles' in data:
+                try:
+                    # Extraer fase y cantidad de la compra
+                    fase = data['tipo_cafe']
+                    cantidad = float(data['kg_disponibles'])
+                    
+                    # Actualizar el almacén de forma asíncrona para no bloquear el proceso
+                    logger.info(f"Actualizando almacén para compra de {cantidad} kg de {fase}")
+                    
+                    # Intentar actualizar el almacén con la nueva cantidad
+                    # Esta llamada no la haremos asíncrona, pero podríamos considerar hacerlo en un futuro
+                    update_result = update_almacen(
+                        fase=fase,
+                        cantidad_cambio=cantidad,
+                        operacion="sumar",
+                        notas=f"Compra ID: {data.get('id', 'sin ID')}"
+                    )
+                    
+                    if update_result:
+                        logger.info(f"Almacén actualizado correctamente para {fase}: +{cantidad} kg")
+                    else:
+                        logger.warning(f"No se pudo actualizar el almacén para {fase}: +{cantidad} kg")
+                except Exception as e:
+                    logger.error(f"Error al actualizar almacén después de compra: {e}")
+                    # No fallar si hay un error en el almacén, solo registrar
+            
             return True
         except Exception as e:
             logger.error(f"Error al usar appendCells: {e}")
@@ -402,7 +430,7 @@ def update_cell(sheet_name, row_index, column_name, value):
     
     try:
         spreadsheet_id = get_or_create_sheet()
-        sheets = get_sheet_service()
+        service = get_sheet_service()
         
         # Obtener índice de la columna
         headers = HEADERS[sheet_name]
@@ -426,18 +454,80 @@ def update_cell(sheet_name, row_index, column_name, value):
         
         logger.info(f"Actualizando celda {cell_reference} en hoja '{sheet_name}' con valor: {value}")
         
-        # Actualizar celda
-        sheets.values().update(
-            spreadsheetId=spreadsheet_id,
-            range=f"{sheet_name}!{cell_reference}",
-            valueInputOption="USER_ENTERED",
-            body={"values": [[value]]}
-        ).execute()
-        
-        logger.info(f"Celda actualizada correctamente: {sheet_name}!{cell_reference}")
-        return True
+        # ENFOQUE MÁS ROBUSTO: Usar batchUpdate con updateCells
+        try:
+            # 1. Obtener el ID de la hoja
+            sheet_metadata = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+            sheets = sheet_metadata.get('sheets', '')
+            sheet_id = None
+            for sheet in sheets:
+                if sheet['properties']['title'] == sheet_name:
+                    sheet_id = sheet['properties']['sheetId']
+                    break
+            
+            if sheet_id is None:
+                logger.error(f"No se pudo encontrar el ID de la hoja '{sheet_name}'")
+                return False
+            
+            # 2. Crear la solicitud de actualización usando updateCells
+            request_body = {
+                "requests": [
+                    {
+                        "updateCells": {
+                            "range": {
+                                "sheetId": sheet_id,
+                                "startRowIndex": real_row - 1,  # Índice basado en 0
+                                "endRowIndex": real_row,
+                                "startColumnIndex": column_index,
+                                "endColumnIndex": column_index + 1
+                            },
+                            "rows": [
+                                {
+                                    "values": [
+                                        {
+                                            "userEnteredValue": {
+                                                "stringValue": str(value) if value is not None else ""
+                                            }
+                                        }
+                                    ]
+                                }
+                            ],
+                            "fields": "userEnteredValue"
+                        }
+                    }
+                ]
+            }
+            
+            # 3. Ejecutar la solicitud
+            response = service.spreadsheets().batchUpdate(
+                spreadsheetId=spreadsheet_id,
+                body=request_body
+            ).execute()
+            
+            logger.info(f"Celda actualizada correctamente con batchUpdate: {sheet_name}!{cell_reference}")
+            return True
+        except Exception as e:
+            logger.error(f"Error al actualizar celda con batchUpdate: {e}")
+            
+            # Método alternativo de respaldo
+            try:
+                logger.info("Intentando método alternativo para actualizar celda...")
+                
+                # Usar el método tradicional values().update()
+                service.spreadsheets().values().update(
+                    spreadsheetId=spreadsheet_id,
+                    range=f"{sheet_name}!{cell_reference}",
+                    valueInputOption="USER_ENTERED",
+                    body={"values": [[value]]}
+                ).execute()
+                
+                logger.info(f"Celda actualizada correctamente con método alternativo: {sheet_name}!{cell_reference}")
+                return True
+            except Exception as backup_error:
+                logger.error(f"Error con método alternativo para actualizar celda: {backup_error}")
+                return False
     except Exception as e:
-        logger.error(f"Error al actualizar celda: {e}")
+        logger.error(f"Error global al actualizar celda: {e}")
         return False
 
 def get_all_data(sheet_name):
@@ -689,18 +779,22 @@ def update_almacen(fase, cantidad_cambio, operacion="sumar", notas=""):
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         # Actualizar cantidad
-        update_cell("almacen", row_index, "cantidad", nueva_cantidad)
+        cantidad_actualizada = update_cell("almacen", row_index, "cantidad", nueva_cantidad)
         
         # Actualizar fecha
-        update_cell("almacen", row_index, "ultima_actualizacion", now)
+        fecha_actualizada = update_cell("almacen", row_index, "ultima_actualizacion", now)
         
         # Actualizar notas (añadir a las existentes)
         notas_actuales = registro.get('notas', '')
         nuevas_notas = f"{notas_actuales}; {now}: {operacion.capitalize()} {cantidad_cambio} kg - {notas}"[:250]  # Limitar longitud
-        update_cell("almacen", row_index, "notas", nuevas_notas)
+        notas_actualizadas = update_cell("almacen", row_index, "notas", nuevas_notas)
         
-        logger.info(f"Almacén actualizado - Fase: {fase_normalizada}, Nueva cantidad: {nueva_cantidad} kg")
-        return True
+        if cantidad_actualizada and fecha_actualizada and notas_actualizadas:
+            logger.info(f"Almacén actualizado - Fase: {fase_normalizada}, Nueva cantidad: {nueva_cantidad} kg")
+            return True
+        else:
+            logger.error(f"Error al actualizar almacén - No se pudieron actualizar todos los campos")
+            return False
     except Exception as e:
         logger.error(f"Error al actualizar almacén: {e}")
         return False
@@ -768,16 +862,23 @@ def sincronizar_almacen_con_compras():
         import datetime
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
+        resultados = []
         for fase, total in totales_por_fase.items():
-            update_almacen(
+            resultado = update_almacen(
                 fase=fase,
                 cantidad_cambio=total,
                 operacion="establecer",
                 notas=f"Sincronización automática con compras ({now})"
             )
+            resultados.append(resultado)
         
-        logger.info("Sincronización de almacén completada")
-        return True
+        # Verificar que todas las actualizaciones fueron exitosas
+        if all(resultados):
+            logger.info("Sincronización de almacén completada correctamente")
+            return True
+        else:
+            logger.error(f"Error al sincronizar almacén: {resultados.count(False)}/{len(resultados)} operaciones fallaron")
+            return False
     except Exception as e:
-        logger.error(f"Error al sincronizar almacén: {e}")
+        logger.error(f"Error al sincronizar almacén con compras: {e}")
         return False
