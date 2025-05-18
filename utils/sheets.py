@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+import uuid
 from googleapiclient.discovery import build
 from google.oauth2 import service_account
 
@@ -16,9 +17,9 @@ SHEET_IDS = {
     'adelantos': 4  # Añadimos la hoja de adelantos con índice 4
 }
 
-# Cabeceras para cada hoja - Añadimos fase_actual a compras
+# Cabeceras para cada hoja - Añadimos fase_actual a compras e id único
 HEADERS = {
-    'compras': ['fecha', 'tipo_cafe', 'proveedor', 'cantidad', 'precio', 'total', 'fase_actual', 'kg_disponibles'],
+    'compras': ['id', 'fecha', 'tipo_cafe', 'proveedor', 'cantidad', 'precio', 'total', 'fase_actual', 'kg_disponibles'],
     'proceso': ['fecha', 'origen', 'destino', 'cantidad', 'compras_ids', 'merma', 'notas', 'registrado_por'],
     'gastos': ['fecha', 'concepto', 'monto', 'categoria', 'notas'],
     'ventas': ['fecha', 'cliente', 'producto', 'cantidad', 'precio', 'total'],
@@ -36,6 +37,10 @@ TRANSICIONES_PERMITIDAS = {
     "VERDE": ["TOSTADO"],
     "TOSTADO": ["MOLIDO"]
 }
+
+def generate_unique_id():
+    """Genera un ID único para registros"""
+    return str(uuid.uuid4().hex)[:8]  # Usar solo los primeros 8 caracteres para un ID más corto y legible
 
 def get_credentials():
     """Obtiene credenciales para la API de Google Sheets desde variables de entorno"""
@@ -114,10 +119,10 @@ def initialize_sheets():
                     logger.info(f"Cabeceras existentes en hoja '{sheet_name}': {values[0]}")
                     logger.info(f"Cabeceras esperadas: {header}")
                     
-                    # Para compras, añadir columnas fase_actual y kg_disponibles si no existen
-                    if sheet_name == 'compras' and len(values[0]) < len(header):
+                    # Para compras, añadir campo id si no existe
+                    if sheet_name == 'compras' and (len(values[0]) < len(header) or 'id' not in values[0]):
                         # Si hay que actualizar las cabeceras
-                        logger.warning(f"Actualizando cabeceras de '{sheet_name}' para incluir nuevos campos")
+                        logger.warning(f"Actualizando cabeceras de '{sheet_name}' para incluir ID y otros campos nuevos")
                         
                         # Actualizar cabeceras
                         sheets.values().update(
@@ -136,40 +141,50 @@ def initialize_sheets():
                         
                         existing_rows = existing_data.get('values', [])
                         if existing_rows:
-                            # Para cada fila existente, actualizar fase_actual con tipo_cafe
+                            # Para cada fila existente, añadir ID único si no existe
                             for i, row in enumerate(existing_rows):
                                 row_num = i + 2  # +2 porque empezamos en la fila 2 (después de las cabeceras)
                                 
-                                # Si la fila tiene al menos el campo tipo_cafe (índice 1)
-                                if len(row) > 1 and row[1]:
-                                    tipo_cafe = row[1]
+                                # Si la fila no tiene un ID (primera columna vacía o no existente)
+                                if len(row) == 0 or not row[0]:
+                                    # Generar ID único
+                                    new_id = generate_unique_id()
                                     
-                                    # Si no existe fase_actual o está vacía
-                                    if len(row) <= 6 or not row[6]:  # 6 sería el índice de fase_actual
-                                        # Actualizar fase_actual = tipo_cafe
+                                    # Actualizar ID en la primera columna
+                                    sheets.values().update(
+                                        spreadsheetId=spreadsheet_id,
+                                        range=f"{sheet_name}!A{row_num}",  # A es id (columna 1)
+                                        valueInputOption="RAW",
+                                        body={"values": [[new_id]]}
+                                    ).execute()
+                                    logger.info(f"Agregado ID único {new_id} a la fila {row_num}")
+                                
+                                # Si tiene tipo_cafe pero no fase_actual
+                                if len(row) > 2 and row[2] and (len(row) <= 7 or not row[7]):  # 2 es el índice de tipo_cafe, 7 de fase_actual
+                                    tipo_cafe = row[2]
+                                    
+                                    # Actualizar fase_actual = tipo_cafe
+                                    sheets.values().update(
+                                        spreadsheetId=spreadsheet_id,
+                                        range=f"{sheet_name}!H{row_num}",  # H es fase_actual (columna 8)
+                                        valueInputOption="RAW",
+                                        body={"values": [[tipo_cafe]]}
+                                    ).execute()
+                                    logger.info(f"Actualizada fase_actual en fila {row_num}")
+                                
+                                # Si tiene cantidad pero no kg_disponibles
+                                if len(row) > 4 and row[4] and (len(row) <= 8 or not row[8]):  # 4 es el índice de cantidad, 8 de kg_disponibles
+                                    try:
+                                        kg_disponibles = row[4]  # Usar el mismo valor que cantidad
                                         sheets.values().update(
                                             spreadsheetId=spreadsheet_id,
-                                            range=f"{sheet_name}!G{row_num}",  # G es fase_actual (columna 7)
+                                            range=f"{sheet_name}!I{row_num}",  # I es kg_disponibles (columna 9)
                                             valueInputOption="RAW",
-                                            body={"values": [[tipo_cafe]]}
+                                            body={"values": [[kg_disponibles]]}
                                         ).execute()
-                                        logger.info(f"Actualizada fase_actual en fila {row_num}")
-                                    
-                                    # Si no existe kg_disponibles o está vacía
-                                    if len(row) <= 7 or not row[7]:  # 7 sería el índice de kg_disponibles
-                                        # Si tenemos cantidad (índice 3)
-                                        if len(row) > 3 and row[3]:
-                                            try:
-                                                kg_disponibles = row[3]  # Usar el mismo valor que cantidad
-                                                sheets.values().update(
-                                                    spreadsheetId=spreadsheet_id,
-                                                    range=f"{sheet_name}!H{row_num}",  # H es kg_disponibles (columna 8)
-                                                    valueInputOption="RAW",
-                                                    body={"values": [[kg_disponibles]]}
-                                                ).execute()
-                                                logger.info(f"Actualizada kg_disponibles en fila {row_num}")
-                                            except Exception as e:
-                                                logger.error(f"Error al actualizar kg_disponibles en fila {row_num}: {e}")
+                                        logger.info(f"Actualizada kg_disponibles en fila {row_num}")
+                                    except Exception as e:
+                                        logger.error(f"Error al actualizar kg_disponibles en fila {row_num}: {e}")
                         
                         logger.info(f"Actualización de datos existentes completada para '{sheet_name}'")
                     else:
@@ -202,6 +217,11 @@ def append_data(sheet_name, data):
     try:
         spreadsheet_id = get_or_create_sheet()
         sheets = get_sheet_service()
+        
+        # Para compras, asegurar que tenga un ID único
+        if sheet_name == 'compras' and 'id' not in data:
+            data['id'] = generate_unique_id()
+            logger.info(f"Generado ID único para compra: {data['id']}")
         
         # Convertir el diccionario a una lista ordenada según las cabeceras
         headers = HEADERS[sheet_name]
@@ -236,7 +256,7 @@ def append_data(sheet_name, data):
                 # Si no sigue el formato, se deja como está
                 if isinstance(data['fecha'], str) and len(data['fecha']) == 10 and data['fecha'][4] == '-' and data['fecha'][7] == '-':
                     # Prefijo con comilla simple para forzar formato de texto en Google Sheets
-                    data['fecha'] = f"'{data['fecha']}"
+                    data['fecha'] = f"'{data['fecha']}'"
                     logger.info(f"Fecha formateada como texto: {data['fecha']}")
             
             # Hacer lo mismo con la hora
@@ -245,7 +265,7 @@ def append_data(sheet_name, data):
                 # Si no sigue el formato, se deja como está
                 if isinstance(data['hora'], str) and len(data['hora']) == 8 and data['hora'][2] == ':' and data['hora'][5] == ':':
                     # Prefijo con comilla simple para forzar formato de texto
-                    data['hora'] = f"'{data['hora']}"
+                    data['hora'] = f"'{data['hora']}'"
                     logger.info(f"Hora formateada como texto: {data['hora']}")
         
         # Construir la fila de datos ordenada según las cabeceras
@@ -311,7 +331,7 @@ def update_cell(sheet_name, row_index, column_name, value):
             # Asegurarse de que la fecha tiene el formato correcto (YYYY-MM-DD)
             if isinstance(value, str) and len(value) == 10 and value[4] == '-' and value[7] == '-':
                 # Prefijo con comilla simple para forzar formato de texto en Google Sheets
-                value = f"'{value}"
+                value = f"'{value}'"
                 logger.info(f"Fecha formateada como texto para actualización: {value}")
         
         logger.info(f"Actualizando celda {cell_reference} en hoja '{sheet_name}' con valor: {value}")
@@ -415,3 +435,31 @@ def es_transicion_valida(origen, destino):
         return False
     
     return destino in TRANSICIONES_PERMITIDAS[origen]
+
+def get_compras_por_fase(fase):
+    """
+    Obtiene todas las compras en una fase específica con kg disponibles
+    
+    Args:
+        fase: Fase actual del café (CEREZO, MOTE, PERGAMINO, etc.)
+        
+    Returns:
+        Lista de compras en la fase especificada que aún tienen kg disponibles
+    """
+    try:
+        compras = get_filtered_data('compras', {'fase_actual': fase})
+        
+        # Filtrar solo las que tienen kg disponibles > 0
+        compras_disponibles = []
+        for compra in compras:
+            try:
+                kg_disponibles = float(compra.get('kg_disponibles', 0))
+                if kg_disponibles > 0:
+                    compras_disponibles.append(compra)
+            except (ValueError, TypeError):
+                continue
+                
+        return compras_disponibles
+    except Exception as e:
+        logger.error(f"Error al obtener compras en fase {fase}: {e}")
+        return []
