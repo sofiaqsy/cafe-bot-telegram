@@ -20,8 +20,16 @@ logger = logging.getLogger(__name__)
 # Estados para la conversación
 SELECCIONAR_ORIGEN, SELECCIONAR_DESTINO, SELECCIONAR_REGISTROS_ALMACEN, INGRESAR_CANTIDAD, CONFIRMAR_MERMA, AGREGAR_NOTAS, CONFIRMAR = range(7)
 
-# Headers para la hoja de proceso
-PROCESO_HEADERS = ["fecha", "origen", "destino", "cantidad", "compras_ids", "merma", "notas", "registrado_por"]
+# Porcentajes aproximados de merma por tipo de transición
+MERMAS_SUGERIDAS = {
+    "CEREZO_MOTE": 0.85,      # 85% de pérdida de peso cerezo a mote
+    "MOTE_PERGAMINO": 0.20,   # 20% de pérdida de mote a pergamino
+    "PERGAMINO_VERDE": 0.18,  # 18% de pérdida de pergamino a verde
+    "PERGAMINO_TOSTADO": 0.20, # 20% de pérdida de pergamino a tostado
+    "PERGAMINO_MOLIDO": 0.25, # 25% de pérdida de pergamino a molido
+    "VERDE_TOSTADO": 0.15,    # 15% de pérdida de verde a tostado
+    "TOSTADO_MOLIDO": 0.05    # 5% de pérdida de tostado a molido
+}
 
 async def proceso_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Inicia el proceso de registro de procesamiento"""
@@ -446,29 +454,21 @@ async def ingresar_cantidad(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     origen = context.user_data['origen']
     destino = context.user_data['destino']
     
-    # Porcentajes aproximados de merma por tipo de transición
-    mermas_sugeridas = {
-        "CEREZO_MOTE": 0.85,      # 85% de pérdida de peso cerezo a mote
-        "MOTE_PERGAMINO": 0.20,   # 20% de pérdida de mote a pergamino
-        "PERGAMINO_VERDE": 0.18,  # 18% de pérdida de pergamino a verde
-        "PERGAMINO_TOSTADO": 0.20, # 20% de pérdida de pergamino a tostado
-        "PERGAMINO_MOLIDO": 0.25, # 25% de pérdida de pergamino a molido
-        "VERDE_TOSTADO": 0.15,    # 15% de pérdida de verde a tostado
-        "TOSTADO_MOLIDO": 0.05    # 5% de pérdida de tostado a molido
-    }
-    
     transicion = f"{origen}_{destino}"
-    merma_sugerida = round(cantidad * mermas_sugeridas.get(transicion, 0.15), 2)  # Usar 15% como valor por defecto
+    merma_sugerida = round(cantidad * MERMAS_SUGERIDAS.get(transicion, 0.15), 2)  # Usar 15% como valor por defecto
+    cantidad_resultante_esperada = cantidad - merma_sugerida
+    
+    # Guardar la merma sugerida y cantidad resultante esperada
+    context.user_data['merma_sugerida'] = merma_sugerida
+    context.user_data['cantidad_resultante_esperada'] = cantidad_resultante_esperada
     
     # Solicitar confirmación de merma
     await update.message.reply_text(
         f"⚖️ ESTIMACIÓN DE MERMA\n\n"
-        f"Transformar {cantidad} kg de {origen} a {destino} tiene una merma estimada de {merma_sugerida} kg.\n\n"
+        f"Transformar {cantidad} kg de {origen} a {destino} tiene una merma estimada de {merma_sugerida} kg.\n"
+        f"Cantidad resultante esperada: {cantidad_resultante_esperada} kg\n\n"
         "Por favor, ingresa la merma real o presiona enter para aceptar la sugerida:"
     )
-    
-    # Guardar la merma sugerida
-    context.user_data['merma_sugerida'] = merma_sugerida
     
     return CONFIRMAR_MERMA
 
@@ -502,9 +502,13 @@ async def confirmar_merma(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             )
             merma = context.user_data['merma_sugerida']
     
-    # Guardar la merma
+    # Guardar la merma y calcular la cantidad resultante real
     context.user_data['merma'] = merma
-    logger.info(f"Usuario {update.effective_user.id} confirmó merma: {merma} kg")
+    cantidad = context.user_data['cantidad']
+    cantidad_resultante = cantidad - merma
+    context.user_data['cantidad_resultante'] = cantidad_resultante
+    
+    logger.info(f"Usuario {update.effective_user.id} confirmó merma: {merma} kg, cantidad resultante: {cantidad_resultante} kg")
     
     # Solicitar notas adicionales
     await update.message.reply_text(
@@ -526,10 +530,10 @@ async def agregar_notas(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     destino = context.user_data['destino']
     cantidad = context.user_data['cantidad']
     merma = context.user_data['merma']
+    merma_sugerida = context.user_data['merma_sugerida']
+    cantidad_resultante = context.user_data['cantidad_resultante']
+    cantidad_resultante_esperada = context.user_data['cantidad_resultante_esperada']
     registros_seleccionados = context.user_data['registros_seleccionados']
-    
-    # Calcular cantidad resultante
-    cantidad_resultante = cantidad - merma
     
     # Formatear información de registros
     registros_info = []
@@ -555,7 +559,9 @@ async def agregar_notas(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         f"Origen: {origen}\n"
         f"Destino: {destino}\n"
         f"Cantidad: {cantidad} kg\n"
-        f"Merma: {merma} kg\n"
+        f"Merma estimada: {merma_sugerida} kg\n"
+        f"Merma real: {merma} kg\n"
+        f"Cantidad resultante esperada: {cantidad_resultante_esperada} kg\n"
         f"Cantidad resultante: {cantidad_resultante} kg\n"
         f"Registros:{registros_texto}\n\n"
         f"Notas: {notas or 'Sin notas adicionales'}\n\n"
@@ -583,6 +589,9 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         destino = context.user_data['destino']
         cantidad = context.user_data['cantidad']
         merma = context.user_data['merma']
+        merma_sugerida = context.user_data['merma_sugerida']
+        cantidad_resultante = context.user_data['cantidad_resultante']
+        cantidad_resultante_esperada = context.user_data['cantidad_resultante_esperada']
         notas = context.user_data['notas']
         registros_seleccionados = context.user_data['registros_seleccionados']
         
@@ -607,7 +616,7 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         # Obtener fecha y hora actual
         now = get_now_peru()
         
-        # Datos para el proceso
+        # Datos para el proceso (actualizados con nuevos campos)
         proceso_data = {
             "fecha": now.strftime("%Y-%m-%d %H:%M:%S"),
             "origen": origen,
@@ -615,6 +624,9 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             "cantidad": cantidad,
             "compras_ids": compras_ids_str,  # IDs de compras relacionadas
             "merma": merma,
+            "merma_estimada": merma_sugerida,
+            "cantidad_resultante_esperada": cantidad_resultante_esperada,
+            "cantidad_resultante": cantidad_resultante,
             "notas": notas,
             "registrado_por": update.effective_user.username or update.effective_user.first_name
         }
@@ -653,8 +665,6 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                 logger.info(f"Actualizado registro de almacén {registro_id} (fila {row_index}), nuevo cantidad_actual: {nuevo_kg_disponibles}")
             
             # 3. Crear nuevo registro en el almacén para la fase de destino
-            cantidad_resultante = cantidad - merma
-            
             if cantidad_resultante > 0:
                 # Notas para el nuevo registro
                 notas_destino = f"Procesado desde {origen}. IDs origen: {registros_ids_str}"
@@ -681,7 +691,9 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             await update.message.reply_text(
                 "✅ Proceso registrado correctamente.\n\n"
                 f"Se ha transformado {cantidad} kg de café de {origen} a {destino}.\n"
-                f"Merma: {merma} kg\n"
+                f"Merma estimada: {merma_sugerida} kg\n"
+                f"Merma real: {merma} kg\n"
+                f"Cantidad resultante esperada: {cantidad_resultante_esperada} kg\n"
                 f"Cantidad resultante: {cantidad_resultante} kg\n\n"
                 f"📊 ALMACÉN ACTUALIZADO:\n"
                 f"- {origen}: {nueva_cantidad_origen} kg disponibles\n"
