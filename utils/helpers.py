@@ -11,6 +11,39 @@ def get_now_peru():
     peru_tz = pytz.timezone('America/Lima')
     return datetime.datetime.now(peru_tz)
 
+def format_date_for_sheets(date_str):
+    """
+    Formatea una fecha para Google Sheets para evitar conversiones automáticas.
+    Añade comilla simple al inicio para preservar el formato.
+    
+    Args:
+        date_str: Cadena de fecha a formatear
+        
+    Returns:
+        str: Fecha formateada para Sheets
+    """
+    if not date_str:
+        return ""
+    
+    if isinstance(date_str, str):
+        # Si ya tiene comilla simple al inicio, simplemente devolver
+        if date_str.startswith("'"):
+            return date_str
+        # Si es una fecha en formato estándar, añadir comilla simple
+        if "-" in date_str:
+            return f"'{date_str}"
+    
+    # Si es un objeto datetime, convertir a string
+    if isinstance(date_str, datetime.datetime):
+        return f"'{date_str.strftime('%Y-%m-%d %H:%M:%S')}"
+    
+    # Si es una fecha, convertir a string
+    if isinstance(date_str, datetime.date):
+        return f"'{date_str.strftime('%Y-%m-%d')}"
+    
+    # En cualquier otro caso, devolver como string
+    return str(date_str)
+
 def format_currency(amount, symbol="S/"):
     """Formatea un valor como moneda"""
     if not amount:
