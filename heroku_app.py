@@ -32,6 +32,7 @@ from handlers.reportes import register_reportes_handlers
 from handlers.pedidos import register_pedidos_handlers
 from handlers.adelantos import register_adelantos_handlers
 from handlers.compra_adelanto import register_compra_adelanto_handlers
+from handlers.almacen import register_almacen_handlers
 
 def eliminar_webhook():
     """Elimina cualquier webhook configurado antes de iniciar el polling"""
@@ -94,6 +95,7 @@ def main():
     register_pedidos_handlers(application)
     register_adelantos_handlers(application)
     register_compra_adelanto_handlers(application)
+    register_almacen_handlers(application)  # Registrar el nuevo handler de almacén
     
     # IMPORTANTE: Usar POLLING, no webhook
     logger.info("Bot iniciado en modo POLLING. Esperando comandos...")
