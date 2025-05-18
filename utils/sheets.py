@@ -14,14 +14,14 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger(__name__)
 
 # Definir constantes
-FASES_CAFE = ["CEREZO", "MOTE", "PERGAMINO", "TOSTADO", "MOLIDO"]
+FASES_CAFE = ["CEREZO", "MOTE", "PERGAMINO", "VERDE"]
 
 # Definir transiciones válidas entre fases
 TRANSICIONES_PERMITIDAS = {
     "CEREZO": ["MOTE"],
     "MOTE": ["PERGAMINO"],
-    "PERGAMINO": ["TOSTADO", "MOLIDO"],  # Permitir transición directa a MOLIDO
-    "TOSTADO": ["MOLIDO"]
+    "PERGAMINO": ["VERDE"],
+    "VERDE": []
 }
 
 # Cabeceras para las hojas
@@ -770,7 +770,7 @@ def get_compras_por_fase(fase):
     Obtiene todas las compras en una fase específica con kg disponibles
     
     Args:
-        fase: Fase actual del café (CEREZO, MOTE, PERGAMINO, etc.)
+        fase: Fase actual del café (CEREZO, MOTE, PERGAMINO, VERDE)
         
     Returns:
         Lista de compras en la fase especificada que aún tienen kg disponibles
@@ -830,7 +830,7 @@ def get_almacen_cantidad(fase):
     Obtiene la cantidad disponible de una fase específica del almacén
     
     Args:
-        fase: Fase del café (CEREZO, MOTE, PERGAMINO, etc.)
+        fase: Fase del café (CEREZO, MOTE, PERGAMINO, VERDE)
     
     Returns:
         float: Cantidad disponible en kg
@@ -866,7 +866,7 @@ def update_almacen(fase, cantidad_cambio, operacion="sumar", notas="", compra_id
     Actualiza la cantidad disponible en el almacén para una fase específica
     
     Args:
-        fase: Fase del café (CEREZO, MOTE, PERGAMINO, etc.)
+        fase: Fase del café (CEREZO, MOTE, PERGAMINO, VERDE)
         cantidad_cambio: Cantidad a sumar o restar
         operacion: "sumar" para añadir, "restar" para disminuir, "establecer" para fijar valor
         notas: Notas adicionales sobre la operación
