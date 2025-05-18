@@ -137,6 +137,58 @@ def append_data(sheet_name, data):
         logger.error(f"Error al añadir datos a {sheet_name}: {e}")
         return False
 
+def update_cell(sheet_name, row_index, column_name, value):
+    """Actualiza una celda específica en la hoja de cálculo.
+    
+    Args:
+        sheet_name: Nombre de la hoja
+        row_index: Índice de la fila (basado en 0 para las filas de datos, excluyendo las cabeceras)
+        column_name: Nombre de la columna
+        value: Nuevo valor para la celda
+    
+    Returns:
+        bool: True si se actualizó correctamente, False en caso contrario
+    """
+    if sheet_name not in HEADERS:
+        logger.error(f"Nombre de hoja inválido: {sheet_name}")
+        raise ValueError(f"Nombre de hoja inválido: {sheet_name}")
+    
+    try:
+        spreadsheet_id = get_or_create_sheet()
+        sheets = get_sheet_service()
+        
+        # Obtener índice de la columna
+        headers = HEADERS[sheet_name]
+        if column_name not in headers:
+            logger.error(f"Nombre de columna inválido: {column_name}")
+            raise ValueError(f"Nombre de columna inválido: {column_name}")
+        
+        column_index = headers.index(column_name)
+        
+        # Convertir índice de fila (desde 0) a número de fila real en la hoja (desde 1, contando cabeceras)
+        # Fila 1 son las cabeceras, los datos comienzan en la fila 2
+        real_row = row_index + 2
+        
+        # Convertir índice de columna a letra de columna de Excel (A, B, C, ...)
+        column_letter = chr(65 + column_index)  # 65 es el código ASCII para 'A'
+        cell_reference = f"{column_letter}{real_row}"
+        
+        logger.info(f"Actualizando celda {cell_reference} en hoja '{sheet_name}' con valor: {value}")
+        
+        # Actualizar celda
+        result = sheets.values().update(
+            spreadsheetId=spreadsheet_id,
+            range=f"{sheet_name}!{cell_reference}",
+            valueInputOption="USER_ENTERED",
+            body={"values": [[value]]}
+        ).execute()
+        
+        logger.info(f"Celda actualizada correctamente. Respuesta: {result}")
+        return True
+    except Exception as e:
+        logger.error(f"Error al actualizar celda: {e}")
+        return False
+
 def get_all_data(sheet_name):
     """Obtiene todos los datos de la hoja especificada"""
     if sheet_name not in HEADERS:
@@ -163,10 +215,13 @@ def get_all_data(sheet_name):
         headers = values[0]
         rows = []
         
-        for row in values[1:]:  # Saltar la fila de cabeceras
+        for i, row in enumerate(values[1:]):  # Saltar la fila de cabeceras
             # Asegurarse de que la fila tenga la misma longitud que las cabeceras
             row_padded = row + [""] * (len(headers) - len(row))
-            rows.append(dict(zip(headers, row_padded)))
+            # Añadir el _row_index para referencia futura (basado en 0)
+            row_dict = dict(zip(headers, row_padded))
+            row_dict['_row_index'] = i
+            rows.append(row_dict)
         
         logger.info(f"Obtenidos {len(rows)} registros de '{sheet_name}'")
         return rows
