@@ -408,10 +408,21 @@ def get_filtered_data(sheet_name, filters=None, days=None):
     
     # Aplicar filtros
     if filters:
-        filtered_data = [
-            row for row in filtered_data
-            if all(row.get(key) == value for key, value in filters.items())
-        ]
+        # Para cada clave:valor de filtro, verificar coincidencia
+        filtered_data = []
+        for row in all_data:
+            match = True
+            for key, value in filters.items():
+                # Normalizar valores para comparación (convertir a mayúsculas y eliminar espacios adicionales)
+                row_value = str(row.get(key, '')).strip().upper()
+                filter_value = str(value).strip().upper()
+                
+                if row_value != filter_value:
+                    match = False
+                    break
+            
+            if match:
+                filtered_data.append(row)
     
     # Aplicar filtro de fecha (para futura implementación)
     if days:
@@ -447,18 +458,31 @@ def get_compras_por_fase(fase):
         Lista de compras en la fase especificada que aún tienen kg disponibles
     """
     try:
-        compras = get_filtered_data('compras', {'fase_actual': fase})
+        logger.info(f"Buscando compras en fase: {fase}")
+        # Obtener todas las compras
+        all_compras = get_all_data('compras')
         
-        # Filtrar solo las que tienen kg disponibles > 0
+        # Filtrar manualmente para evitar problemas de formato
         compras_disponibles = []
-        for compra in compras:
-            try:
-                kg_disponibles = float(compra.get('kg_disponibles', 0))
-                if kg_disponibles > 0:
-                    compras_disponibles.append(compra)
-            except (ValueError, TypeError):
-                continue
-                
+        for compra in all_compras:
+            # Normalizar fase para comparación
+            fase_actual = str(compra.get('fase_actual', '')).strip().upper()
+            fase_buscada = str(fase).strip().upper()
+            
+            # Verificar si hay coincidencia de fase
+            if fase_actual == fase_buscada:
+                try:
+                    # Verificar kg disponibles
+                    kg_disponibles = float(str(compra.get('kg_disponibles', '0')).replace(',', '.'))
+                    if kg_disponibles > 0:
+                        # Agregar a la lista de compras disponibles
+                        logger.info(f"Compra encontrada: {compra.get('proveedor')} - {kg_disponibles} kg - ID: {compra.get('id')}")
+                        compras_disponibles.append(compra)
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"Error al convertir kg_disponibles: {e}. Valor: {compra.get('kg_disponibles')}")
+                    continue
+        
+        logger.info(f"Total compras encontradas en fase {fase}: {len(compras_disponibles)}")
         return compras_disponibles
     except Exception as e:
         logger.error(f"Error al obtener compras en fase {fase}: {e}")
