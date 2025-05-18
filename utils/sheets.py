@@ -1,89 +1,189 @@
-import os
-import json
-import logging
-import uuid
-from googleapiclient.discovery import build
-from google.oauth2 import service_account
-
-# Configurar logging
-logger = logging.getLogger(__name__)
-
-# Hojas para cada tipo de dato
-SHEET_IDS = {
-    'compras': 0,  # Los ids son índices (0 para la primera hoja, 1 para la segunda, etc.)
-    'proceso': 1,
-    'gastos': 2,
-    'ventas': 3,
-    'adelantos': 4,  # Añadimos la hoja de adelantos con índice 4
-    'almacen': 5     # Nueva hoja para el almacén centralizado
-}
-
-# Cabeceras para cada hoja - Añadimos fase_actual a compras e id único
-HEADERS = {
-    'compras': ['id', 'fecha', 'tipo_cafe', 'proveedor', 'cantidad', 'precio', 'total', 'fase_actual', 'kg_disponibles'],
-    'proceso': ['fecha', 'origen', 'destino', 'cantidad', 'compras_ids', 'merma', 'notas', 'registrado_por'],
-    'gastos': ['fecha', 'concepto', 'monto', 'categoria', 'notas'],
-    'ventas': ['fecha', 'cliente', 'producto', 'cantidad', 'precio', 'total'],
-    'adelantos': ['fecha', 'hora', 'proveedor', 'monto', 'saldo_restante', 'notas', 'registrado_por'],
-    'almacen': ['fase', 'cantidad', 'ultima_actualizacion', 'notas']  # Nueva estructura para el almacén
-}
-
-# Definir las fases posibles del café
-FASES_CAFE = ["CEREZO", "MOTE", "PERGAMINO", "VERDE", "TOSTADO", "MOLIDO"]
-
-# Definir las transiciones permitidas entre fases - Actualizado para permitir PERGAMINO -> TOSTADO
-TRANSICIONES_PERMITIDAS = {
-    "CEREZO": ["MOTE", "PERGAMINO"],
-    "MOTE": ["PERGAMINO"],
-    "PERGAMINO": ["VERDE", "TOSTADO"],  # Ahora PERGAMINO puede ir a VERDE o directamente a TOSTADO
-    "VERDE": ["TOSTADO"],
-    "TOSTADO": ["MOLIDO"]
-}
-
-def generate_unique_id():
-    """Genera un ID único para registros"""
-    return str(uuid.uuid4().hex)[:8]  # Usar solo los primeros 8 caracteres para un ID más corto y legible
-
-def get_credentials():
-    """Obtiene credenciales para la API de Google Sheets desde variables de entorno"""
-    # En producción, guarda estas credenciales como variable de entorno
-    creds_json = os.getenv('GOOGLE_CREDENTIALS')
-    
-    if not creds_json:
-        logger.error("Las credenciales de Google no están configuradas. Establece la variable de entorno GOOGLE_CREDENTIALS.")
-        raise ValueError("Las credenciales de Google no están configuradas. Establece la variable de entorno GOOGLE_CREDENTIALS.")
-    
+def initialize_sheets():
+    """Inicializa las hojas de cálculo con las cabeceras si están vacías"""
     try:
-        # Parsear JSON de credenciales desde la variable de entorno
-        creds_info = json.loads(creds_json)
+        spreadsheet_id = get_or_create_sheet()
+        sheets = get_sheet_service()
         
-        # Crear credenciales desde la información JSON
-        creds = service_account.Credentials.from_service_account_info(
-            creds_info, scopes=['https://www.googleapis.com/auth/spreadsheets']
-        )
-        
-        return creds
-    except json.JSONDecodeError as e:
-        logger.error(f"Error al decodificar las credenciales JSON: {e}")
-        raise ValueError(f"Las credenciales de Google no son un JSON válido: {e}")
+        # Verificar y configurar cada hoja
+        for sheet_name, header in HEADERS.items():
+            try:
+                # Obtener datos actuales
+                range_name = f"{sheet_name}!A1:Z1"
+                result = sheets.values().get(
+                    spreadsheetId=spreadsheet_id,
+                    range=range_name
+                ).execute()
+                
+                values = result.get('values', [])
+                
+                # Si la hoja está vacía o no tiene cabeceras, agregarlas
+                if not values:
+                    logger.info(f"Inicializando hoja '{sheet_name}' con cabeceras: {header}")
+                    sheets.values().update(
+                        spreadsheetId=spreadsheet_id,
+                        range=range_name,
+                        valueInputOption="RAW",
+                        body={"values": [header]}
+                    ).execute()
+                    logger.info(f"Hoja '{sheet_name}' inicializada con cabeceras")
+                    
+                    # Inicializar almacén con todas las fases si es la hoja de almacén
+                    if sheet_name == 'almacen':
+                        initialize_almacen()
+                else:
+                    # Verificar si las cabeceras existentes coinciden con las esperadas
+                    logger.info(f"Cabeceras existentes en hoja '{sheet_name}': {values[0]}")
+                    logger.info(f"Cabeceras esperadas: {header}")
+                    
+                    # Para compras, añadir campo id si no existe
+                    if sheet_name == 'compras' and (len(values[0]) < len(header) or 'id' not in values[0]):
+                        # Si hay que actualizar las cabeceras
+                        logger.warning(f"Actualizando cabeceras de '{sheet_name}' para incluir ID y otros campos nuevos")
+                        
+                        # Actualizar cabeceras
+                        sheets.values().update(
+                            spreadsheetId=spreadsheet_id,
+                            range=range_name,
+                            valueInputOption="RAW",
+                            body={"values": [header]}
+                        ).execute()
+                        
+                        # Inicializar nuevas columnas para filas existentes
+                        data_range_name = f"{sheet_name}!A2:Z"
+                        existing_data = sheets.values().get(
+                            spreadsheetId=spreadsheet_id,
+                            range=data_range_name
+                        ).execute()
+                        
+                        existing_rows = existing_data.get('values', [])
+                        if existing_rows:
+                            # Para cada fila existente, añadir ID único si no existe
+                            for i, row in enumerate(existing_rows):
+                                row_num = i + 2  # +2 porque empezamos en la fila 2 (después de las cabeceras)
+                                
+                                # Si la fila no tiene un ID (primera columna vacía o no existente)
+                                if len(row) == 0 or not row[0]:
+                                    # Generar ID único
+                                    new_id = generate_unique_id()
+                                    
+                                    # Actualizar ID en la primera columna
+                                    sheets.values().update(
+                                        spreadsheetId=spreadsheet_id,
+                                        range=f"{sheet_name}!A{row_num}",  # A es id (columna 1)
+                                        valueInputOption="RAW",
+                                        body={"values": [[new_id]]}
+                                    ).execute()
+                                    logger.info(f"Agregado ID único {new_id} a la fila {row_num}")
+                                
+                                # Si tiene tipo_cafe pero no fase_actual
+                                if len(row) > 2 and row[2] and (len(row) <= 7 or not row[7]):  # 2 es el índice de tipo_cafe, 7 de fase_actual
+                                    tipo_cafe = row[2]
+                                    
+                                    # Actualizar fase_actual = tipo_cafe
+                                    sheets.values().update(
+                                        spreadsheetId=spreadsheet_id,
+                                        range=f"{sheet_name}!H{row_num}",  # H es fase_actual (columna 8)
+                                        valueInputOption="RAW",
+                                        body={"values": [[tipo_cafe]]}
+                                    ).execute()
+                                    logger.info(f"Actualizada fase_actual en fila {row_num}")
+                                
+                                # Si tiene cantidad pero no kg_disponibles
+                                if len(row) > 4 and row[4] and (len(row) <= 8 or not row[8]):  # 4 es el índice de cantidad, 8 de kg_disponibles
+                                    try:
+                                        kg_disponibles = row[4]  # Usar el mismo valor que cantidad
+                                        sheets.values().update(
+                                            spreadsheetId=spreadsheet_id,
+                                            range=f"{sheet_name}!I{row_num}",  # I es kg_disponibles (columna 9)
+                                            valueInputOption="RAW",
+                                            body={"values": [[kg_disponibles]]}
+                                        ).execute()
+                                        logger.info(f"Actualizada kg_disponibles en fila {row_num}")
+                                    except Exception as e:
+                                        logger.error(f"Error al actualizar kg_disponibles en fila {row_num}: {e}")
+                        
+                        logger.info(f"Actualización de datos existentes completada para '{sheet_name}'")
+                    else:
+                        logger.info(f"No hay datos existentes que actualizar en '{sheet_name}'")
+                    
+                    # Si hay otras diferencias, actualizar las cabeceras
+                    if values and values[0] != header:
+                        logger.warning(f"Las cabeceras existentes no coinciden con las esperadas. Actualizando...")
+                        sheets.values().update(
+                            spreadsheetId=spreadsheet_id,
+                            range=range_name,
+                            valueInputOption="RAW",
+                            body={"values": [header]}
+                        ).execute()
+                        logger.info(f"Cabeceras actualizadas en hoja '{sheet_name}'")
+                    
+                    # Verificar si el almacén tiene todas las fases
+                    if sheet_name == 'almacen':
+                        verify_almacen_fases()
+            except Exception as e:
+                logger.error(f"Error al inicializar la hoja '{sheet_name}': {e}")
+                raise
+                
     except Exception as e:
-        logger.error(f"Error al obtener credenciales: {e}")
+        logger.error(f"Error al inicializar las hojas: {e}")
         raise
 
-def get_sheet_service():
-    """Crea y devuelve un servicio de Google Sheets API"""
-    creds = get_credentials()
-    service = build('sheets', 'v4', credentials=creds)
-    return service.spreadsheets()
+def initialize_almacen():
+    """Inicializa la hoja de almacén con todas las fases posibles con 0 kg"""
+    try:
+        logger.info("Inicializando hoja de almacén con todas las fases")
+        import datetime
+        
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        data_to_append = []
+        
+        for fase in FASES_CAFE:
+            # Crear una fila para cada fase posible con cantidad 0
+            row = {
+                "fase": fase,
+                "cantidad": 0,
+                "ultima_actualizacion": now,
+                "notas": "Inicialización automática"
+            }
+            data_to_append.append(row)
+            
+        # Añadir todas las filas a la hoja
+        for row in data_to_append:
+            append_data("almacen", row)
+            
+        logger.info(f"Almacén inicializado con {len(FASES_CAFE)} fases")
+        return True
+    except Exception as e:
+        logger.error(f"Error al inicializar almacén: {e}")
+        return False
 
-def get_or_create_sheet():
-    """Obtiene o crea una nueva hoja de cálculo para el bot"""
-    # ID de la hoja de cálculo (debes crear una hoja y obtener su ID)
-    spreadsheet_id = os.getenv('SPREADSHEET_ID')
-    
-    if not spreadsheet_id:
-        logger.error("El ID de la hoja de cálculo no está configurado. Establece la variable de entorno SPREADSHEET_ID.")
-        raise ValueError("El ID de la hoja de cálculo no está configurado. Establece la variable de entorno SPREADSHEET_ID.")
-    
-    logger.info(f"Usando hoja de cálculo con ID: {spreadsheet_id}")
-    return spreadsheet_id
+def verify_almacen_fases():
+    """Verifica que el almacén tenga todas las fases posibles y añade las que falten"""
+    try:
+        almacen_data = get_all_data("almacen")
+        fases_existentes = [row.get('fase', '').strip().upper() for row in almacen_data]
+        fases_faltantes = [fase for fase in FASES_CAFE if fase not in fases_existentes]
+        
+        if fases_faltantes:
+            logger.info(f"Faltan {len(fases_faltantes)} fases en el almacén: {fases_faltantes}")
+            import datetime
+            
+            now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            for fase in fases_faltantes:
+                row = {
+                    "fase": fase,
+                    "cantidad": 0,
+                    "ultima_actualizacion": now,
+                    "notas": "Fase añadida automáticamente"
+                }
+                append_data("almacen", row)
+                
+            logger.info(f"Añadidas {len(fases_faltantes)} fases al almacén")
+        else:
+            logger.info("El almacén ya tiene todas las fases necesarias")
+            
+        return True
+    except Exception as e:
+        logger.error(f"Error al verificar fases del almacén: {e}")
+        return False
