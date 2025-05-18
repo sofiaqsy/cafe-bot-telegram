@@ -10,7 +10,7 @@ from utils.db import append_data, get_all_data
 from utils.sheets import (
     update_cell, FASES_CAFE, TRANSICIONES_PERMITIDAS, es_transicion_valida, 
     get_compras_por_fase, get_almacen_cantidad, actualizar_almacen_desde_proceso,
-    leer_almacen_para_proceso
+    leer_almacen_para_proceso, update_almacen, get_filtered_data
 )
 from utils.helpers import format_currency, get_now_peru, safe_float
 
@@ -18,7 +18,7 @@ from utils.helpers import format_currency, get_now_peru, safe_float
 logger = logging.getLogger(__name__)
 
 # Estados para la conversación
-SELECCIONAR_ORIGEN, SELECCIONAR_DESTINO, SELECCIONAR_COMPRAS, INGRESAR_CANTIDAD, CONFIRMAR_MERMA, AGREGAR_NOTAS, CONFIRMAR = range(7)
+SELECCIONAR_ORIGEN, SELECCIONAR_DESTINO, SELECCIONAR_REGISTROS_ALMACEN, INGRESAR_CANTIDAD, CONFIRMAR_MERMA, AGREGAR_NOTAS, CONFIRMAR = range(7)
 
 # Headers para la hoja de proceso
 PROCESO_HEADERS = ["fecha", "origen", "destino", "cantidad", "compras_ids", "merma", "notas", "registrado_por"]
@@ -96,34 +96,6 @@ async def seleccionar_origen(update: Update, context: ContextTypes.DEFAULT_TYPE)
     context.user_data['origen'] = origen
     logger.info(f"Usuario {update.effective_user.id} seleccionó fase de origen: {origen} (disponible en almacén: {cantidad_almacen} kg)")
     
-    # Obtener compras disponibles en esa fase utilizando la nueva función
-    compras_disponibles = get_compras_por_fase(origen)
-    
-    # Mensajes de depuración para verificar las compras
-    logger.info(f"Compras disponibles en fase {origen}: {len(compras_disponibles)}")
-    for i, compra in enumerate(compras_disponibles):
-        logger.info(f"Compra {i+1}: {compra.get('proveedor')} - {compra.get('kg_disponibles')} kg - ID: {compra.get('id')}")
-    
-    if not compras_disponibles:
-        await update.message.reply_text(
-            f"⚠️ No hay compras registradas en fase {origen}, aunque el almacén indica {cantidad_almacen} kg disponibles.\n\n"
-            "Se recomienda sincronizar el almacén con las compras.",
-            reply_markup=ReplyKeyboardRemove()
-        )
-        return ConversationHandler.END
-    
-    # Calcular el total de kg disponibles
-    total_kg = sum(safe_float(compra.get('kg_disponibles', 0)) for compra in compras_disponibles)
-    
-    # Verificar si hay diferencia entre almacén y compras
-    if abs(total_kg - cantidad_almacen) > 0.1:  # Diferencia mayor a 0.1 kg
-        logger.warning(f"Posible desincronización entre compras ({total_kg} kg) y almacén ({cantidad_almacen} kg) para fase {origen}")
-    
-    # Guardar las compras disponibles para más tarde
-    context.user_data['compras_disponibles'] = compras_disponibles
-    context.user_data['total_kg_disponibles'] = total_kg
-    context.user_data['almacen_kg_disponibles'] = cantidad_almacen
-    
     # Obtener destinos posibles para esta fase
     if origen in TRANSICIONES_PERMITIDAS:
         destinos_posibles = TRANSICIONES_PERMITIDAS[origen]
@@ -133,7 +105,7 @@ async def seleccionar_origen(update: Update, context: ContextTypes.DEFAULT_TYPE)
         reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
         
         await update.message.reply_text(
-            f"🔍 Hay {len(compras_disponibles)} compras de café en fase {origen}.\n"
+            f"🔍 Origen seleccionado: {origen}\n"
             f"📊 Almacén: {cantidad_almacen} kg disponibles\n\n"
             "Selecciona la fase de destino a la que quieres transformar el café:",
             reply_markup=reply_markup
@@ -148,7 +120,7 @@ async def seleccionar_origen(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return ConversationHandler.END
 
 async def seleccionar_destino(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Guarda la fase de destino y muestra las compras disponibles"""
+    """Guarda la fase de destino y muestra los registros disponibles en el almacén"""
     destino = update.message.text.strip().upper()
     origen = context.user_data['origen']
     
@@ -170,87 +142,262 @@ async def seleccionar_destino(update: Update, context: ContextTypes.DEFAULT_TYPE
     context.user_data['destino'] = destino
     logger.info(f"Usuario {update.effective_user.id} seleccionó fase de destino: {destino}")
     
-    # Obtener las compras disponibles para esta fase
-    compras_disponibles = context.user_data['compras_disponibles']
+    # MEJORA: Obtener directamente los registros del almacén con la fase seleccionada
+    almacen_registros = get_filtered_data('almacen', {'fase_actual': origen})
     
-    # Mostrar información de las compras disponibles y preguntar cuáles quiere procesar
-    mensaje = f"🔍 Compras en fase {origen} disponibles para procesar:\n\n"
+    # Filtrar solo los que tienen kg disponibles
+    almacen_disponible = []
+    for registro in almacen_registros:
+        kg_disponibles = safe_float(registro.get('kg_disponibles', 0))
+        if kg_disponibles > 0:
+            almacen_disponible.append(registro)
     
-    # Crear teclado inline con las compras disponibles
+    if not almacen_disponible:
+        await update.message.reply_text(
+            f"⚠️ No hay registros disponibles en el almacén para la fase {origen}.\n\n"
+            "Por favor, inicia el proceso nuevamente con otra fase de origen.",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        return ConversationHandler.END
+    
+    # Guardar los registros disponibles para más tarde
+    context.user_data['almacen_disponible'] = almacen_disponible
+    
+    # Mostrar información de los registros disponibles y preguntar cuáles quiere procesar
+    mensaje = f"🔍 Registros en almacén fase {origen} disponibles para procesar:\n\n"
+    
+    # Crear teclado inline con los registros disponibles
     keyboard = []
-    for i, compra in enumerate(compras_disponibles):
-        # Extraer información de la compra
-        proveedor = compra.get('proveedor', 'Desconocido')
-        kg_disponibles = safe_float(compra.get('kg_disponibles', 0))
-        fecha = compra.get('fecha', 'Sin fecha')
-        compra_id = compra.get('id', f"R{compra.get('_row_index', 'X')}")  # Usar ID o índice como fallback
+    
+    # Añadir botón para seleccionar todos los registros
+    keyboard.append([
+        InlineKeyboardButton("Seleccionar todos los registros", callback_data="todos")
+    ])
+    
+    for i, registro in enumerate(almacen_disponible):
+        # Extraer información del registro
+        compra_id = registro.get('compra_id', 'Sin ID')
+        kg_disponibles = safe_float(registro.get('kg_disponibles', 0))
+        fecha = registro.get('fecha', 'Sin fecha')
+        registro_id = registro.get('id', f"R{registro.get('_row_index', 'X')}")
+        
+        # Buscar información adicional si hay ID de compra
+        info_extra = ""
+        if compra_id:
+            compras = get_filtered_data('compras', {'id': compra_id})
+            if compras:
+                compra = compras[0]
+                proveedor = compra.get('proveedor', 'Desconocido')
+                info_extra = f" - Proveedor: {proveedor}"
         
         # Añadir fila de información
-        mensaje += f"{i+1}. {proveedor}: {kg_disponibles} kg ({fecha}) - ID: {compra_id}\n"
+        mensaje += f"{i+1}. ID: {registro_id} - {kg_disponibles} kg ({fecha}){info_extra}\n"
         
-        # Añadir botón para seleccionar todas las compras
-        if i == 0:
-            keyboard.append([
-                InlineKeyboardButton("Seleccionar todas", callback_data="todas")
-            ])
-        
-        # Crear botón para esta compra
+        # Crear botón para este registro
         keyboard.append([
-            InlineKeyboardButton(f"{i+1}. {proveedor} ({kg_disponibles} kg)", callback_data=f"compra_{i}")
+            InlineKeyboardButton(f"{i+1}. {kg_disponibles} kg - ID: {registro_id}", callback_data=f"registro_{i}")
         ])
+    
+    # Añadir botón para selección múltiple personalizada
+    keyboard.append([
+        InlineKeyboardButton("Selección múltiple", callback_data="multi")
+    ])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await update.message.reply_text(
-        mensaje + "\n¿Qué compras deseas procesar?",
+        mensaje + "\n¿Qué registros de almacén deseas procesar?",
         reply_markup=reply_markup
     )
-    return SELECCIONAR_COMPRAS
+    return SELECCIONAR_REGISTROS_ALMACEN
 
-async def seleccionar_compras_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Procesa la selección de compras a través de botones inline"""
+async def seleccionar_registros_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Procesa la selección de registros de almacén a través de botones inline"""
     query = update.callback_query
     await query.answer()
     
-    compras_disponibles = context.user_data['compras_disponibles']
+    almacen_disponible = context.user_data['almacen_disponible']
     origen = context.user_data['origen']
     destino = context.user_data['destino']
     
-    if query.data == "todas":
-        # Seleccionar todas las compras
-        context.user_data['compras_seleccionadas'] = compras_disponibles
+    if query.data == "todos":
+        # Seleccionar todos los registros
+        context.user_data['registros_seleccionados'] = almacen_disponible
         # Calcular total de kg disponibles
-        total_kg = sum(safe_float(compra.get('kg_disponibles', 0)) for compra in compras_disponibles)
+        total_kg = sum(safe_float(registro.get('kg_disponibles', 0)) for registro in almacen_disponible)
+        
+        # Formatear mensaje con los registros seleccionados
+        seleccionados_info = []
+        for registro in almacen_disponible:
+            kg = safe_float(registro.get('kg_disponibles', 0))
+            registro_id = registro.get('id', 'Sin ID')
+            seleccionados_info.append(f"ID: {registro_id} ({kg} kg)")
+        
+        seleccionados_texto = "\n- ".join([""] + seleccionados_info)
+        
+        await query.edit_message_text(
+            f"🛒 Has seleccionado todos los registros:{seleccionados_texto}\n\n"
+            f"Total disponible: {total_kg} kg\n\n"
+            f"¿Cuántos kg de café {origen} deseas transformar a {destino}?"
+        )
+        
+        # Preguntar la cantidad a procesar
+        await update.effective_chat.send_message(
+            f"📝 Ingresa la cantidad en kg a procesar (máximo {total_kg} kg):",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        
+        context.user_data['kg_disponibles'] = total_kg
+        return INGRESAR_CANTIDAD
+    
+    elif query.data == "multi":
+        # Implementar selección múltiple personalizada
+        # Crear un nuevo teclado con checkboxes para selección múltiple
+        keyboard = []
+        for i, registro in enumerate(almacen_disponible):
+            kg_disponibles = safe_float(registro.get('kg_disponibles', 0))
+            registro_id = registro.get('id', 'Sin ID')
+            
+            # Estado inicial: no seleccionado
+            checkbox = "☐"  # Checkbox vacío
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"{checkbox} {i+1}. {kg_disponibles} kg - ID: {registro_id}", 
+                    callback_data=f"toggle_{i}"
+                )
+            ])
+        
+        # Añadir botón para confirmar selección
+        keyboard.append([
+            InlineKeyboardButton("✅ Confirmar selección", callback_data="confirmar_multi")
+        ])
+        
+        # Inicializar estructura para guardar selecciones
+        context.user_data['multi_seleccion'] = {}
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(
+            "📋 Selecciona múltiples registros (puedes marcar/desmarcar):",
+            reply_markup=reply_markup
+        )
+        return SELECCIONAR_REGISTROS_ALMACEN
+    
+    elif query.data.startswith("toggle_"):
+        # Actualizar estado de selección (toggle)
+        indice = int(query.data.split("_")[1])
+        multi_seleccion = context.user_data.get('multi_seleccion', {})
+        
+        # Toggle selection state
+        if str(indice) in multi_seleccion:
+            del multi_seleccion[str(indice)]
+        else:
+            multi_seleccion[str(indice)] = True
+        
+        # Save selection state
+        context.user_data['multi_seleccion'] = multi_seleccion
+        
+        # Recreate keyboard with updated checkbox states
+        keyboard = []
+        for i, registro in enumerate(almacen_disponible):
+            kg_disponibles = safe_float(registro.get('kg_disponibles', 0))
+            registro_id = registro.get('id', 'Sin ID')
+            
+            # Checkbox state based on selection
+            checkbox = "☑" if str(i) in multi_seleccion else "☐"
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"{checkbox} {i+1}. {kg_disponibles} kg - ID: {registro_id}", 
+                    callback_data=f"toggle_{i}"
+                )
+            ])
+        
+        # Add confirmation button
+        keyboard.append([
+            InlineKeyboardButton("✅ Confirmar selección", callback_data="confirmar_multi")
+        ])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(
+            "📋 Selecciona múltiples registros (puedes marcar/desmarcar):",
+            reply_markup=reply_markup
+        )
+        return SELECCIONAR_REGISTROS_ALMACEN
+    
+    elif query.data == "confirmar_multi":
+        # Procesar selección múltiple confirmada
+        multi_seleccion = context.user_data.get('multi_seleccion', {})
+        
+        if not multi_seleccion:
+            # No hay selecciones, mostrar mensaje de error
+            await query.edit_message_text(
+                "⚠️ No has seleccionado ningún registro.\n\n"
+                "Por favor, selecciona al menos un registro para procesar."
+            )
+            
+            # Recrear el teclado original
+            return await seleccionar_destino(update, context)
+        
+        # Crear lista de registros seleccionados
+        registros_seleccionados = []
+        for indice_str in multi_seleccion:
+            indice = int(indice_str)
+            if indice < len(almacen_disponible):
+                registros_seleccionados.append(almacen_disponible[indice])
+        
+        context.user_data['registros_seleccionados'] = registros_seleccionados
+        
+        # Calcular total de kg disponibles
+        total_kg = sum(safe_float(registro.get('kg_disponibles', 0)) for registro in registros_seleccionados)
+        
+        # Formatear mensaje con los registros seleccionados
+        seleccionados_info = []
+        for registro in registros_seleccionados:
+            kg = safe_float(registro.get('kg_disponibles', 0))
+            registro_id = registro.get('id', 'Sin ID')
+            seleccionados_info.append(f"ID: {registro_id} ({kg} kg)")
+        
+        seleccionados_texto = "\n- ".join([""] + seleccionados_info)
+        
+        await query.edit_message_text(
+            f"🛒 Has seleccionado los siguientes registros:{seleccionados_texto}\n\n"
+            f"Total disponible: {total_kg} kg\n\n"
+            f"¿Cuántos kg de café {origen} deseas transformar a {destino}?"
+        )
+        
+        # Preguntar la cantidad a procesar
+        await update.effective_chat.send_message(
+            f"📝 Ingresa la cantidad en kg a procesar (máximo {total_kg} kg):",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        
+        context.user_data['kg_disponibles'] = total_kg
+        return INGRESAR_CANTIDAD
+    
     else:
-        # Seleccionar una compra específica
+        # Seleccionar un registro específico
         indice = int(query.data.split('_')[1])
-        context.user_data['compras_seleccionadas'] = [compras_disponibles[indice]]
-        total_kg = safe_float(compras_disponibles[indice].get('kg_disponibles', 0))
-    
-    # Formatear mensaje de compras seleccionadas
-    compras_info = []
-    for compra in context.user_data['compras_seleccionadas']:
-        proveedor = compra.get('proveedor', 'Desconocido')
-        kg = safe_float(compra.get('kg_disponibles', 0))
-        compra_id = compra.get('id', f"R{compra.get('_row_index', 'X')}")
-        compras_info.append(f"{proveedor} ({kg} kg) - ID: {compra_id}")
-    
-    compras_texto = "\n- ".join([""] + compras_info)
-    
-    await query.edit_message_text(
-        f"🛒 Has seleccionado las siguientes compras:{compras_texto}\n\n"
-        f"Total disponible: {total_kg} kg\n\n"
-        f"¿Cuántos kg de café {origen} deseas transformar a {destino}?"
-    )
-    
-    # Preguntar la cantidad a procesar
-    await update.effective_chat.send_message(
-        f"📝 Ingresa la cantidad en kg a procesar (máximo {total_kg} kg):",
-        reply_markup=ReplyKeyboardRemove()
-    )
-    
-    context.user_data['kg_disponibles'] = total_kg
-    return INGRESAR_CANTIDAD
+        context.user_data['registros_seleccionados'] = [almacen_disponible[indice]]
+        total_kg = safe_float(almacen_disponible[indice].get('kg_disponibles', 0))
+        
+        # Formatear mensaje
+        registro = almacen_disponible[indice]
+        kg = safe_float(registro.get('kg_disponibles', 0))
+        registro_id = registro.get('id', 'Sin ID')
+        
+        await query.edit_message_text(
+            f"🛒 Has seleccionado el registro:\n- ID: {registro_id} ({kg} kg)\n\n"
+            f"Total disponible: {total_kg} kg\n\n"
+            f"¿Cuántos kg de café {origen} deseas transformar a {destino}?"
+        )
+        
+        # Preguntar la cantidad a procesar
+        await update.effective_chat.send_message(
+            f"📝 Ingresa la cantidad en kg a procesar (máximo {total_kg} kg):",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        
+        context.user_data['kg_disponibles'] = total_kg
+        return INGRESAR_CANTIDAD
 
 async def ingresar_cantidad(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Procesa la cantidad ingresada y solicita confirmar la merma"""
@@ -366,20 +513,28 @@ async def agregar_notas(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     destino = context.user_data['destino']
     cantidad = context.user_data['cantidad']
     merma = context.user_data['merma']
-    compras_seleccionadas = context.user_data['compras_seleccionadas']
+    registros_seleccionados = context.user_data['registros_seleccionados']
     
     # Calcular cantidad resultante
     cantidad_resultante = cantidad - merma
     
-    # Formatear información de compras
-    compras_info = []
-    for compra in compras_seleccionadas:
-        proveedor = compra.get('proveedor', 'Desconocido')
-        kg = safe_float(compra.get('kg_disponibles', 0))
-        compra_id = compra.get('id', f"R{compra.get('_row_index', 'X')}")
-        compras_info.append(f"{proveedor} ({kg} kg) - ID: {compra_id}")
+    # Formatear información de registros
+    registros_info = []
+    for registro in registros_seleccionados:
+        kg = safe_float(registro.get('kg_disponibles', 0))
+        registro_id = registro.get('id', 'Sin ID')
+        # Si hay compra_id, buscar el proveedor
+        compra_id = registro.get('compra_id', '')
+        info_adicional = ""
+        if compra_id:
+            compras = get_filtered_data('compras', {'id': compra_id})
+            if compras:
+                proveedor = compras[0].get('proveedor', 'Desconocido')
+                info_adicional = f" - Proveedor: {proveedor}"
+        
+        registros_info.append(f"ID: {registro_id} ({kg} kg){info_adicional}")
     
-    compras_texto = "\n- ".join([""] + compras_info)
+    registros_texto = "\n- ".join([""] + registros_info)
     
     # Crear resumen
     resumen = (
@@ -389,7 +544,7 @@ async def agregar_notas(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         f"Cantidad: {cantidad} kg\n"
         f"Merma: {merma} kg\n"
         f"Cantidad resultante: {cantidad_resultante} kg\n"
-        f"Compras:{compras_texto}\n\n"
+        f"Registros:{registros_texto}\n\n"
         f"Notas: {notas or 'Sin notas adicionales'}\n\n"
         "¿Confirmas este proceso? (sí/no)"
     )
@@ -416,16 +571,24 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         cantidad = context.user_data['cantidad']
         merma = context.user_data['merma']
         notas = context.user_data['notas']
-        compras_seleccionadas = context.user_data['compras_seleccionadas']
+        registros_seleccionados = context.user_data['registros_seleccionados']
         
-        # Obtener identificadores únicos de las compras seleccionadas
+        # Obtener identificadores únicos de los registros seleccionados
+        registros_ids = []
         compras_ids = []
-        for compra in compras_seleccionadas:
-            # Usar el ID único si existe, si no, usar el índice de fila como fallback
-            compra_id = compra.get('id', str(compra.get('_row_index', '')))
-            compras_ids.append(compra_id)
+        for registro in registros_seleccionados:
+            # Usar el ID único del registro
+            registro_id = registro.get('id', '')
+            if registro_id:
+                registros_ids.append(registro_id)
+            
+            # Añadir también el ID de compra si existe
+            compra_id = registro.get('compra_id', '')
+            if compra_id and compra_id not in compras_ids:
+                compras_ids.append(compra_id)
         
         # Convertir a cadena
+        registros_ids_str = ",".join(registros_ids)
         compras_ids_str = ",".join(compras_ids)
         
         # Obtener fecha y hora actual
@@ -437,7 +600,7 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             "origen": origen,
             "destino": destino,
             "cantidad": cantidad,
-            "compras_ids": compras_ids_str,
+            "compras_ids": compras_ids_str,  # IDs de compras relacionadas
             "merma": merma,
             "notas": notas,
             "registrado_por": update.effective_user.username or update.effective_user.first_name
@@ -446,71 +609,73 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         try:
             # 1. Guardar el proceso
             append_data("proceso", proceso_data)
+            logger.info(f"Proceso guardado: {origen} -> {destino}, {cantidad} kg")
             
-            # 2. Actualizar la fase_actual y kg_disponibles de las compras procesadas
+            # 2. Actualizar los registros del almacén procesados
             cantidad_restante = cantidad
             
-            for compra in compras_seleccionadas:
-                row_index = compra.get('_row_index')
-                kg_disponibles = safe_float(compra.get('kg_disponibles', 0))
+            for registro in registros_seleccionados:
+                row_index = registro.get('_row_index')
+                kg_disponibles = safe_float(registro.get('kg_disponibles', 0))
+                registro_id = registro.get('id', '')
                 
                 if cantidad_restante <= 0:
                     break
                 
-                # Determinar cuánto se procesa de esta compra
+                # Determinar cuánto se procesa de este registro
                 if cantidad_restante >= kg_disponibles:
-                    # Se procesa toda la compra
+                    # Se procesa todo el registro
                     cantidad_procesada = kg_disponibles
                     cantidad_restante -= kg_disponibles
                     nuevo_kg_disponibles = 0
-                    
-                    # Actualizar la fase_actual si se procesa toda la cantidad
-                    update_cell("compras", row_index, "fase_actual", destino)
-                    
                 else:
                     # Se procesa parcialmente
                     cantidad_procesada = cantidad_restante
                     nuevo_kg_disponibles = kg_disponibles - cantidad_procesada
                     cantidad_restante = 0
                 
-                # Actualizar kg_disponibles
-                update_cell("compras", row_index, "kg_disponibles", nuevo_kg_disponibles)
+                # Actualizar kg_disponibles en el registro de almacén
+                update_cell("almacen", row_index, "kg_disponibles", nuevo_kg_disponibles)
                 
-                logger.info(f"Actualizada compra {compra.get('id', 'N/A')} (fila {row_index}), nuevo kg_disponibles: {nuevo_kg_disponibles}")
+                logger.info(f"Actualizado registro de almacén {registro_id} (fila {row_index}), nuevo kg_disponibles: {nuevo_kg_disponibles}")
             
-            # 3. Actualizar el almacén central
-            resultado_almacen = actualizar_almacen_desde_proceso(
-                origen=origen,
-                destino=destino,
-                cantidad=cantidad,
-                merma=merma
+            # 3. Crear nuevo registro en el almacén para la fase de destino
+            cantidad_resultante = cantidad - merma
+            
+            if cantidad_resultante > 0:
+                # Notas para el nuevo registro
+                notas_destino = f"Procesado desde {origen}. IDs origen: {registros_ids_str}"
+                
+                # Crear nuevo registro en destino
+                result_destino = update_almacen(
+                    fase=destino,
+                    cantidad_cambio=cantidad_resultante,
+                    operacion="sumar",
+                    notas=notas_destino,
+                    compra_id=compras_ids_str if compras_ids_str else ""
+                )
+                
+                if result_destino:
+                    logger.info(f"Creado nuevo registro en almacén para fase {destino}: {cantidad_resultante} kg")
+                else:
+                    logger.warning(f"Error al crear registro en almacén para fase {destino}")
+            
+            # 4. Mostrar mensaje de éxito
+            # Obtener cantidades actualizadas para mostrar
+            nueva_cantidad_origen = get_almacen_cantidad(origen)
+            nueva_cantidad_destino = get_almacen_cantidad(destino)
+            
+            await update.message.reply_text(
+                "✅ Proceso registrado correctamente.\n\n"
+                f"Se ha transformado {cantidad} kg de café de {origen} a {destino}.\n"
+                f"Merma: {merma} kg\n"
+                f"Cantidad resultante: {cantidad_resultante} kg\n\n"
+                f"📊 ALMACÉN ACTUALIZADO:\n"
+                f"- {origen}: {nueva_cantidad_origen} kg disponibles\n"
+                f"- {destino}: {nueva_cantidad_destino} kg disponibles",
+                reply_markup=ReplyKeyboardRemove()
             )
             
-            if resultado_almacen:
-                logger.info(f"Almacén actualizado correctamente: {origen} -> {destino}, {cantidad} kg, merma: {merma} kg")
-                
-                # Obtener cantidades actualizadas para mostrar
-                nueva_cantidad_origen = get_almacen_cantidad(origen)
-                nueva_cantidad_destino = get_almacen_cantidad(destino)
-                
-                # Mostrar mensaje de éxito con info del almacén
-                await update.message.reply_text(
-                    "✅ Proceso registrado correctamente.\n\n"
-                    f"Se ha transformado {cantidad} kg de café de {origen} a {destino}.\n\n"
-                    f"📊 ALMACÉN ACTUALIZADO:\n"
-                    f"- {origen}: {nueva_cantidad_origen} kg disponibles\n"
-                    f"- {destino}: {nueva_cantidad_destino} kg disponibles",
-                    reply_markup=ReplyKeyboardRemove()
-                )
-            else:
-                logger.warning(f"El proceso se guardó correctamente, pero hubo un problema al actualizar el almacén")
-                
-                await update.message.reply_text(
-                    "✅ Proceso registrado correctamente.\n\n"
-                    f"Se ha transformado {cantidad} kg de café de {origen} a {destino}.\n\n"
-                    "⚠️ Advertencia: Hubo un problema al actualizar el almacén central.",
-                    reply_markup=ReplyKeyboardRemove()
-                )
         except Exception as e:
             logger.error(f"Error al guardar proceso: {e}")
             await update.message.reply_text(
@@ -545,7 +710,7 @@ def register_proceso_handlers(application):
         states={
             SELECCIONAR_ORIGEN: [MessageHandler(filters.TEXT & ~filters.COMMAND, seleccionar_origen)],
             SELECCIONAR_DESTINO: [MessageHandler(filters.TEXT & ~filters.COMMAND, seleccionar_destino)],
-            SELECCIONAR_COMPRAS: [CallbackQueryHandler(seleccionar_compras_callback)],
+            SELECCIONAR_REGISTROS_ALMACEN: [CallbackQueryHandler(seleccionar_registros_callback)],
             INGRESAR_CANTIDAD: [MessageHandler(filters.TEXT & ~filters.COMMAND, ingresar_cantidad)],
             CONFIRMAR_MERMA: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirmar_merma)],
             AGREGAR_NOTAS: [MessageHandler(filters.TEXT & ~filters.COMMAND, agregar_notas)],
