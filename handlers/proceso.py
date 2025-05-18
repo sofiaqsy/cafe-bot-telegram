@@ -7,7 +7,7 @@ from telegram.ext import (
 )
 from config import PROCESO_FILE
 from utils.db import append_data, get_all_data
-from utils.sheets import update_cell, FASES_CAFE, TRANSICIONES_PERMITIDAS, es_transicion_valida
+from utils.sheets import update_cell, FASES_CAFE, TRANSICIONES_PERMITIDAS, es_transicion_valida, get_compras_por_fase
 from utils.helpers import format_currency, get_now_peru, safe_float
 
 # Configurar logging
@@ -57,14 +57,8 @@ async def seleccionar_origen(update: Update, context: ContextTypes.DEFAULT_TYPE)
     context.user_data['origen'] = origen
     logger.info(f"Usuario {update.effective_user.id} seleccionó fase de origen: {origen}")
     
-    # Verificar si hay compras disponibles en esa fase
-    compras = get_all_data("compras")
-    
-    # Filtrar compras por fase_actual
-    compras_disponibles = [
-        compra for compra in compras 
-        if compra.get('fase_actual') == origen and safe_float(compra.get('kg_disponibles', 0)) > 0
-    ]
+    # Obtener compras disponibles en esa fase utilizando la nueva función
+    compras_disponibles = get_compras_por_fase(origen)
     
     if not compras_disponibles:
         await update.message.reply_text(
@@ -137,10 +131,11 @@ async def seleccionar_destino(update: Update, context: ContextTypes.DEFAULT_TYPE
         fecha = compra.get('fecha', '')
         proveedor = compra.get('proveedor', '')
         kg_disponibles = safe_float(compra.get('kg_disponibles', 0))
+        compra_id = compra.get('id', f"ID-{i}")  # Usar el ID único si existe, o generar uno temporal
         
         keyboard.append([
             InlineKeyboardButton(
-                f"{fecha} - {proveedor} ({kg_disponibles} kg)",
+                f"{fecha} - {proveedor} ({kg_disponibles} kg) [ID: {compra_id}]",
                 callback_data=f"select_compra_{i}"
             )
         ])
@@ -218,11 +213,11 @@ async def seleccionar_compras_callback(update: Update, context: ContextTypes.DEF
             if compra in compras_seleccionadas:
                 # Desmarcar
                 compras_seleccionadas.remove(compra)
-                logger.info(f"Usuario {update.effective_user.id} deseleccionó compra: {compra.get('proveedor')}")
+                logger.info(f"Usuario {update.effective_user.id} deseleccionó compra: {compra.get('proveedor')} [ID: {compra.get('id', 'N/A')}]")
             else:
                 # Marcar
                 compras_seleccionadas.append(compra)
-                logger.info(f"Usuario {update.effective_user.id} seleccionó compra: {compra.get('proveedor')}")
+                logger.info(f"Usuario {update.effective_user.id} seleccionó compra: {compra.get('proveedor')} [ID: {compra.get('id', 'N/A')}]")
             
             # Actualizar lista en el contexto
             context.user_data['compras_seleccionadas'] = compras_seleccionadas
@@ -233,13 +228,14 @@ async def seleccionar_compras_callback(update: Update, context: ContextTypes.DEF
                 fecha = compra.get('fecha', '')
                 proveedor = compra.get('proveedor', '')
                 kg_disponibles = safe_float(compra.get('kg_disponibles', 0))
+                compra_id = compra.get('id', f"ID-{i}")  # Usar el ID único si existe
                 
                 # Marcar con un check si está seleccionada
                 prefix = "✅ " if compra in compras_seleccionadas else ""
                 
                 keyboard.append([
                     InlineKeyboardButton(
-                        f"{prefix}{fecha} - {proveedor} ({kg_disponibles} kg)",
+                        f"{prefix}{fecha} - {proveedor} ({kg_disponibles} kg) [ID: {compra_id}]",
                         callback_data=f"select_compra_{i}"
                     )
                 ])
@@ -415,8 +411,9 @@ async def agregar_notas(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         fecha = compra.get('fecha', '')
         proveedor = compra.get('proveedor', '')
         kg_disponibles = safe_float(compra.get('kg_disponibles', 0))
+        compra_id = compra.get('id', f"ID-{i}")
         
-        mensaje += f"{i+1}. {fecha} - {proveedor} ({kg_disponibles} kg)\n"
+        mensaje += f"{i+1}. {fecha} - {proveedor} ({kg_disponibles} kg) [ID: {compra_id}]\n"
     
     # Añadir pregunta de confirmación
     mensaje += "\n¿Confirmas este proceso? (Sí/No)"
@@ -441,11 +438,12 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         notas = context.user_data['notas']
         compras_seleccionadas = context.user_data['compras_seleccionadas']
         
-        # Obtener identificadores de las compras seleccionadas
+        # Obtener identificadores únicos de las compras seleccionadas
         compras_ids = []
         for compra in compras_seleccionadas:
-            row_index = compra.get('_row_index', '')
-            compras_ids.append(str(row_index))
+            # Usar el ID único si existe, si no, usar el índice de fila como fallback
+            compra_id = compra.get('id', str(compra.get('_row_index', '')))
+            compras_ids.append(compra_id)
         
         # Convertir a cadena
         compras_ids_str = ",".join(compras_ids)
@@ -498,7 +496,7 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                 # Actualizar kg_disponibles
                 update_cell("compras", row_index, "kg_disponibles", nuevo_kg_disponibles)
                 
-                logger.info(f"Actualizada compra {row_index}, nuevo kg_disponibles: {nuevo_kg_disponibles}")
+                logger.info(f"Actualizada compra {compra.get('id', 'N/A')} (fila {row_index}), nuevo kg_disponibles: {nuevo_kg_disponibles}")
             
             # Mostrar mensaje de éxito
             await update.message.reply_text(
