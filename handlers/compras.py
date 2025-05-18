@@ -4,6 +4,7 @@ from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import CommandHandler, ConversationHandler, MessageHandler, filters, ContextTypes
 from config import COMPRAS_FILE
 from utils.db import append_data
+from utils.sheets import append_data as append_sheets
 from utils.helpers import get_now_peru, safe_float, format_date_for_sheets
 
 # Configurar logging
@@ -15,8 +16,8 @@ TIPO_CAFE, PROVEEDOR, CANTIDAD, PRECIO, CONFIRMAR = range(5)
 # Datos temporales
 datos_compra = {}
 
-# Headers para la hoja de compras - actualizado para incluir fase_actual y kg_disponibles
-COMPRAS_HEADERS = ["fecha", "tipo_cafe", "proveedor", "cantidad", "precio", "total", "fase_actual", "kg_disponibles"]
+# Headers para la hoja de compras - restructuración: id, fecha, tipo_cafe, proveedor, cantidad, preciototal, notas, registrado_por
+COMPRAS_HEADERS = ["id", "fecha", "tipo_cafe", "proveedor", "cantidad", "preciototal", "notas", "registrado_por"]
 
 # Tipos de café predefinidos - solo 3 opciones fijas
 TIPOS_CAFE = ["CEREZO", "MOTE", "PERGAMINO"]
@@ -132,14 +133,8 @@ async def precio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         compra = datos_compra[user_id]
         total = compra["cantidad"] * compra["precio"]
         
-        # Guardar el total en los datos
-        datos_compra[user_id]["total"] = total
-        
-        # Inicializar fase_actual con el tipo de café
-        datos_compra[user_id]["fase_actual"] = compra["tipo_cafe"]
-        
-        # Inicializar kg_disponibles con la cantidad total
-        datos_compra[user_id]["kg_disponibles"] = compra["cantidad"]
+        # Guardar el total como preciototal
+        datos_compra[user_id]["preciototal"] = total
         
         # Crear teclado para confirmación
         keyboard = [["Sí", "No"]]
@@ -181,8 +176,14 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         fecha_formateada = now.strftime("%Y-%m-%d %H:%M")
         compra["fecha"] = format_date_for_sheets(fecha_formateada)
         
+        # Añadir usuario que registra
+        compra["registrado_por"] = update.effective_user.username or update.effective_user.first_name
+        
+        # Añadir notas vacías (para mantener estructura)
+        compra["notas"] = ""
+        
         # Verificar que todos los datos requeridos estén presentes
-        campos_requeridos = ["tipo_cafe", "proveedor", "cantidad", "precio", "total", "fase_actual", "kg_disponibles"]
+        campos_requeridos = ["tipo_cafe", "proveedor", "cantidad", "preciototal"]
         datos_completos = all(campo in compra for campo in campos_requeridos)
         
         if not datos_completos:
@@ -198,10 +199,10 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         
         logger.info(f"Guardando compra en Google Sheets: {compra}")
         
-        # Guardar la compra en Google Sheets a través de db.py
+        # Guardar la compra en Google Sheets
         try:
-            # Llamar a la función para guardar los datos
-            result = append_data(COMPRAS_FILE, compra, COMPRAS_HEADERS)
+            # Usar append_sheets directamente
+            result = append_sheets("compras", compra)
             
             if result:
                 logger.info(f"Compra guardada exitosamente para usuario {user_id}")
@@ -212,7 +213,7 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                     reply_markup=ReplyKeyboardRemove()
                 )
             else:
-                logger.error(f"Error al guardar compra: La función append_data devolvió False")
+                logger.error(f"Error al guardar compra: La función append_sheets devolvió False")
                 await update.message.reply_text(
                     "❌ Error al guardar la compra. Por favor, intenta nuevamente.\n\n"
                     "Contacta al administrador si el problema persiste.",
