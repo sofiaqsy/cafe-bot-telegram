@@ -60,6 +60,11 @@ async def seleccionar_origen(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # Obtener compras disponibles en esa fase utilizando la nueva función
     compras_disponibles = get_compras_por_fase(origen)
     
+    # Mensajes de depuración para verificar las compras
+    logger.info(f"Compras disponibles en fase {origen}: {len(compras_disponibles)}")
+    for i, compra in enumerate(compras_disponibles):
+        logger.info(f"Compra {i+1}: {compra.get('proveedor')} - {compra.get('kg_disponibles')} kg - ID: {compra.get('id')}")
+    
     if not compras_disponibles:
         await update.message.reply_text(
             f"⚠️ No hay café disponible en fase {origen}.\n\n"
@@ -125,7 +130,7 @@ async def seleccionar_destino(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Inicializar lista para guardar las compras seleccionadas
     context.user_data['compras_seleccionadas'] = []
     
-    # Crear teclado con las compras disponibles - NUEVA ESTRUCTURA
+    # Crear teclado con las compras disponibles
     keyboard = []
     for i, compra in enumerate(compras_disponibles):
         proveedor = compra.get('proveedor', 'Sin proveedor')
@@ -223,7 +228,7 @@ async def seleccionar_compras_callback(update: Update, context: ContextTypes.DEF
             # Actualizar lista en el contexto
             context.user_data['compras_seleccionadas'] = compras_seleccionadas
             
-            # Actualizar teclado marcando las seleccionadas - NUEVA ESTRUCTURA
+            # Actualizar teclado marcando las seleccionadas
             keyboard = []
             for i, compra in enumerate(compras_disponibles):
                 proveedor = compra.get('proveedor', 'Sin proveedor')
@@ -407,7 +412,7 @@ async def agregar_notas(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         f"Notas: {notas}\n\n"
     )
     
-    # Añadir detalles de las compras seleccionadas - NUEVA ESTRUCTURA
+    # Añadir detalles de las compras seleccionadas
     mensaje += "📋 COMPRAS SELECCIONADAS:\n"
     for i, compra in enumerate(compras_seleccionadas):
         proveedor = compra.get('proveedor', 'Sin proveedor')
