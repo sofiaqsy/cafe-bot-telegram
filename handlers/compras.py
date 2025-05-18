@@ -1,6 +1,6 @@
 import logging
 import datetime
-from telegram import Update
+from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import CommandHandler, ConversationHandler, MessageHandler, filters, ContextTypes
 from config import COMPRAS_FILE
 from utils.db import append_data
@@ -8,8 +8,8 @@ from utils.db import append_data
 # Configurar logging
 logger = logging.getLogger(__name__)
 
-# Estados para la conversación
-PROVEEDOR, TIPO_CAFE, CANTIDAD, PRECIO, CONFIRMAR = range(5)  # Asegurarse de incluir TIPO_CAFE
+# Estados para la conversación - orden cambiado para pedir tipo_cafe primero
+TIPO_CAFE, PROVEEDOR, CANTIDAD, PRECIO, CONFIRMAR = range(5)
 
 # Datos temporales
 datos_compra = {}
@@ -17,45 +17,71 @@ datos_compra = {}
 # Headers para la hoja de compras
 COMPRAS_HEADERS = ["fecha", "tipo_cafe", "proveedor", "cantidad", "precio", "total"]
 
+# Tipos de café predefinidos
+TIPOS_CAFE = ["CEREZO", "MOTE", "PERGAMINO"]
+
 async def compra_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Inicia el proceso de registro de compra"""
-    logger.info(f"Usuario {update.effective_user.id} inició comando /compra")
+    """Inicia el proceso de registro de compra solicitando primero el tipo de café"""
+    user_id = update.effective_user.id
+    logger.info(f"Usuario {user_id} inició comando /compra")
+    
+    # Inicializar datos de compra para este usuario
+    datos_compra[user_id] = {}
+    
+    # Crear teclado con opciones predefinidas para tipo de café
+    keyboard = [[tipo] for tipo in TIPOS_CAFE]
+    keyboard.append(["Otro tipo"])
+    reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+    
     await update.message.reply_text(
         "Vamos a registrar una nueva compra de café.\n\n"
-        "Por favor, ingresa el nombre del proveedor:"
-    )
-    return PROVEEDOR
-
-async def proveedor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Guarda el proveedor y solicita el tipo de café"""
-    user_id = update.effective_user.id
-    proveedor_nombre = update.message.text
-    logger.info(f"Usuario {user_id} ingresó proveedor: {proveedor_nombre}")
-    
-    datos_compra[user_id] = {"proveedor": proveedor_nombre}
-    
-    await update.message.reply_text(
-        f"Proveedor: {proveedor_nombre}\n\n"
-        "Ahora, ingresa el tipo de café (por ejemplo: Cereza, Pergamino, Oro, etc.):"
+        "Primero, selecciona el tipo de café:",
+        reply_markup=reply_markup
     )
     return TIPO_CAFE
 
 async def tipo_cafe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Guarda el tipo de café y solicita la cantidad"""
+    """Guarda el tipo de café y solicita el proveedor"""
     user_id = update.effective_user.id
-    tipo = update.message.text.strip()
-    logger.info(f"Usuario {user_id} ingresó tipo de café: {tipo}")
+    selected_tipo = update.message.text.strip()
     
-    if not tipo:
+    # Si seleccionó "Otro tipo", pedir que especifique
+    if selected_tipo.lower() == "otro tipo":
         await update.message.reply_text(
-            "Por favor, ingresa un tipo de café válido."
+            "Por favor, ingresa el tipo de café:",
+            reply_markup=ReplyKeyboardRemove()
         )
         return TIPO_CAFE
     
-    datos_compra[user_id]["tipo_cafe"] = tipo
+    # Guardar el tipo de café
+    logger.info(f"Usuario {user_id} seleccionó tipo de café: {selected_tipo}")
+    datos_compra[user_id]["tipo_cafe"] = selected_tipo.upper()
+    
+    # Solicitar el proveedor
+    await update.message.reply_text(
+        f"Tipo de café: {selected_tipo.upper()}\n\n"
+        "Ahora, ingresa el nombre del proveedor:",
+        reply_markup=ReplyKeyboardRemove()
+    )
+    return PROVEEDOR
+
+async def proveedor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Guarda el proveedor y solicita la cantidad"""
+    user_id = update.effective_user.id
+    proveedor_nombre = update.message.text.strip()
+    logger.info(f"Usuario {user_id} ingresó proveedor: {proveedor_nombre}")
+    
+    # Verificar que no esté vacío
+    if not proveedor_nombre:
+        await update.message.reply_text(
+            "Por favor, ingresa un nombre de proveedor válido."
+        )
+        return PROVEEDOR
+    
+    datos_compra[user_id]["proveedor"] = proveedor_nombre
     
     await update.message.reply_text(
-        f"Tipo de café: {tipo}\n\n"
+        f"Proveedor: {proveedor_nombre}\n\n"
         "Ahora, ingresa la cantidad de café en kg:"
     )
     return CANTIDAD
@@ -107,16 +133,21 @@ async def precio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         # Guardar el total en los datos
         datos_compra[user_id]["total"] = total
         
+        # Crear teclado para confirmación
+        keyboard = [["Sí", "No"]]
+        reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+        
         # Mostrar resumen para confirmar
         await update.message.reply_text(
-            "📝 *Resumen de la compra*\n\n"
-            f"Proveedor: {compra['proveedor']}\n"
+            "📝 *RESUMEN DE LA COMPRA*\n\n"
             f"Tipo de café: {compra['tipo_cafe']}\n"
+            f"Proveedor: {compra['proveedor']}\n"
             f"Cantidad: {compra['cantidad']} kg\n"
             f"Precio: {compra['precio']} por kg\n"
             f"Total: {total}\n\n"
-            "¿Confirmar esta compra? (Sí/No)",
-            parse_mode="Markdown"
+            "¿Confirmar esta compra?",
+            parse_mode="Markdown",
+            reply_markup=reply_markup
         )
         return CONFIRMAR
         
@@ -141,14 +172,15 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         compra["fecha"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         # Verificar que todos los datos requeridos estén presentes
-        campos_requeridos = ["proveedor", "tipo_cafe", "cantidad", "precio", "total"]
+        campos_requeridos = ["tipo_cafe", "proveedor", "cantidad", "precio", "total"]
         datos_completos = all(campo in compra for campo in campos_requeridos)
         
         if not datos_completos:
             campos_faltantes = [campo for campo in campos_requeridos if campo not in compra]
             logger.error(f"Datos incompletos para usuario {user_id}. Campos faltantes: {campos_faltantes}. Datos: {compra}")
             await update.message.reply_text(
-                "❌ Error: Datos incompletos. Por favor, inicia el proceso nuevamente con /compra."
+                "❌ Error: Datos incompletos. Por favor, inicia el proceso nuevamente con /compra.",
+                reply_markup=ReplyKeyboardRemove()
             )
             if user_id in datos_compra:
                 del datos_compra[user_id]
@@ -171,26 +203,30 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                 
                 await update.message.reply_text(
                     "✅ ¡Compra registrada exitosamente!\n\n"
-                    "Usa /compra para registrar otra compra."
+                    "Usa /compra para registrar otra compra.",
+                    reply_markup=ReplyKeyboardRemove()
                 )
             else:
                 logger.error(f"Error al guardar compra: La función append_data devolvió False")
                 await update.message.reply_text(
                     "❌ Error al guardar la compra. Por favor, intenta nuevamente.\n\n"
-                    "Contacta al administrador si el problema persiste."
+                    "Contacta al administrador si el problema persiste.",
+                    reply_markup=ReplyKeyboardRemove()
                 )
         except Exception as e:
             logger.error(f"Error al guardar compra: {e}")
             await update.message.reply_text(
                 "❌ Error al guardar la compra. Por favor, intenta nuevamente.\n\n"
                 f"Error: {str(e)}\n\n"
-                "Contacta al administrador si el problema persiste."
+                "Contacta al administrador si el problema persiste.",
+                reply_markup=ReplyKeyboardRemove()
             )
     else:
         logger.info(f"Usuario {user_id} canceló la compra")
         await update.message.reply_text(
             "❌ Compra cancelada.\n\n"
-            "Usa /compra para iniciar de nuevo."
+            "Usa /compra para iniciar de nuevo.",
+            reply_markup=ReplyKeyboardRemove()
         )
     
     # Limpiar datos temporales
@@ -210,7 +246,8 @@ async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     
     await update.message.reply_text(
         "❌ Operación cancelada.\n\n"
-        "Usa /compra para iniciar de nuevo cuando quieras."
+        "Usa /compra para iniciar de nuevo cuando quieras.",
+        reply_markup=ReplyKeyboardRemove()
     )
     
     return ConversationHandler.END
@@ -221,8 +258,8 @@ def register_compras_handlers(application):
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("compra", compra_command)],
         states={
-            PROVEEDOR: [MessageHandler(filters.TEXT & ~filters.COMMAND, proveedor)],
             TIPO_CAFE: [MessageHandler(filters.TEXT & ~filters.COMMAND, tipo_cafe)],
+            PROVEEDOR: [MessageHandler(filters.TEXT & ~filters.COMMAND, proveedor)],
             CANTIDAD: [MessageHandler(filters.TEXT & ~filters.COMMAND, cantidad)],
             PRECIO: [MessageHandler(filters.TEXT & ~filters.COMMAND, precio)],
             CONFIRMAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirmar)],
