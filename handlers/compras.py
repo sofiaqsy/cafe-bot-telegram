@@ -9,7 +9,7 @@ from utils.db import append_data
 logger = logging.getLogger(__name__)
 
 # Estados para la conversación
-PROVEEDOR, TIPO_CAFE, CANTIDAD, PRECIO, CONFIRMAR = range(5)  # Eliminamos CALIDAD
+PROVEEDOR, TIPO_CAFE, CANTIDAD, PRECIO, CONFIRMAR = range(5)  # Asegurarse de incluir TIPO_CAFE
 
 # Datos temporales
 datos_compra = {}
@@ -145,7 +145,8 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         datos_completos = all(campo in compra for campo in campos_requeridos)
         
         if not datos_completos:
-            logger.error(f"Datos incompletos para usuario {user_id}: {compra}")
+            campos_faltantes = [campo for campo in campos_requeridos if campo not in compra]
+            logger.error(f"Datos incompletos para usuario {user_id}. Campos faltantes: {campos_faltantes}. Datos: {compra}")
             await update.message.reply_text(
                 "❌ Error: Datos incompletos. Por favor, inicia el proceso nuevamente con /compra."
             )
@@ -163,14 +164,21 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             compra["total"] = str(compra["total"]).replace('.', ',')
             
             # Llamar a la función para guardar los datos
-            append_data(COMPRAS_FILE, compra, COMPRAS_HEADERS)
+            result = append_data(COMPRAS_FILE, compra, COMPRAS_HEADERS)
             
-            logger.info(f"Compra guardada exitosamente para usuario {user_id}")
-            
-            await update.message.reply_text(
-                "✅ ¡Compra registrada exitosamente!\n\n"
-                "Usa /compra para registrar otra compra."
-            )
+            if result:
+                logger.info(f"Compra guardada exitosamente para usuario {user_id}")
+                
+                await update.message.reply_text(
+                    "✅ ¡Compra registrada exitosamente!\n\n"
+                    "Usa /compra para registrar otra compra."
+                )
+            else:
+                logger.error(f"Error al guardar compra: La función append_data devolvió False")
+                await update.message.reply_text(
+                    "❌ Error al guardar la compra. Por favor, intenta nuevamente.\n\n"
+                    "Contacta al administrador si el problema persiste."
+                )
         except Exception as e:
             logger.error(f"Error al guardar compra: {e}")
             await update.message.reply_text(

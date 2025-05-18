@@ -17,7 +17,7 @@ SHEET_IDS = {
 
 # Cabeceras para cada hoja
 HEADERS = {
-    'compras': ['fecha', 'proveedor', 'cantidad', 'precio', 'calidad', 'total'],
+    'compras': ['fecha', 'tipo_cafe', 'proveedor', 'cantidad', 'precio', 'total'],
     'proceso': ['fecha', 'lote', 'estado', 'cantidad', 'notas'],
     'gastos': ['fecha', 'concepto', 'monto', 'categoria', 'notas'],
     'ventas': ['fecha', 'cliente', 'producto', 'cantidad', 'precio', 'total']
@@ -96,7 +96,20 @@ def initialize_sheets():
                     ).execute()
                     logger.info(f"Hoja '{sheet_name}' inicializada con cabeceras")
                 else:
-                    logger.info(f"Hoja '{sheet_name}' ya tiene datos: {values}")
+                    # Verificar si las cabeceras existentes coinciden con las esperadas
+                    logger.info(f"Cabeceras existentes en hoja '{sheet_name}': {values[0]}")
+                    logger.info(f"Cabeceras esperadas: {header}")
+                    
+                    # Si las cabeceras no coinciden, actualizar la primera fila
+                    if values[0] != header:
+                        logger.warning(f"Las cabeceras existentes no coinciden con las esperadas. Actualizando...")
+                        sheets.values().update(
+                            spreadsheetId=spreadsheet_id,
+                            range=range_name,
+                            valueInputOption="RAW",
+                            body={"values": [header]}
+                        ).execute()
+                        logger.info(f"Cabeceras actualizadas en hoja '{sheet_name}'")
             except Exception as e:
                 logger.error(f"Error al inicializar la hoja '{sheet_name}': {e}")
                 raise
@@ -117,7 +130,26 @@ def append_data(sheet_name, data):
         
         # Convertir el diccionario a una lista ordenada según las cabeceras
         headers = HEADERS[sheet_name]
-        row_data = [data.get(header, "") for header in headers]
+        row_data = []
+        
+        # Imprimir información detallada para depurar
+        logger.info(f"Cabeceras para la hoja '{sheet_name}': {headers}")
+        logger.info(f"Datos recibidos: {data}")
+        
+        # Verificar que todos los campos necesarios existan
+        for header in headers:
+            if header not in data or not data[header]:
+                logger.warning(f"Campo '{header}' faltante o vacío en los datos. Usando valor por defecto.")
+                if header == 'tipo_cafe':
+                    data[header] = "No especificado"
+                elif header in ['cantidad', 'precio', 'total']:
+                    data[header] = "0"
+                else:
+                    data[header] = ""
+        
+        # Construir la fila de datos ordenada según las cabeceras
+        for header in headers:
+            row_data.append(data.get(header, ""))
         
         logger.info(f"Añadiendo datos a '{sheet_name}': {data}")
         logger.info(f"Datos formateados para Sheets: {row_data}")
