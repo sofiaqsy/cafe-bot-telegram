@@ -19,6 +19,18 @@ SELECCIONAR_ORIGEN, SELECCIONAR_DESTINO, SELECCIONAR_COMPRAS, INGRESAR_CANTIDAD,
 # Headers para la hoja de proceso
 PROCESO_HEADERS = ["fecha", "origen", "destino", "cantidad", "compras_ids", "merma", "notas", "registrado_por"]
 
+# Función auxiliar para convertir texto a número seguro
+def safe_float(text):
+    """Convierte un texto a número float, manejando comas como separador decimal"""
+    if not text:
+        return 0.0
+    try:
+        # Reemplazar comas por puntos para la conversión
+        return float(str(text).replace(',', '.').strip())
+    except (ValueError, TypeError):
+        logger.warning(f"Error al convertir '{text}' a float, retornando 0.0")
+        return 0.0
+
 async def proceso_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Inicia el proceso de registro de procesamiento"""
     logger.info(f"Usuario {update.effective_user.id} inició comando /proceso")
@@ -63,7 +75,7 @@ async def seleccionar_origen(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # Filtrar compras por fase_actual
     compras_disponibles = [
         compra for compra in compras 
-        if compra.get('fase_actual') == origen and float(compra.get('kg_disponibles', 0)) > 0
+        if compra.get('fase_actual') == origen and safe_float(compra.get('kg_disponibles', 0)) > 0
     ]
     
     if not compras_disponibles:
@@ -75,7 +87,7 @@ async def seleccionar_origen(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return ConversationHandler.END
     
     # Calcular el total de kg disponibles
-    total_kg = sum(float(compra.get('kg_disponibles', 0)) for compra in compras_disponibles)
+    total_kg = sum(safe_float(compra.get('kg_disponibles', 0)) for compra in compras_disponibles)
     
     # Guardar las compras disponibles para más tarde
     context.user_data['compras_disponibles'] = compras_disponibles
@@ -136,7 +148,7 @@ async def seleccionar_destino(update: Update, context: ContextTypes.DEFAULT_TYPE
     for i, compra in enumerate(compras_disponibles):
         fecha = compra.get('fecha', '')
         proveedor = compra.get('proveedor', '')
-        kg_disponibles = float(compra.get('kg_disponibles', 0))
+        kg_disponibles = safe_float(compra.get('kg_disponibles', 0))
         
         keyboard.append([
             InlineKeyboardButton(
@@ -187,7 +199,7 @@ async def seleccionar_compras_callback(update: Update, context: ContextTypes.DEF
             return SELECCIONAR_COMPRAS
         
         # Calcular el total de kg disponibles en las compras seleccionadas
-        total_kg_seleccionados = sum(float(compra.get('kg_disponibles', 0)) for compra in compras_seleccionadas)
+        total_kg_seleccionados = sum(safe_float(compra.get('kg_disponibles', 0)) for compra in compras_seleccionadas)
         
         # Guardar para uso posterior
         context.user_data['total_kg_seleccionados'] = total_kg_seleccionados
@@ -232,7 +244,7 @@ async def seleccionar_compras_callback(update: Update, context: ContextTypes.DEF
             for i, compra in enumerate(compras_disponibles):
                 fecha = compra.get('fecha', '')
                 proveedor = compra.get('proveedor', '')
-                kg_disponibles = float(compra.get('kg_disponibles', 0))
+                kg_disponibles = safe_float(compra.get('kg_disponibles', 0))
                 
                 # Marcar con un check si está seleccionada
                 prefix = "✅ " if compra in compras_seleccionadas else ""
@@ -253,7 +265,7 @@ async def seleccionar_compras_callback(update: Update, context: ContextTypes.DEF
             reply_markup = InlineKeyboardMarkup(keyboard)
             
             # Mostrar total seleccionado
-            total_kg_seleccionados = sum(float(compra.get('kg_disponibles', 0)) for compra in compras_seleccionadas)
+            total_kg_seleccionados = sum(safe_float(compra.get('kg_disponibles', 0)) for compra in compras_seleccionadas)
             mensaje = (
                 f"🛒 SELECCIÓN DE COMPRAS A PROCESAR\n\n"
                 f"Vas a transformar café de {context.user_data['origen']} a {context.user_data['destino']}.\n\n"
@@ -414,7 +426,7 @@ async def agregar_notas(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     for i, compra in enumerate(compras_seleccionadas):
         fecha = compra.get('fecha', '')
         proveedor = compra.get('proveedor', '')
-        kg_disponibles = float(compra.get('kg_disponibles', 0))
+        kg_disponibles = safe_float(compra.get('kg_disponibles', 0))
         
         mensaje += f"{i+1}. {fecha} - {proveedor} ({kg_disponibles} kg)\n"
     
@@ -474,7 +486,7 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             
             for compra in compras_seleccionadas:
                 row_index = compra.get('_row_index')
-                kg_disponibles = float(compra.get('kg_disponibles', 0))
+                kg_disponibles = safe_float(compra.get('kg_disponibles', 0))
                 
                 if cantidad_restante <= 0:
                     break
