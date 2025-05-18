@@ -23,6 +23,18 @@ productos = [
     "Café especial", "Café orgánico"
 ]
 
+# Función auxiliar para convertir texto a número seguro
+def safe_float(text):
+    """Convierte un texto a número float, manejando comas como separador decimal"""
+    if not text:
+        return 0.0
+    try:
+        # Reemplazar comas por puntos para la conversión
+        return float(str(text).replace(',', '.').strip())
+    except (ValueError, TypeError):
+        logger.warning(f"Error al convertir '{text}' a float, retornando 0.0")
+        return 0.0
+
 async def venta_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Inicia el proceso de registro de venta"""
     logger.info(f"Usuario {update.effective_user.id} inició comando /venta")
@@ -86,9 +98,15 @@ async def cantidad(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Guarda la cantidad y solicita el precio"""
     user_id = update.effective_user.id
     try:
-        cantidad = float(update.message.text)
+        cantidad = safe_float(update.message.text)
         logger.info(f"Usuario {user_id} ingresó cantidad: {cantidad}")
         
+        if cantidad <= 0:
+            await update.message.reply_text(
+                "La cantidad debe ser mayor que cero. Intenta nuevamente:"
+            )
+            return CANTIDAD
+            
         datos_venta[user_id]["cantidad"] = cantidad
         
         await update.message.reply_text(
@@ -107,9 +125,15 @@ async def precio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Guarda el precio y solicita confirmación"""
     user_id = update.effective_user.id
     try:
-        precio = float(update.message.text)
+        precio = safe_float(update.message.text)
         logger.info(f"Usuario {user_id} ingresó precio: {precio}")
         
+        if precio <= 0:
+            await update.message.reply_text(
+                "El precio debe ser mayor que cero. Intenta nuevamente:"
+            )
+            return PRECIO
+            
         datos_venta[user_id]["precio"] = precio
         
         # Calcular el total
