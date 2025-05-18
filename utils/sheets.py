@@ -121,7 +121,7 @@ def initialize_sheets():
             if not values or len(values[0]) < len(headers):
                 # Escribir las cabeceras
                 logger.info(f"Escribiendo cabeceras para la hoja '{sheet_name}'...")
-                result = sheets.values().update(
+                sheets.values().update(
                     spreadsheetId=spreadsheet_id,
                     range=range_name,
                     valueInputOption="RAW",
@@ -267,51 +267,70 @@ def append_data(sheet_name, data):
         logger.info(f"Añadiendo datos a '{sheet_name}': {data}")
         logger.info(f"Datos formateados para Sheets: {row_data}")
         
-        range_name = f"{sheet_name}!A:Z"
-        
+        # Usar el enfoque manual: obtener el número de filas actuales y añadir en la siguiente fila
+        # Este método evita el uso de append() que está causando problemas
         try:
-            # Intentar añadir los datos
-            sheets.values().append(
+            # Primero, contar cuántas filas hay actualmente 
+            range_name = f"{sheet_name}!A:A"
+            response = sheets.values().get(
                 spreadsheetId=spreadsheet_id,
-                range=range_name,
+                range=range_name
+            ).execute()
+            
+            # Determinar la próxima fila a usar (filas actuales + 1)
+            values = response.get('values', [])
+            next_row = len(values) + 1
+            logger.info(f"Se añadirán datos en la fila {next_row}")
+            
+            # Construir el rango que abarcará todos los datos
+            update_range = f"{sheet_name}!A{next_row}"
+            
+            # Escribir los datos directamente
+            sheets.values().update(
+                spreadsheetId=spreadsheet_id,
+                range=update_range,
                 valueInputOption="USER_ENTERED",
-                insertDataOption="INSERT_ROWS",
                 body={"values": [row_data]}
             ).execute()
             
-            logger.info(f"Datos añadidos correctamente a '{sheet_name}'")
+            logger.info(f"Datos añadidos correctamente a '{sheet_name}' en la fila {next_row}")
             return True
-        except Exception as api_error:
-            logger.error(f"Error específico de la API al añadir datos: {api_error}")
-            # Intentar un método alternativo si es necesario
+        except Exception as e:
+            logger.error(f"Error al añadir datos: {e}")
+            # Si falla el método manual, intentar otro enfoque
             try:
-                logger.info("Intentando método alternativo para añadir datos...")
-                # Obtener todas las filas actuales
-                result = sheets.values().get(
+                logger.info("Intentando método alternativo de añadir al final...")
+                
+                # Calcular un rango muy grande que abarque toda la hoja
+                # Esto es menos eficiente pero puede funcionar como último recurso
+                all_data_range = f"{sheet_name}!A1:Z1000"
+                response = sheets.values().get(
                     spreadsheetId=spreadsheet_id,
-                    range=range_name
+                    range=all_data_range
                 ).execute()
                 
-                values = result.get('values', [])
-                # Calcular la siguiente fila
-                next_row = len(values) + 1
+                # Determinar la próxima fila a usar
+                all_values = response.get('values', [])
+                next_row = len(all_values) + 1
                 
-                # Actualizar en la siguiente fila disponible
-                update_range = f"{sheet_name}!A{next_row}:Z{next_row}"
+                # Construir un rango específico para esta fila
+                final_range = f"{sheet_name}!A{next_row}:Z{next_row}"
+                
+                # Hacer la actualización
                 sheets.values().update(
                     spreadsheetId=spreadsheet_id,
-                    range=update_range,
+                    range=final_range,
                     valueInputOption="USER_ENTERED",
                     body={"values": [row_data]}
                 ).execute()
                 
-                logger.info(f"Datos añadidos correctamente usando método alternativo a '{sheet_name}'")
+                logger.info(f"Datos añadidos con método alternativo a '{sheet_name}' en la fila {next_row}")
                 return True
-            except Exception as alt_error:
-                logger.error(f"Error con método alternativo: {alt_error}")
-                raise
+            except Exception as alt_e:
+                logger.error(f"Error total al añadir datos: {alt_e}")
+                return False
     except Exception as e:
-        logger.error(f"Error al añadir datos a {sheet_name}: {e}")
+        logger.error(f"Error global al añadir datos a {sheet_name}: {e}")
         return False
 
 def update_cell(sheet_name, row_index, column_name, value):
@@ -357,14 +376,14 @@ def update_cell(sheet_name, row_index, column_name, value):
         logger.info(f"Actualizando celda {cell_reference} en hoja '{sheet_name}' con valor: {value}")
         
         # Actualizar celda
-        result = sheets.values().update(
+        sheets.values().update(
             spreadsheetId=spreadsheet_id,
             range=f"{sheet_name}!{cell_reference}",
             valueInputOption="USER_ENTERED",
             body={"values": [[value]]}
         ).execute()
         
-        logger.info(f"Celda actualizada correctamente. Respuesta: {result}")
+        logger.info(f"Celda actualizada correctamente: {sheet_name}!{cell_reference}")
         return True
     except Exception as e:
         logger.error(f"Error al actualizar celda: {e}")
