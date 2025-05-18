@@ -307,6 +307,7 @@ async def ingresar_cantidad(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             ("CEREZO", "PERGAMINO"): 80,  # Al pasar de cerezo a pergamino se pierde más material (80%)
             ("MOTE", "PERGAMINO"): 30,    # Al pasar de mote a pergamino se pierde menos (30%)
             ("PERGAMINO", "VERDE"): 20,   # Al quitar el pergamino (20%)
+            ("PERGAMINO", "TOSTADO"): 35, # Nueva transición: PERGAMINO -> TOSTADO (35% = 20% pergamino + 15% humedad)
             ("VERDE", "TOSTADO"): 15,     # Al tostar (15% de pérdida por humedad)
             ("TOSTADO", "MOLIDO"): 0      # Al moler no hay pérdida significativa
         }
@@ -466,7 +467,7 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         
         try:
             # 1. Guardar el proceso
-            append_data("proceso", proceso_data, PROCESO_HEADERS)
+            append_data("proceso", proceso_data)
             
             # 2. Actualizar la fase_actual y kg_disponibles de las compras procesadas
             cantidad_restante = cantidad
