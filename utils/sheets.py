@@ -268,16 +268,48 @@ def append_data(sheet_name, data):
         logger.info(f"Datos formateados para Sheets: {row_data}")
         
         range_name = f"{sheet_name}!A:Z"
-        result = sheets.values().append(
-            spreadsheetId=spreadsheet_id,
-            range=range_name,
-            valueInputOption="USER_ENTERED",
-            insertDataOption="INSERT_ROWS",
-            body={"values": [row_data]}
-        ).execute()
         
-        logger.info(f"Datos añadidos correctamente a '{sheet_name}'. Respuesta: {result}")
-        return True
+        try:
+            # Intentar añadir los datos
+            sheets.values().append(
+                spreadsheetId=spreadsheet_id,
+                range=range_name,
+                valueInputOption="USER_ENTERED",
+                insertDataOption="INSERT_ROWS",
+                body={"values": [row_data]}
+            ).execute()
+            
+            logger.info(f"Datos añadidos correctamente a '{sheet_name}'")
+            return True
+        except Exception as api_error:
+            logger.error(f"Error específico de la API al añadir datos: {api_error}")
+            # Intentar un método alternativo si es necesario
+            try:
+                logger.info("Intentando método alternativo para añadir datos...")
+                # Obtener todas las filas actuales
+                result = sheets.values().get(
+                    spreadsheetId=spreadsheet_id,
+                    range=range_name
+                ).execute()
+                
+                values = result.get('values', [])
+                # Calcular la siguiente fila
+                next_row = len(values) + 1
+                
+                # Actualizar en la siguiente fila disponible
+                update_range = f"{sheet_name}!A{next_row}:Z{next_row}"
+                sheets.values().update(
+                    spreadsheetId=spreadsheet_id,
+                    range=update_range,
+                    valueInputOption="USER_ENTERED",
+                    body={"values": [row_data]}
+                ).execute()
+                
+                logger.info(f"Datos añadidos correctamente usando método alternativo a '{sheet_name}'")
+                return True
+            except Exception as alt_error:
+                logger.error(f"Error con método alternativo: {alt_error}")
+                raise
     except Exception as e:
         logger.error(f"Error al añadir datos a {sheet_name}: {e}")
         return False
