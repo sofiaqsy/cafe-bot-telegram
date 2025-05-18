@@ -1,6 +1,6 @@
 import logging
 import datetime
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     CommandHandler, ConversationHandler, MessageHandler, filters, 
     ContextTypes, CallbackQueryHandler
@@ -119,26 +119,55 @@ async def mostrar_inventario(update: Update, context: ContextTypes.DEFAULT_TYPE)
     else:
         mensaje = "📦 INVENTARIO DETALLADO DEL ALMACÉN\n\n"
         
-        # Mostrar cada fase con su cantidad
+        # Filtrar solo registros con cantidad_actual > 0
+        registros_disponibles = []
+        for registro in almacen_data:
+            kg_disponibles = safe_float(registro.get('cantidad_actual', 0))
+            if kg_disponibles > 0:
+                registros_disponibles.append(registro)
+        
+        # Organizar por fase
+        registros_por_fase = {}
         for fase in FASES_CAFE:
-            # Buscar en almacen_data
-            fase_data = None
-            for item in almacen_data:
-                if item.get('fase', '').strip().upper() == fase:
-                    fase_data = item
-                    break
+            registros_por_fase[fase] = []
+        
+        for registro in registros_disponibles:
+            fase = registro.get('fase_actual', '').strip().upper()
+            if fase in FASES_CAFE:
+                registros_por_fase[fase].append(registro)
+        
+        # Mostrar detalle por fase
+        for fase in FASES_CAFE:
+            registros = registros_por_fase[fase]
+            total_kg = sum(safe_float(r.get('cantidad_actual', 0)) for r in registros)
             
-            if fase_data:
-                cantidad = safe_float(fase_data.get('cantidad', 0))
-                ultima_actualizacion = fase_data.get('ultima_actualizacion', 'Desconocida')
-                
-                mensaje += f"🔹 {fase}: {cantidad} kg\n"
-                mensaje += f"   Última actualización: {ultima_actualizacion}\n"
-            else:
-                mensaje += f"🔹 {fase}: 0 kg (No registrado)\n"
+            mensaje += f"🔹 {fase}: {total_kg} kg - {len(registros)} registros\n"
+            
+            # Si hay registros, listarlos en el formato solicitado
+            if registros:
+                mensaje += "  Registros disponibles:\n"
+                for registro in registros:
+                    # Extraer información necesaria
+                    registro_id = registro.get('id', 'Sin ID')
+                    fecha = registro.get('fecha', 'Sin fecha')
+                    fecha_solo = fecha.split(" ")[0] if " " in fecha else fecha
+                    kg_disponibles = safe_float(registro.get('cantidad_actual', 0))
+                    
+                    # Buscar el nombre del proveedor si hay compra_id
+                    proveedor = "Desconocido"
+                    compra_id = registro.get('compra_id', '')
+                    if compra_id:
+                        compras = get_filtered_data('compras', {'id': compra_id})
+                        if compras:
+                            proveedor = compras[0].get('proveedor', 'Desconocido')
+                    
+                    # Añadir información del registro con el formato: ID, PROVEEDOR, FECHA(SIN HORA)
+                    mensaje += f"    • {registro_id}, {proveedor}, {fecha_solo}\n"
+            
+            mensaje += "\n"
         
         # Información adicional
-        mensaje += "\nLa sincronización con compras asegura que el almacén refleje con precisión las existencias actuales."
+        mensaje += "La sincronización con compras asegura que el almacén refleje con precisión las existencias actuales."
         
         keyboard = [
             ["📊 Ver inventario"],
