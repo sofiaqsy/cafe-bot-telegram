@@ -11,6 +11,22 @@ def get_now_peru():
     peru_tz = pytz.timezone('America/Lima')
     return datetime.datetime.now(peru_tz)
 
+def format_date_for_sheets(date_string):
+    """
+    Formatea una cadena de fecha para evitar la conversión automática en Google Sheets.
+    
+    Args:
+        date_string: Cadena de texto con la fecha
+        
+    Returns:
+        str: Fecha con un apóstrofe al inicio para forzar el formato de texto en Google Sheets
+    """
+    if not date_string:
+        return ""
+    
+    # Añadir un apóstrofe al inicio para forzar el formato de texto en Google Sheets
+    return f"'{date_string}"
+
 def format_currency(amount, symbol="S/"):
     """Formatea un valor como moneda"""
     if not amount:

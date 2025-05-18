@@ -4,7 +4,7 @@ from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import CommandHandler, ConversationHandler, MessageHandler, filters, ContextTypes
 from config import COMPRAS_FILE
 from utils.db import append_data
-from utils.helpers import get_now_peru, safe_float
+from utils.helpers import get_now_peru, safe_float, format_date_for_sheets
 
 # Configurar logging
 logger = logging.getLogger(__name__)
@@ -176,9 +176,10 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         # Preparar datos para guardar
         compra = datos_compra[user_id].copy()
         
-        # Añadir fecha actualizada
+        # Añadir fecha actualizada con formato protegido para Google Sheets
         now = get_now_peru()
-        compra["fecha"] = now.strftime("%Y-%m-%d %H:%M:%S")
+        fecha_formateada = now.strftime("%Y-%m-%d %H:%M")
+        compra["fecha"] = format_date_for_sheets(fecha_formateada)
         
         # Verificar que todos los datos requeridos estén presentes
         campos_requeridos = ["tipo_cafe", "proveedor", "cantidad", "precio", "total", "fase_actual", "kg_disponibles"]
