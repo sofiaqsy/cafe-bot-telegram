@@ -4,6 +4,7 @@ import datetime
 import string
 import random
 import json
+import requests
 from typing import Dict, List, Any, Optional, Union
 import googleapiclient.discovery
 from google.oauth2 import service_account
@@ -111,7 +112,7 @@ def initialize_sheets():
             
             # Verificar si la hoja tiene cabeceras
             range_name = f"{sheet_name}!A1:Z1"
-            result = sheets.values().get(
+            result = sheets.spreadsheets().get(
                 spreadsheetId=spreadsheet_id,
                 range=range_name
             ).execute()
@@ -603,44 +604,156 @@ def update_cell(sheet_name, row_index, column_name, value):
         return False
 
 def get_all_data(sheet_name):
-    """Obtiene todos los datos de la hoja especificada"""
+    """Obtiene todos los datos de la hoja especificada con manejo mejorado de errores"""
     if sheet_name not in HEADERS:
         logger.error(f"Nombre de hoja inválido: {sheet_name}")
         raise ValueError(f"Nombre de hoja inválido: {sheet_name}")
     
     try:
         spreadsheet_id = get_or_create_sheet()
-        sheets = get_sheet_service()
+        service = get_sheet_service()
         
-        range_name = f"{sheet_name}!A:Z"
-        result = sheets.values().get(
-            spreadsheetId=spreadsheet_id,
-            range=range_name
-        ).execute()
+        # MÉTODO 1: Usar el API values().get() directamente
+        try:
+            logger.info(f"Obteniendo datos de '{sheet_name}' usando values().get()...")
+            range_name = f"{sheet_name}!A:Z"
+            result = service.spreadsheets().values().get(
+                spreadsheetId=spreadsheet_id,
+                range=range_name
+            ).execute()
+            
+            values = result.get('values', [])
+            
+            if not values:
+                logger.info(f"No hay datos en la hoja '{sheet_name}'")
+                return []
+            
+            # Convertir filas a diccionarios usando las cabeceras
+            headers = values[0]
+            rows = []
+            
+            for i, row in enumerate(values[1:]):  # Saltar la fila de cabeceras
+                # Asegurarse de que la fila tenga la misma longitud que las cabeceras
+                row_padded = row + [""] * (len(headers) - len(row))
+                # Añadir el _row_index para referencia futura (basado en 0)
+                row_dict = dict(zip(headers, row_padded))
+                row_dict['_row_index'] = i
+                rows.append(row_dict)
+            
+            logger.info(f"Obtenidos {len(rows)} registros de '{sheet_name}' con values().get()")
+            return rows
+            
+        except Exception as e:
+            logger.error(f"Error al usar values().get(): {e}")
+            raise  # Propagar para intentar método alternativo
+    
+    except Exception as method1_error:
+        logger.warning(f"Fallido método 1 para obtener datos. Error: {method1_error}")
         
-        values = result.get('values', [])
-        
-        if not values:
-            logger.info(f"No hay datos en la hoja '{sheet_name}'")
-            return []
-        
-        # Convertir filas a diccionarios usando las cabeceras
-        headers = values[0]
-        rows = []
-        
-        for i, row in enumerate(values[1:]):  # Saltar la fila de cabeceras
-            # Asegurarse de que la fila tenga la misma longitud que las cabeceras
-            row_padded = row + [""] * (len(headers) - len(row))
-            # Añadir el _row_index para referencia futura (basado en 0)
-            row_dict = dict(zip(headers, row_padded))
-            row_dict['_row_index'] = i
-            rows.append(row_dict)
-        
-        logger.info(f"Obtenidos {len(rows)} registros de '{sheet_name}'")
-        return rows
-    except Exception as e:
-        logger.error(f"Error al obtener datos de {sheet_name}: {e}")
-        return []
+        # MÉTODO 2: Usar batchGet para obtener todos los datos de una vez
+        try:
+            logger.info(f"Intentando método 2 (batchGet) para obtener datos de '{sheet_name}'...")
+            
+            result = service.spreadsheets().values().batchGet(
+                spreadsheetId=spreadsheet_id,
+                ranges=[f"{sheet_name}!A:Z"]
+            ).execute()
+            
+            if 'valueRanges' not in result or not result['valueRanges']:
+                logger.warning(f"No hay datos en la hoja '{sheet_name}' (método 2)")
+                return []
+            
+            value_range = result['valueRanges'][0]
+            values = value_range.get('values', [])
+            
+            if not values:
+                logger.info(f"No hay datos en la hoja '{sheet_name}' (método 2)")
+                return []
+            
+            # Convertir filas a diccionarios usando las cabeceras
+            headers = values[0]
+            rows = []
+            
+            for i, row in enumerate(values[1:]):  # Saltar la fila de cabeceras
+                # Asegurarse de que la fila tenga la misma longitud que las cabeceras
+                row_padded = row + [""] * (len(headers) - len(row))
+                # Añadir el _row_index para referencia futura (basado en 0)
+                row_dict = dict(zip(headers, row_padded))
+                row_dict['_row_index'] = i
+                rows.append(row_dict)
+            
+            logger.info(f"Obtenidos {len(rows)} registros de '{sheet_name}' con batchGet")
+            return rows
+            
+        except Exception as method2_error:
+            logger.warning(f"Fallido método 2 para obtener datos. Error: {method2_error}")
+            
+            # MÉTODO 3: Usar solicitud REST directa
+            try:
+                logger.info(f"Intentando método 3 (REST directo) para obtener datos de '{sheet_name}'...")
+                
+                # Construir URL para la API REST
+                url = f"https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}/values/{sheet_name}!A:Z"
+                
+                # Obtener token de autorización
+                headers = {
+                    "Authorization": f"Bearer {service._http.credentials.token}",
+                    "Content-Type": "application/json"
+                }
+                
+                # Realizar solicitud GET
+                response = requests.get(url, headers=headers)
+                
+                if response.status_code != 200:
+                    logger.error(f"Error en solicitud REST: {response.text}")
+                    raise Exception(f"Error HTTP {response.status_code}: {response.text}")
+                
+                result = response.json()
+                values = result.get('values', [])
+                
+                if not values:
+                    logger.info(f"No hay datos en la hoja '{sheet_name}' (método 3)")
+                    return []
+                
+                # Convertir filas a diccionarios usando las cabeceras
+                headers = values[0]
+                rows = []
+                
+                for i, row in enumerate(values[1:]):  # Saltar la fila de cabeceras
+                    # Asegurarse de que la fila tenga la misma longitud que las cabeceras
+                    row_padded = row + [""] * (len(headers) - len(row))
+                    # Añadir el _row_index para referencia futura (basado en 0)
+                    row_dict = dict(zip(headers, row_padded))
+                    row_dict['_row_index'] = i
+                    rows.append(row_dict)
+                
+                logger.info(f"Obtenidos {len(rows)} registros de '{sheet_name}' con REST directo")
+                return rows
+                
+            except Exception as method3_error:
+                logger.error(f"Todos los métodos fallaron para obtener datos de {sheet_name}. Error final: {method3_error}")
+                
+                # MÉTODO 4: Retornar valores por defecto para las fases si es la hoja de almacén
+                if sheet_name == 'almacen':
+                    logger.warning(f"Usando datos predeterminados de emergencia para el almacén")
+                    # Generar datos básicos para cada fase
+                    rows = []
+                    for i, fase in enumerate(FASES_CAFE):
+                        row_dict = {
+                            'id': f"AL-EMERG{i+1}",
+                            'compra_id': '',
+                            'fase': fase,
+                            'fecha': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            'cantidad': '0',
+                            'fase_actual': fase,
+                            'kg_disponibles': '0',
+                            'notas': 'Datos de emergencia - Error de conexión',
+                            '_row_index': i
+                        }
+                        rows.append(row_dict)
+                    return rows
+                
+                return []
 
 def get_filtered_data(sheet_name, filters=None, days=None):
     """
