@@ -16,8 +16,8 @@ TIPO_CAFE, PROVEEDOR, CANTIDAD, PRECIO, CONFIRMAR = range(5)
 # Datos temporales
 datos_compra = {}
 
-# Headers para la hoja de compras - restructuración: id, fecha, tipo_cafe, proveedor, cantidad, precio, preciototal, notas, registrado_por
-COMPRAS_HEADERS = ["id", "fecha", "tipo_cafe", "proveedor", "cantidad", "precio", "preciototal", "notas", "registrado_por"]
+# Headers para la hoja de compras - restructuración: id, fecha, tipo_cafe, proveedor, cantidad, precio, registrado_por, preciototal, notas
+COMPRAS_HEADERS = ["id", "fecha", "tipo_cafe", "proveedor", "cantidad", "precio", "registrado_por", "preciototal", "notas"]
 
 # Tipos de café predefinidos - solo 3 opciones fijas
 TIPOS_CAFE = ["CEREZO", "MOTE", "PERGAMINO"]
@@ -217,9 +217,9 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                 "proveedor": compra.get("proveedor", ""),
                 "cantidad": compra.get("cantidad", ""),
                 "precio": compra.get("precio", ""),
+                "registrado_por": compra.get("registrado_por", ""),
                 "preciototal": compra.get("preciototal", ""),
-                "notas": compra.get("notas", ""),
-                "registrado_por": compra.get("registrado_por", "")
+                "notas": compra.get("notas", "")
             }
             
             # Usar append_sheets directamente
