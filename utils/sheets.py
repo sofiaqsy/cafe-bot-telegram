@@ -12,7 +12,8 @@ SHEET_IDS = {
     'compras': 0,  # Los ids son índices (0 para la primera hoja, 1 para la segunda, etc.)
     'proceso': 1,
     'gastos': 2,
-    'ventas': 3
+    'ventas': 3,
+    'adelantos': 4  # Añadimos la hoja de adelantos con índice 4
 }
 
 # Cabeceras para cada hoja
@@ -20,7 +21,8 @@ HEADERS = {
     'compras': ['fecha', 'tipo_cafe', 'proveedor', 'cantidad', 'precio', 'total'],
     'proceso': ['fecha', 'lote', 'estado', 'cantidad', 'notas'],
     'gastos': ['fecha', 'concepto', 'monto', 'categoria', 'notas'],
-    'ventas': ['fecha', 'cliente', 'producto', 'cantidad', 'precio', 'total']
+    'ventas': ['fecha', 'cliente', 'producto', 'cantidad', 'precio', 'total'],
+    'adelantos': ['fecha', 'hora', 'proveedor', 'monto', 'saldo_restante', 'notas', 'registrado_por']  # Añadimos cabeceras para adelantos
 }
 
 def get_credentials():
