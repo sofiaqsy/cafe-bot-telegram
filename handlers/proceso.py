@@ -191,20 +191,22 @@ async def seleccionar_destino(update: Update, context: ContextTypes.DEFAULT_TYPE
         registro_id = registro.get('id', f"R{registro.get('_row_index', 'X')}")
         
         # Buscar información adicional si hay ID de compra
-        info_extra = ""
+        proveedor = "Desconocido"
         if compra_id:
             compras = get_filtered_data('compras', {'id': compra_id})
             if compras:
                 compra = compras[0]
                 proveedor = compra.get('proveedor', 'Desconocido')
-                info_extra = f" - Proveedor: {proveedor}"
         
-        # Añadir fila de información
-        mensaje += f"{i+1}. ID: {registro_id} - {kg_disponibles} kg ({fecha}){info_extra}\n"
+        # Extraer solo la fecha sin la hora
+        fecha_solo = fecha.split(" ")[0] if " " in fecha else fecha
+        
+        # Añadir fila de información con el nuevo formato solicitado
+        mensaje += f"{i+1}. {registro_id}, {proveedor}, {fecha_solo}\n"
         
         # Crear botón para este registro
         keyboard.append([
-            InlineKeyboardButton(f"{i+1}. {kg_disponibles} kg - ID: {registro_id}", callback_data=f"registro_{i}")
+            InlineKeyboardButton(f"{registro_id} - {kg_disponibles} kg", callback_data=f"registro_{i}")
         ])
     
     # Añadir botón para selección múltiple personalizada
@@ -240,7 +242,7 @@ async def seleccionar_registros_callback(update: Update, context: ContextTypes.D
         for registro in almacen_disponible:
             kg = safe_float(registro.get('cantidad_actual', 0))
             registro_id = registro.get('id', 'Sin ID')
-            seleccionados_info.append(f"ID: {registro_id} ({kg} kg)")
+            seleccionados_info.append(f"{registro_id} ({kg} kg)")
         
         seleccionados_texto = "\n- ".join([""] + seleccionados_info)
         
@@ -271,7 +273,7 @@ async def seleccionar_registros_callback(update: Update, context: ContextTypes.D
             checkbox = "☐"  # Checkbox vacío
             keyboard.append([
                 InlineKeyboardButton(
-                    f"{checkbox} {i+1}. {kg_disponibles} kg - ID: {registro_id}", 
+                    f"{checkbox} {registro_id} - {kg_disponibles} kg", 
                     callback_data=f"toggle_{i}"
                 )
             ])
@@ -315,7 +317,7 @@ async def seleccionar_registros_callback(update: Update, context: ContextTypes.D
             checkbox = "☑" if str(i) in multi_seleccion else "☐"
             keyboard.append([
                 InlineKeyboardButton(
-                    f"{checkbox} {i+1}. {kg_disponibles} kg - ID: {registro_id}", 
+                    f"{checkbox} {registro_id} - {kg_disponibles} kg", 
                     callback_data=f"toggle_{i}"
                 )
             ])
@@ -363,7 +365,7 @@ async def seleccionar_registros_callback(update: Update, context: ContextTypes.D
         for registro in registros_seleccionados:
             kg = safe_float(registro.get('cantidad_actual', 0))
             registro_id = registro.get('id', 'Sin ID')
-            seleccionados_info.append(f"ID: {registro_id} ({kg} kg)")
+            seleccionados_info.append(f"{registro_id} ({kg} kg)")
         
         seleccionados_texto = "\n- ".join([""] + seleccionados_info)
         
@@ -394,7 +396,7 @@ async def seleccionar_registros_callback(update: Update, context: ContextTypes.D
         registro_id = registro.get('id', 'Sin ID')
         
         await query.edit_message_text(
-            f"🛒 Has seleccionado el registro:\n- ID: {registro_id} ({kg} kg)\n\n"
+            f"🛒 Has seleccionado el registro:\n- {registro_id} ({kg} kg)\n\n"
             f"Total disponible: {total_kg} kg\n\n"
             f"¿Cuántos kg de café {origen} deseas transformar a {destino}?"
         )
@@ -543,7 +545,7 @@ async def agregar_notas(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                 proveedor = compras[0].get('proveedor', 'Desconocido')
                 info_adicional = f" - Proveedor: {proveedor}"
         
-        registros_info.append(f"ID: {registro_id} ({kg} kg){info_adicional}")
+        registros_info.append(f"{registro_id} ({kg} kg){info_adicional}")
     
     registros_texto = "\n- ".join([""] + registros_info)
     
