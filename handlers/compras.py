@@ -17,7 +17,7 @@ datos_compra = {}
 # Headers para la hoja de compras
 COMPRAS_HEADERS = ["fecha", "tipo_cafe", "proveedor", "cantidad", "precio", "total"]
 
-# Tipos de café predefinidos
+# Tipos de café predefinidos - solo 3 opciones fijas
 TIPOS_CAFE = ["CEREZO", "MOTE", "PERGAMINO"]
 
 async def compra_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -28,14 +28,13 @@ async def compra_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # Inicializar datos de compra para este usuario
     datos_compra[user_id] = {}
     
-    # Crear teclado con opciones predefinidas para tipo de café
+    # Crear teclado con las 3 opciones predefinidas para tipo de café
     keyboard = [[tipo] for tipo in TIPOS_CAFE]
-    keyboard.append(["Otro tipo"])
     reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
     
     await update.message.reply_text(
         "Vamos a registrar una nueva compra de café.\n\n"
-        "Primero, selecciona el tipo de café:",
+        "Selecciona el tipo de café:",
         reply_markup=reply_markup
     )
     return TIPO_CAFE
@@ -43,23 +42,27 @@ async def compra_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def tipo_cafe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Guarda el tipo de café y solicita el proveedor"""
     user_id = update.effective_user.id
-    selected_tipo = update.message.text.strip()
+    selected_tipo = update.message.text.strip().upper()
     
-    # Si seleccionó "Otro tipo", pedir que especifique
-    if selected_tipo.lower() == "otro tipo":
+    # Verificar que sea uno de los tipos permitidos
+    if selected_tipo not in TIPOS_CAFE:
+        # Si no es un tipo válido, volver a mostrar las opciones
+        keyboard = [[tipo] for tipo in TIPOS_CAFE]
+        reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+        
         await update.message.reply_text(
-            "Por favor, ingresa el tipo de café:",
-            reply_markup=ReplyKeyboardRemove()
+            f"Tipo de café no válido. Por favor, selecciona una de las opciones disponibles:",
+            reply_markup=reply_markup
         )
         return TIPO_CAFE
     
     # Guardar el tipo de café
     logger.info(f"Usuario {user_id} seleccionó tipo de café: {selected_tipo}")
-    datos_compra[user_id]["tipo_cafe"] = selected_tipo.upper()
+    datos_compra[user_id]["tipo_cafe"] = selected_tipo
     
     # Solicitar el proveedor
     await update.message.reply_text(
-        f"Tipo de café: {selected_tipo.upper()}\n\n"
+        f"Tipo de café: {selected_tipo}\n\n"
         "Ahora, ingresa el nombre del proveedor:",
         reply_markup=ReplyKeyboardRemove()
     )
