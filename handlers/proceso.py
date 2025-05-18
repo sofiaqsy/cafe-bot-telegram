@@ -204,24 +204,31 @@ async def seleccionar_destino(update: Update, context: ContextTypes.DEFAULT_TYPE
         # Extraer información del registro
         compra_id = registro.get('compra_id', 'Sin ID')
         kg_disponibles = safe_float(registro.get('cantidad_actual', 0))
-        fecha = registro.get('fecha', 'Sin fecha')
+        
+        # Formatear fecha para mostrar solo la fecha sin hora
+        fecha_completa = registro.get('fecha', 'Sin fecha')
+        fecha_solo = fecha_completa.split(' ')[0] if ' ' in fecha_completa else fecha_completa
+        
         registro_id = registro.get('id', f"R{registro.get('_row_index', 'X')}")
         
         # Buscar información adicional si hay ID de compra
-        info_extra = ""
+        nombre_proveedor = ""
         if compra_id:
             compras = get_filtered_data('compras', {'id': compra_id})
             if compras:
                 compra = compras[0]
-                proveedor = compra.get('proveedor', 'Desconocido')
-                info_extra = f" - Proveedor: {proveedor}"
+                nombre_proveedor = compra.get('proveedor', '')
         
-        # Añadir fila de información
-        mensaje += f"{i+1}. ID: {registro_id} - {kg_disponibles} kg ({fecha}){info_extra}\n"
+        # Añadir fila de información al mensaje con formato conciso
+        if nombre_proveedor:
+            mensaje += f"{i+1}. ID: {registro_id} - {kg_disponibles} kg ({fecha_solo}) - {nombre_proveedor}\n"
+        else:
+            mensaje += f"{i+1}. ID: {registro_id} - {kg_disponibles} kg ({fecha_solo})\n"
         
-        # Crear botón para este registro
+        # Crear botón para este registro con formato simplificado
+        button_text = f"{i+1}. {kg_disponibles} kg - ID: {registro_id}"
         keyboard.append([
-            InlineKeyboardButton(f"{i+1}. {kg_disponibles} kg - ID: {registro_id}", callback_data=f"registro_{i}")
+            InlineKeyboardButton(button_text, callback_data=f"registro_{i}")
         ])
     
     # Añadir botón para selección múltiple personalizada
@@ -551,16 +558,26 @@ async def agregar_notas(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     for registro in registros_seleccionados:
         kg = safe_float(registro.get('cantidad_actual', 0))
         registro_id = registro.get('id', 'Sin ID')
+        
+        # Formatear fecha para mostrar solo la fecha sin hora
+        fecha_completa = registro.get('fecha', 'Sin fecha')
+        fecha_solo = fecha_completa.split(' ')[0] if ' ' in fecha_completa else fecha_completa
+        
         # Si hay compra_id, buscar el proveedor
         compra_id = registro.get('compra_id', '')
-        info_adicional = ""
+        nombre_proveedor = ""
         if compra_id:
             compras = get_filtered_data('compras', {'id': compra_id})
             if compras:
-                proveedor = compras[0].get('proveedor', 'Desconocido')
-                info_adicional = f" - Proveedor: {proveedor}"
+                nombre_proveedor = compras[0].get('proveedor', '')
         
-        registros_info.append(f"ID: {registro_id} ({kg} kg){info_adicional}")
+        # Formatear la información con el nuevo formato
+        if nombre_proveedor:
+            info_registro = f"ID: {registro_id} - {kg} kg ({fecha_solo}) - {nombre_proveedor}"
+        else:
+            info_registro = f"ID: {registro_id} - {kg} kg ({fecha_solo})"
+        
+        registros_info.append(info_registro)
     
     registros_texto = "\n- ".join([""] + registros_info)
     
