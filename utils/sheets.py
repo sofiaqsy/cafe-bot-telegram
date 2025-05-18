@@ -204,3 +204,131 @@ def format_date_for_sheets(date_str):
         # Prefijo con comilla simple para forzar formato de texto en Google Sheets
         return f"'{date_str}'"
     return date_str
+
+def append_data(sheet_name, data):
+    """Añade una fila de datos a la hoja especificada"""
+    if sheet_name not in HEADERS:
+        logger.error(f"Nombre de hoja inválido: {sheet_name}")
+        raise ValueError(f"Nombre de hoja inválido: {sheet_name}")
+    
+    try:
+        spreadsheet_id = get_or_create_sheet()
+        sheets = get_sheet_service()
+        
+        # Para compras, asegurar que tenga un ID único
+        if sheet_name == 'compras' and 'id' not in data:
+            data['id'] = generate_unique_id()
+            logger.info(f"Generado ID único para compra: {data['id']}")
+        
+        # Convertir el diccionario a una lista ordenada según las cabeceras
+        headers = HEADERS[sheet_name]
+        row_data = []
+        
+        # Imprimir información detallada para depurar
+        logger.info(f"Cabeceras para la hoja '{sheet_name}': {headers}")
+        logger.info(f"Datos recibidos: {data}")
+        
+        # Verificar que todos los campos necesarios existan
+        for header in headers:
+            if header not in data or not data[header]:
+                logger.warning(f"Campo '{header}' faltante o vacío en los datos. Usando valor por defecto.")
+                
+                # Valores por defecto según el campo
+                if header == 'tipo_cafe':
+                    data[header] = "No especificado"
+                elif header in ['cantidad', 'precio', 'total', 'kg_disponibles', 'merma']:
+                    data[header] = "0"
+                elif header == 'fase_actual' and sheet_name == 'compras' and 'tipo_cafe' in data:
+                    # Si es una compra, la fase inicial es el tipo de café
+                    data[header] = data.get('tipo_cafe', "No especificado")
+                else:
+                    data[header] = ""
+        
+        # Pre-procesamiento específico para el campo de fecha
+        # Para adelantos, asegurarnos de que las fechas tengan el formato correcto
+        if sheet_name == 'adelantos':
+            # Formatear explícitamente la fecha como texto para evitar que Sheets la convierta en número
+            if 'fecha' in data and data['fecha']:
+                data['fecha'] = format_date_for_sheets(data['fecha'])
+            
+            # Hacer lo mismo con la hora
+            if 'hora' in data and data['hora']:
+                # Asegurarse de que la hora tiene el formato correcto (HH:MM:SS)
+                # Si no sigue el formato, se deja como está
+                if isinstance(data['hora'], str) and len(data['hora']) == 8 and data['hora'][2] == ':' and data['hora'][5] == ':':
+                    # Prefijo con comilla simple para forzar formato de texto
+                    data['hora'] = f"'{data['hora']}'"
+                    logger.info(f"Hora formateada como texto: {data['hora']}")
+        
+        # Construir la fila de datos ordenada según las cabeceras
+        for header in headers:
+            row_data.append(data.get(header, ""))
+        
+        logger.info(f"Añadiendo datos a '{sheet_name}': {data}")
+        logger.info(f"Datos formateados para Sheets: {row_data}")
+        
+        # Usar el enfoque manual: obtener el número de filas actuales y añadir en la siguiente fila
+        # Este método evita el uso de append() que está causando problemas
+        try:
+            # Primero, contar cuántas filas hay actualmente 
+            range_name = f"{sheet_name}!A:A"
+            response = sheets.values().get(
+                spreadsheetId=spreadsheet_id,
+                range=range_name
+            ).execute()
+            
+            # Determinar la próxima fila a usar (filas actuales + 1)
+            values = response.get('values', [])
+            next_row = len(values) + 1
+            logger.info(f"Se añadirán datos en la fila {next_row}")
+            
+            # Construir el rango que abarcará todos los datos
+            update_range = f"{sheet_name}!A{next_row}"
+            
+            # Escribir los datos directamente
+            sheets.values().update(
+                spreadsheetId=spreadsheet_id,
+                range=update_range,
+                valueInputOption="USER_ENTERED",
+                body={"values": [row_data]}
+            ).execute()
+            
+            logger.info(f"Datos añadidos correctamente a '{sheet_name}' en la fila {next_row}")
+            return True
+        except Exception as e:
+            logger.error(f"Error al añadir datos: {e}")
+            # Si falla el método manual, intentar otro enfoque
+            try:
+                logger.info("Intentando método alternativo de añadir al final...")
+                
+                # Calcular un rango muy grande que abarque toda la hoja
+                # Esto es menos eficiente pero puede funcionar como último recurso
+                all_data_range = f"{sheet_name}!A1:Z1000"
+                response = sheets.values().get(
+                    spreadsheetId=spreadsheet_id,
+                    range=all_data_range
+                ).execute()
+                
+                # Determinar la próxima fila a usar
+                all_values = response.get('values', [])
+                next_row = len(all_values) + 1
+                
+                # Construir un rango específico para esta fila
+                final_range = f"{sheet_name}!A{next_row}:Z{next_row}"
+                
+                # Hacer la actualización
+                sheets.values().update(
+                    spreadsheetId=spreadsheet_id,
+                    range=final_range,
+                    valueInputOption="USER_ENTERED",
+                    body={"values": [row_data]}
+                ).execute()
+                
+                logger.info(f"Datos añadidos con método alternativo a '{sheet_name}' en la fila {next_row}")
+                return True
+            except Exception as alt_e:
+                logger.error(f"Error total al añadir datos: {alt_e}")
+                return False
+    except Exception as e:
+        logger.error(f"Error global al añadir datos a {sheet_name}: {e}")
+        return False
