@@ -14,14 +14,16 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger(__name__)
 
 # Definir constantes
-FASES_CAFE = ["CEREZO", "MOTE", "PERGAMINO", "VERDE"]
+FASES_CAFE = ["CEREZO", "MOTE", "PERGAMINO", "VERDE", "TOSTADO", "MOLIDO"]
 
 # Definir transiciones válidas entre fases
 TRANSICIONES_PERMITIDAS = {
     "CEREZO": ["MOTE"],
     "MOTE": ["PERGAMINO"],
-    "PERGAMINO": ["VERDE"],
-    "VERDE": []
+    "PERGAMINO": ["VERDE", "TOSTADO", "MOLIDO"],
+    "VERDE": ["TOSTADO"],
+    "TOSTADO": ["MOLIDO"],
+    "MOLIDO": []
 }
 
 # Cabeceras para las hojas
@@ -950,6 +952,56 @@ def actualizar_almacen_desde_proceso(origen, destino, cantidad, merma):
         logger.error(f"Error al actualizar almacén desde proceso: {e}")
         return False
 
+def leer_almacen_para_proceso():
+    """
+    Lee los registros de almacén para mostrarlos en el comando /proceso
+    
+    Returns:
+        dict: Diccionario con fases y cantidades disponibles
+    """
+    try:
+        logger.info("Leyendo registros de almacén para proceso")
+        
+        # Obtener todos los registros de almacén usando el método alternativo
+        # que evita el error 'Resource' object has no attribute 'values'
+        almacen_data = None
+        try:
+            sheets = get_sheet_service()
+            spreadsheet_id = get_or_create_sheet()
+            almacen_data = handle_values_attribute_error('almacen', spreadsheet_id, sheets)
+        except Exception as e:
+            logger.error(f"Error al obtener datos de almacen: {e}")
+            return {}
+        
+        if not almacen_data:
+            logger.error(f"No se pudieron obtener datos de almacén")
+            return {}
+        
+        # Agrupar y sumar por fase_actual
+        resultados = {}
+        for registro in almacen_data:
+            fase_actual = str(registro.get('fase_actual', '')).strip().upper()
+            if fase_actual in FASES_CAFE:
+                # Sumar las cantidades disponibles por fase
+                try:
+                    kg_disponibles = float(str(registro.get('cantidad_actual', '0')).replace(',', '.'))
+                    if fase_actual not in resultados:
+                        resultados[fase_actual] = {
+                            'cantidad_total': 0,
+                            'registros': []
+                        }
+                    
+                    if kg_disponibles > 0:
+                        resultados[fase_actual]['cantidad_total'] += kg_disponibles
+                        resultados[fase_actual]['registros'].append(registro)
+                except (ValueError, TypeError) as e:
+                    logger.error(f"Error al procesar cantidad_actual en almacén: {e}")
+        
+        return resultados
+    except Exception as e:
+        logger.error(f"Error al leer almacén para proceso: {e}")
+        return {}
+
 def sincronizar_almacen_con_compras():
     """
     Sincroniza el almacén con las existencias actuales en las compras.
@@ -1021,56 +1073,6 @@ def sincronizar_almacen_con_compras():
     except Exception as e:
         logger.error(f"Error al sincronizar almacén con compras: {e}")
         return False
-
-def leer_almacen_para_proceso():
-    """
-    Lee los registros de almacén para mostrarlos en el comando /proceso
-    
-    Returns:
-        dict: Diccionario con fases y cantidades disponibles
-    """
-    try:
-        logger.info("Leyendo registros de almacén para proceso")
-        
-        # Obtener todos los registros de almacén usando el método alternativo
-        # que evita el error 'Resource' object has no attribute 'values'
-        almacen_data = None
-        try:
-            sheets = get_sheet_service()
-            spreadsheet_id = get_or_create_sheet()
-            almacen_data = handle_values_attribute_error('almacen', spreadsheet_id, sheets)
-        except Exception as e:
-            logger.error(f"Error al obtener datos de almacen: {e}")
-            return {}
-        
-        if not almacen_data:
-            logger.error(f"No se pudieron obtener datos de almacén")
-            return {}
-        
-        # Agrupar y sumar por fase_actual
-        resultados = {}
-        for registro in almacen_data:
-            fase_actual = str(registro.get('fase_actual', '')).strip().upper()
-            if fase_actual in FASES_CAFE:
-                # Sumar las cantidades disponibles por fase
-                try:
-                    kg_disponibles = float(str(registro.get('cantidad_actual', '0')).replace(',', '.'))
-                    if fase_actual not in resultados:
-                        resultados[fase_actual] = {
-                            'cantidad_total': 0,
-                            'registros': []
-                        }
-                    
-                    if kg_disponibles > 0:
-                        resultados[fase_actual]['cantidad_total'] += kg_disponibles
-                        resultados[fase_actual]['registros'].append(registro)
-                except (ValueError, TypeError) as e:
-                    logger.error(f"Error al procesar cantidad_actual en almacén: {e}")
-        
-        return resultados
-    except Exception as e:
-        logger.error(f"Error al leer almacén para proceso: {e}")
-        return {}
 
 def safe_float(value):
     """
