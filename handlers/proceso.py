@@ -8,7 +8,7 @@ from telegram.ext import (
 from config import PROCESO_FILE
 from utils.db import append_data, get_all_data
 from utils.sheets import update_cell, FASES_CAFE, TRANSICIONES_PERMITIDAS, es_transicion_valida
-from utils.helpers import format_currency, get_now_peru
+from utils.helpers import format_currency, get_now_peru, safe_float
 
 # Configurar logging
 logger = logging.getLogger(__name__)
@@ -63,7 +63,7 @@ async def seleccionar_origen(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # Filtrar compras por fase_actual
     compras_disponibles = [
         compra for compra in compras 
-        if compra.get('fase_actual') == origen and float(compra.get('kg_disponibles', 0)) > 0
+        if compra.get('fase_actual') == origen and safe_float(compra.get('kg_disponibles', 0)) > 0
     ]
     
     if not compras_disponibles:
@@ -75,7 +75,7 @@ async def seleccionar_origen(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return ConversationHandler.END
     
     # Calcular el total de kg disponibles
-    total_kg = sum(float(compra.get('kg_disponibles', 0)) for compra in compras_disponibles)
+    total_kg = sum(safe_float(compra.get('kg_disponibles', 0)) for compra in compras_disponibles)
     
     # Guardar las compras disponibles para más tarde
     context.user_data['compras_disponibles'] = compras_disponibles
@@ -136,7 +136,7 @@ async def seleccionar_destino(update: Update, context: ContextTypes.DEFAULT_TYPE
     for i, compra in enumerate(compras_disponibles):
         fecha = compra.get('fecha', '')
         proveedor = compra.get('proveedor', '')
-        kg_disponibles = float(compra.get('kg_disponibles', 0))
+        kg_disponibles = safe_float(compra.get('kg_disponibles', 0))
         
         keyboard.append([
             InlineKeyboardButton(
@@ -187,7 +187,7 @@ async def seleccionar_compras_callback(update: Update, context: ContextTypes.DEF
             return SELECCIONAR_COMPRAS
         
         # Calcular el total de kg disponibles en las compras seleccionadas
-        total_kg_seleccionados = sum(float(compra.get('kg_disponibles', 0)) for compra in compras_seleccionadas)
+        total_kg_seleccionados = sum(safe_float(compra.get('kg_disponibles', 0)) for compra in compras_seleccionadas)
         
         # Guardar para uso posterior
         context.user_data['total_kg_seleccionados'] = total_kg_seleccionados
@@ -232,7 +232,7 @@ async def seleccionar_compras_callback(update: Update, context: ContextTypes.DEF
             for i, compra in enumerate(compras_disponibles):
                 fecha = compra.get('fecha', '')
                 proveedor = compra.get('proveedor', '')
-                kg_disponibles = float(compra.get('kg_disponibles', 0))
+                kg_disponibles = safe_float(compra.get('kg_disponibles', 0))
                 
                 # Marcar con un check si está seleccionada
                 prefix = "✅ " if compra in compras_seleccionadas else ""
@@ -253,7 +253,7 @@ async def seleccionar_compras_callback(update: Update, context: ContextTypes.DEF
             reply_markup = InlineKeyboardMarkup(keyboard)
             
             # Mostrar total seleccionado
-            total_kg_seleccionados = sum(float(compra.get('kg_disponibles', 0)) for compra in compras_seleccionadas)
+            total_kg_seleccionados = sum(safe_float(compra.get('kg_disponibles', 0)) for compra in compras_seleccionadas)
             mensaje = (
                 f"🛒 SELECCIÓN DE COMPRAS A PROCESAR\n\n"
                 f"Vas a transformar café de {context.user_data['origen']} a {context.user_data['destino']}.\n\n"
@@ -274,8 +274,7 @@ async def seleccionar_compras_callback(update: Update, context: ContextTypes.DEF
 async def ingresar_cantidad(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Procesar la cantidad ingresada y calcular la merma"""
     try:
-        cantidad_text = update.message.text.replace(',', '.').strip()
-        cantidad = float(cantidad_text)
+        cantidad = safe_float(update.message.text)
         
         # Verificar que la cantidad sea válida
         if cantidad <= 0:
@@ -351,7 +350,7 @@ async def ingresar_cantidad(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 async def confirmar_merma(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Confirmar o corregir la merma"""
     try:
-        merma_text = update.message.text.replace(',', '.').strip()
+        merma_text = update.message.text.strip()
         
         # Si es un guión, mantener la merma calculada
         if merma_text == '-':
@@ -359,7 +358,7 @@ async def confirmar_merma(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             pass
         else:
             # Intentar convertir a número
-            merma = float(merma_text)
+            merma = safe_float(merma_text)
             
             # Verificar que la merma sea válida
             if merma < 0:
@@ -414,7 +413,7 @@ async def agregar_notas(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     for i, compra in enumerate(compras_seleccionadas):
         fecha = compra.get('fecha', '')
         proveedor = compra.get('proveedor', '')
-        kg_disponibles = float(compra.get('kg_disponibles', 0))
+        kg_disponibles = safe_float(compra.get('kg_disponibles', 0))
         
         mensaje += f"{i+1}. {fecha} - {proveedor} ({kg_disponibles} kg)\n"
     
@@ -474,7 +473,7 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             
             for compra in compras_seleccionadas:
                 row_index = compra.get('_row_index')
-                kg_disponibles = float(compra.get('kg_disponibles', 0))
+                kg_disponibles = safe_float(compra.get('kg_disponibles', 0))
                 
                 if cantidad_restante <= 0:
                     break

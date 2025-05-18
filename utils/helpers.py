@@ -1,36 +1,53 @@
-"""
-Funciones de ayuda para el bot de café
-"""
+import logging
 import datetime
+from decimal import Decimal
 import pytz
 
-def get_now_peru():
-    """
-    Obtiene la fecha y hora actuales en la zona horaria de Perú
-    """
-    tz_peru = pytz.timezone('America/Lima')
-    return datetime.datetime.now(tz_peru)
+# Configurar logging
+logger = logging.getLogger(__name__)
 
-def format_currency(amount):
-    """
-    Formatea un valor monetario
-    """
-    return f"S/ {float(amount):.2f}"
+def get_now_peru():
+    """Obtiene la fecha y hora actual en la zona horaria de Perú"""
+    peru_tz = pytz.timezone('America/Lima')
+    return datetime.datetime.now(peru_tz)
+
+def format_currency(amount, symbol="S/"):
+    """Formatea un valor como moneda"""
+    if not amount:
+        return f"{symbol} 0.00"
+    
+    try:
+        # Convertir a Decimal para precisión
+        amount_dec = Decimal(str(amount))
+        
+        # Formatear a 2 decimales
+        formatted = f"{symbol} {amount_dec:.2f}"
+        return formatted
+    except:
+        return f"{symbol} {amount}"
 
 def calculate_total(cantidad, precio):
-    """
-    Calcula el precio total
-    """
-    return float(cantidad) * float(precio)
+    """Calcula el total (cantidad * precio)"""
+    try:
+        return float(cantidad) * float(precio)
+    except (ValueError, TypeError):
+        return 0
 
-def format_datetime(dt):
+def safe_float(text):
     """
-    Formatea una fecha y hora
+    Convierte un texto a número float, manejando comas como separador decimal.
+    
+    Args:
+        text: Texto a convertir a float
+        
+    Returns:
+        float: Valor convertido, o 0.0 si hay error
     """
-    return dt.strftime("%Y-%m-%d %H:%M:%S")
-
-def get_current_timestamp():
-    """
-    Obtiene un timestamp actual
-    """
-    return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    if not text:
+        return 0.0
+    try:
+        # Reemplazar comas por puntos para la conversión
+        return float(str(text).replace(',', '.').strip())
+    except (ValueError, TypeError):
+        logger.warning(f"Error al convertir '{text}' a float, retornando 0.0")
+        return 0.0

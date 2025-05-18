@@ -4,6 +4,7 @@ from telegram import Update
 from telegram.ext import CommandHandler, ConversationHandler, MessageHandler, filters, ContextTypes
 from config import VENTAS_FILE
 from utils.db import append_data
+from utils.helpers import safe_float
 
 # Configurar logging
 logger = logging.getLogger(__name__)
@@ -86,9 +87,15 @@ async def cantidad(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Guarda la cantidad y solicita el precio"""
     user_id = update.effective_user.id
     try:
-        cantidad = float(update.message.text)
+        cantidad = safe_float(update.message.text)
         logger.info(f"Usuario {user_id} ingresó cantidad: {cantidad}")
         
+        if cantidad <= 0:
+            await update.message.reply_text(
+                "La cantidad debe ser mayor que cero. Intenta nuevamente:"
+            )
+            return CANTIDAD
+            
         datos_venta[user_id]["cantidad"] = cantidad
         
         await update.message.reply_text(
@@ -107,9 +114,15 @@ async def precio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Guarda el precio y solicita confirmación"""
     user_id = update.effective_user.id
     try:
-        precio = float(update.message.text)
+        precio = safe_float(update.message.text)
         logger.info(f"Usuario {user_id} ingresó precio: {precio}")
         
+        if precio <= 0:
+            await update.message.reply_text(
+                "El precio debe ser mayor que cero. Intenta nuevamente:"
+            )
+            return PRECIO
+            
         datos_venta[user_id]["precio"] = precio
         
         # Calcular el total

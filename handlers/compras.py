@@ -4,7 +4,7 @@ from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import CommandHandler, ConversationHandler, MessageHandler, filters, ContextTypes
 from config import COMPRAS_FILE
 from utils.db import append_data
-from utils.helpers import get_now_peru
+from utils.helpers import get_now_peru, safe_float
 
 # Configurar logging
 logger = logging.getLogger(__name__)
@@ -94,8 +94,7 @@ async def cantidad(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Guarda la cantidad y solicita el precio"""
     user_id = update.effective_user.id
     try:
-        cantidad_text = update.message.text.replace(',', '.').strip()
-        cantidad = float(cantidad_text)
+        cantidad = safe_float(update.message.text)
         logger.info(f"Usuario {user_id} ingresó cantidad: {cantidad}")
         
         if cantidad <= 0:
@@ -120,8 +119,7 @@ async def precio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Guarda el precio y solicita confirmación"""
     user_id = update.effective_user.id
     try:
-        precio_text = update.message.text.replace(',', '.').strip()
-        precio = float(precio_text)
+        precio = safe_float(update.message.text)
         logger.info(f"Usuario {user_id} ingresó precio: {precio}")
         
         if precio <= 0:
