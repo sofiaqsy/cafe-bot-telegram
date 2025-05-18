@@ -159,6 +159,21 @@ def initialize_sheets():
                                     ).execute()
                                     logger.info(f"Agregado ID único {new_id} a la fila {row_num}")
                                 
+                                # Arreglar formato de fecha en compras
+                                if sheet_name == 'compras' and len(row) > 1 and row[1]:
+                                    fecha = row[1]
+                                    # Si la fecha ya tiene formato numérico o no es una fecha legible
+                                    if not (isinstance(fecha, str) and (fecha.startswith("'") or 
+                                                                        (len(fecha) > 8 and "-" in fecha and ":" in fecha))):
+                                        # Aplicar formato de fecha
+                                        sheets.values().update(
+                                            spreadsheetId=spreadsheet_id,
+                                            range=f"{sheet_name}!B{row_num}",  # B es fecha (columna 2)
+                                            valueInputOption="RAW",
+                                            body={"values": [["'" + fecha]]}
+                                        ).execute()
+                                        logger.info(f"Corregido formato de fecha en fila {row_num}: '{fecha}'")
+                                
                                 # Si tiene tipo_cafe pero no fase_actual
                                 if len(row) > 2 and row[2] and (len(row) <= 7 or not row[7]):  # 2 es el índice de tipo_cafe, 7 de fase_actual
                                     tipo_cafe = row[2]
@@ -248,24 +263,25 @@ def append_data(sheet_name, data):
                     data[header] = ""
         
         # Pre-procesamiento específico para el campo de fecha
-        # Para adelantos, asegurarnos de que las fechas tengan el formato correcto
+        if 'fecha' in data and data['fecha']:
+            # Asegurarse de que la fecha tiene un formato correcto
+            # Si es un formato de fecha estándar (YYYY-MM-DD o YYYY-MM-DD HH:MM:SS)
+            if isinstance(data['fecha'], str) and "-" in data['fecha']:
+                # Añadir comilla simple para preservar formato de fecha
+                if not data['fecha'].startswith("'"):
+                    data['fecha'] = "'" + data['fecha']
+                logger.info(f"Fecha formateada como texto: {data['fecha']}")
+        
+        # Procesamiento adicional para adelantos
         if sheet_name == 'adelantos':
-            # Formatear explícitamente la fecha como texto para evitar que Sheets la convierta en número
-            if 'fecha' in data and data['fecha']:
-                # Asegurarse de que la fecha tiene el formato correcto (YYYY-MM-DD)
-                # Si no sigue el formato, se deja como está
-                if isinstance(data['fecha'], str) and len(data['fecha']) == 10 and data['fecha'][4] == '-' and data['fecha'][7] == '-':
-                    # Prefijo con comilla simple para forzar formato de texto en Google Sheets
-                    data['fecha'] = f"'{data['fecha']}'"
-                    logger.info(f"Fecha formateada como texto: {data['fecha']}")
-            
             # Hacer lo mismo con la hora
             if 'hora' in data and data['hora']:
                 # Asegurarse de que la hora tiene el formato correcto (HH:MM:SS)
                 # Si no sigue el formato, se deja como está
                 if isinstance(data['hora'], str) and len(data['hora']) == 8 and data['hora'][2] == ':' and data['hora'][5] == ':':
                     # Prefijo con comilla simple para forzar formato de texto
-                    data['hora'] = f"'{data['hora']}'"
+                    if not data['hora'].startswith("'"):
+                        data['hora'] = "'" + data['hora']
                     logger.info(f"Hora formateada como texto: {data['hora']}")
         
         # Construir la fila de datos ordenada según las cabeceras
@@ -327,11 +343,12 @@ def update_cell(sheet_name, row_index, column_name, value):
         cell_reference = f"{column_letter}{real_row}"
         
         # Pre-procesamiento para campos específicos
-        if sheet_name == 'adelantos' and column_name == 'fecha':
-            # Asegurarse de que la fecha tiene el formato correcto (YYYY-MM-DD)
-            if isinstance(value, str) and len(value) == 10 and value[4] == '-' and value[7] == '-':
+        if column_name == 'fecha':
+            # Asegurarse de que la fecha tiene el formato correcto
+            if isinstance(value, str) and "-" in value:
                 # Prefijo con comilla simple para forzar formato de texto en Google Sheets
-                value = f"'{value}'"
+                if not value.startswith("'"):
+                    value = "'" + value
                 logger.info(f"Fecha formateada como texto para actualización: {value}")
         
         logger.info(f"Actualizando celda {cell_reference} en hoja '{sheet_name}' con valor: {value}")
