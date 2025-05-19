@@ -1,12 +1,13 @@
 import os
 import logging
+import traceback
 import requests
 from telegram.ext import Application, CommandHandler
 
 # Configuración de logging avanzada
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO
+    level=logging.DEBUG  # Cambiado a DEBUG para más detalles
 )
 logger = logging.getLogger(__name__)
 
@@ -18,18 +19,50 @@ logging.getLogger("telegram").setLevel(logging.WARNING)
 from config import TOKEN, sheets_configured
 from utils.sheets import initialize_sheets
 
-# Importar handlers
-from handlers.start import start_command, help_command
-from handlers.compras import register_compras_handlers
-from handlers.proceso import register_proceso_handlers
-from handlers.gastos import register_gastos_handlers
-from handlers.ventas import register_ventas_handlers
-from handlers.reportes import register_reportes_handlers
-from handlers.pedidos import register_pedidos_handlers
-from handlers.adelantos import register_adelantos_handlers
-from handlers.compra_adelanto import register_compra_adelanto_handlers
-from handlers.almacen import register_almacen_handlers
-from handlers.documents import register_documents_handlers
+# Log inicial
+logger.info("=== INICIANDO BOT DE CAFE - MODO DEBUG ===")
+
+# Intentar importar handlers con captura de errores
+try:
+    logger.info("Importando handlers...")
+    
+    # Importar handlers
+    from handlers.start import start_command, help_command
+    from handlers.compras import register_compras_handlers
+    from handlers.proceso import register_proceso_handlers
+    from handlers.gastos import register_gastos_handlers
+    from handlers.ventas import register_ventas_handlers
+    from handlers.reportes import register_reportes_handlers
+    from handlers.pedidos import register_pedidos_handlers
+    from handlers.adelantos import register_adelantos_handlers
+    from handlers.compra_adelanto import register_compra_adelanto_handlers
+    from handlers.almacen import register_almacen_handlers
+    
+    # Import especial para documents con captura de error
+    try:
+        logger.info("Importando módulo documents...")
+        from handlers.documents import register_documents_handlers
+        logger.info("Módulo documents importado correctamente")
+    except Exception as e:
+        logger.error(f"ERROR importando módulo documents: {e}")
+        logger.error(traceback.format_exc())
+        register_documents_handlers = None
+    
+    # Import del módulo de diagnóstico
+    try:
+        logger.info("Importando módulo diagnostico...")
+        from handlers.diagnostico import register_diagnostico_handlers
+        logger.info("Módulo diagnostico importado correctamente")
+    except Exception as e:
+        logger.error(f"ERROR importando módulo diagnostico: {e}")
+        logger.error(traceback.format_exc())
+        register_diagnostico_handlers = None
+    
+    logger.info("Todos los handlers importados correctamente")
+    
+except Exception as e:
+    logger.error(f"ERROR importando handlers: {e}")
+    logger.error(traceback.format_exc())
 
 def eliminar_webhook():
     """Elimina cualquier webhook configurado antes de iniciar el polling"""
@@ -49,6 +82,7 @@ def eliminar_webhook():
             return False
     except Exception as e:
         logger.error(f"Excepción al eliminar webhook: {e}")
+        logger.error(traceback.format_exc())
         return False
 
 def main():
@@ -63,6 +97,7 @@ def main():
             logger.info("Google Sheets inicializado correctamente")
         except Exception as e:
             logger.error(f"Error al inicializar Google Sheets: {e}")
+            logger.error(traceback.format_exc())
             logger.warning("El bot continuará funcionando, pero los datos no se guardarán en Google Sheets")
     else:
         logger.warning("Google Sheets no está configurado. Los datos no se guardarán correctamente.")
@@ -72,15 +107,17 @@ def main():
     env_vars = [
         "TELEGRAM_BOT_TOKEN", 
         "SPREADSHEET_ID", 
-        "GOOGLE_CREDENTIALS"
+        "GOOGLE_CREDENTIALS",
+        "DRIVE_ENABLED",
+        "DRIVE_EVIDENCIAS_ROOT_ID",
+        "DRIVE_EVIDENCIAS_COMPRAS_ID",
+        "DRIVE_EVIDENCIAS_VENTAS_ID"
     ]
     for var in env_vars:
         value = os.getenv(var)
         if value:
-            if var == "GOOGLE_CREDENTIALS":
-                logger.info(f"Variable de entorno {var} está configurada (valor no mostrado por seguridad)")
-            elif var == "TELEGRAM_BOT_TOKEN":
-                # Mostrar solo los primeros 10 caracteres del token, para verificar
+            if var in ["GOOGLE_CREDENTIALS", "TELEGRAM_BOT_TOKEN"]:
+                # Mostrar solo los primeros 10 caracteres del token/credenciales, para verificar
                 logger.info(f"Variable de entorno {var} está configurada: {value[:10]}...")
             else:
                 logger.info(f"Variable de entorno {var} está configurada: {value}")
@@ -88,32 +125,124 @@ def main():
             logger.warning(f"Variable de entorno {var} NO está configurada")
     
     # Crear la aplicación
-    application = Application.builder().token(TOKEN).build()
+    try:
+        logger.info("Creando aplicación con TOKEN...")
+        application = Application.builder().token(TOKEN).build()
+        logger.info("Aplicación creada correctamente")
+    except Exception as e:
+        logger.error(f"ERROR CRÍTICO al crear aplicación: {e}")
+        logger.error(traceback.format_exc())
+        return
     
     # Registrar comandos básicos
-    application.add_handler(CommandHandler("start", start_command))
-    application.add_handler(CommandHandler("ayuda", help_command))
-    application.add_handler(CommandHandler("help", help_command))
+    try:
+        logger.info("Registrando comandos básicos...")
+        application.add_handler(CommandHandler("start", start_command))
+        application.add_handler(CommandHandler("ayuda", help_command))
+        application.add_handler(CommandHandler("help", help_command))
+        logger.info("Comandos básicos registrados correctamente")
+    except Exception as e:
+        logger.error(f"Error al registrar comandos básicos: {e}")
+        logger.error(traceback.format_exc())
     
     # Registrar handlers específicos
-    register_compras_handlers(application)
-    register_proceso_handlers(application)
-    register_gastos_handlers(application)
-    register_ventas_handlers(application)
-    register_reportes_handlers(application)
-    register_pedidos_handlers(application)
-    register_adelantos_handlers(application)
-    register_compra_adelanto_handlers(application)
-    register_almacen_handlers(application)  # Registrar nuevo handler de almacén
-    register_documents_handlers(application)  # Registrar nuevo handler de documentos
+    handlers_registrados = 0
+    handlers_fallidos = 0
+    
+    # Lista de funciones de registro de handlers
+    handler_functions = [
+        ("compras", register_compras_handlers),
+        ("proceso", register_proceso_handlers),
+        ("gastos", register_gastos_handlers),
+        ("ventas", register_ventas_handlers),
+        ("reportes", register_reportes_handlers),
+        ("pedidos", register_pedidos_handlers),
+        ("adelantos", register_adelantos_handlers),
+        ("compra_adelanto", register_compra_adelanto_handlers),
+        ("almacen", register_almacen_handlers)
+    ]
+    
+    # Registrar cada handler con manejo de excepciones individual
+    for name, handler_func in handler_functions:
+        try:
+            logger.info(f"Registrando handler: {name}...")
+            handler_func(application)
+            logger.info(f"Handler {name} registrado correctamente")
+            handlers_registrados += 1
+        except Exception as e:
+            logger.error(f"Error al registrar handler {name}: {e}")
+            logger.error(traceback.format_exc())
+            handlers_fallidos += 1
+    
+    # Registrar handler de documentos (con verificación especial)
+    if register_documents_handlers is not None:
+        try:
+            logger.info("Registrando handler de documentos...")
+            register_documents_handlers(application)
+            logger.info("Handler de documentos registrado correctamente")
+            handlers_registrados += 1
+        except Exception as e:
+            logger.error(f"Error al registrar handler de documentos: {e}")
+            logger.error(traceback.format_exc())
+            handlers_fallidos += 1
+    else:
+        logger.error("No se pudo registrar el handler de documentos: Módulo no disponible")
+        handlers_fallidos += 1
+    
+    # Registrar handler de diagnóstico (con verificación especial)
+    if register_diagnostico_handlers is not None:
+        try:
+            logger.info("Registrando handler de diagnóstico...")
+            register_diagnostico_handlers(application)
+            logger.info("Handler de diagnóstico registrado correctamente")
+            handlers_registrados += 1
+        except Exception as e:
+            logger.error(f"Error al registrar handler de diagnóstico: {e}")
+            logger.error(traceback.format_exc())
+            handlers_fallidos += 1
+    else:
+        logger.error("No se pudo registrar el handler de diagnóstico: Módulo no disponible")
+        handlers_fallidos += 1
+    
+    # Registrar comando de test directo (sin usar el módulo documents)
+    try:
+        logger.info("Registrando comando de test directo...")
+        application.add_handler(
+            CommandHandler("test_bot", 
+                lambda update, context: update.message.reply_text(
+                    "\ud83d\udc4d El bot está funcionando correctamente y puede recibir comandos.\n\n"
+                    "Usa /diagnostico para obtener más información sobre el estado del bot."
+                )
+            )
+        )
+        logger.info("Comando de test directo registrado correctamente")
+    except Exception as e:
+        logger.error(f"Error al registrar comando de test directo: {e}")
+        logger.error(traceback.format_exc())
+    
+    # Resumen de registro de handlers
+    logger.info(f"Resumen de registro de handlers: {handlers_registrados} éxitos, {handlers_fallidos} fallos")
+    
+    # Si todos los handlers fallaron, salir
+    if handlers_registrados == 0 and handlers_fallidos > 0:
+        logger.error("No se pudo registrar ningún handler. Finalizando inicialización.")
+        return
     
     # Eliminar webhook existente
     if not eliminar_webhook():
         logger.warning("No se pudo eliminar el webhook. Intentando continuar de todos modos...")
     
     # Iniciar el bot
-    logger.info("Bot iniciado. Esperando comandos...")
-    application.run_polling(drop_pending_updates=True)
+    try:
+        logger.info("Bot iniciado. Esperando comandos...")
+        application.run_polling(drop_pending_updates=True)
+    except Exception as e:
+        logger.error(f"Error al iniciar el bot: {e}")
+        logger.error(traceback.format_exc())
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        logger.error(f"Error fatal en la ejecución del bot: {e}")
+        logger.error(traceback.format_exc())
