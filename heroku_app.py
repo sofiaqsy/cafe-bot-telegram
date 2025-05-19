@@ -46,6 +46,17 @@ except Exception as e:
     logger.error(traceback.format_exc())
     documents_importado = False
 
+# NUEVO: Importación para el handler de evidencias
+try:
+    logger.info("Intentando importar el módulo evidencias...")
+    from handlers.evidencias import register_evidencias_handlers
+    logger.info("Módulo evidencias importado correctamente")
+    evidencias_importado = True
+except Exception as e:
+    logger.error(f"Error al importar el módulo evidencias: {e}")
+    logger.error(traceback.format_exc())
+    evidencias_importado = False
+
 # AÑADIDO: Funciones simples de emergencia para el comando /documento
 async def documento_simple(update, context):
     """Función simple para manejar el comando /documento cuando el módulo principal falla"""
@@ -68,6 +79,21 @@ async def documento_simple(update, context):
         )
     except Exception as e:
         logger.error(f"Error en documento_simple: {e}")
+        await update.message.reply_text(
+            "❌ Ha ocurrido un error al procesar tu solicitud. Por favor, contacta al administrador."
+        )
+
+# NUEVO: Función simple de emergencia para el comando /evidencia
+async def evidencia_simple(update, context):
+    """Función simple para manejar el comando /evidencia cuando el módulo principal falla"""
+    try:
+        user = update.effective_user
+        logger.info(f"Comando /evidencia ejecutado por {user.username or user.first_name} (ID: {user.id})")
+        
+        # Simplemente redirigimos al handler simple de documento
+        return await documento_simple(update, context)
+    except Exception as e:
+        logger.error(f"Error en evidencia_simple: {e}")
         await update.message.reply_text(
             "❌ Ha ocurrido un error al procesar tu solicitud. Por favor, contacta al administrador."
         )
@@ -176,6 +202,24 @@ def main():
         logger.error(f"Error al inicializar Google Sheets: {e}")
         logger.warning("El bot continuará funcionando, pero los datos no se guardarán en Google Sheets")
     
+    # NUEVO: Inicializar la configuración de Google Drive si está habilitado
+    try:
+        from config import DRIVE_ENABLED
+        if DRIVE_ENABLED:
+            logger.info("Google Drive está habilitado, configurando carpetas...")
+            try:
+                from utils.drive import setup_drive_folders
+                result = setup_drive_folders()
+                if result:
+                    logger.info("Estructura de carpetas en Google Drive configurada correctamente")
+                else:
+                    logger.warning("No se pudo configurar la estructura de carpetas en Google Drive")
+            except Exception as e:
+                logger.error(f"Error al configurar Google Drive: {e}")
+                logger.warning("El bot continuará funcionando, pero es posible que las evidencias no se guarden correctamente")
+    except Exception as e:
+        logger.error(f"Error al verificar configuración de Google Drive: {e}")
+    
     # Crear la aplicación
     application = Application.builder().token(TOKEN).build()
     
@@ -195,10 +239,11 @@ def main():
     register_compra_adelanto_handlers(application)
     register_almacen_handlers(application)
     
-    # AÑADIDO: Intentar registrar el handler de documentos
+    # AÑADIDO: Intentar registrar los handlers de documentos y evidencias
     documento_handler_registrado = False
+    evidencia_handler_registrado = False
     
-    # Intento 1: Usar el módulo documents si está disponible
+    # Intentar registrar el handler de documentos
     if documents_importado:
         try:
             logger.info("Registrando handler de documentos...")
@@ -211,28 +256,55 @@ def main():
     else:
         logger.warning("No se importó el módulo documents, se usará el handler simple")
     
-    # Intento 2: Si el handler principal falla, usar la versión simple
+    # NUEVO: Intentar registrar el handler de evidencias
+    if evidencias_importado:
+        try:
+            logger.info("Registrando handler de evidencias...")
+            register_evidencias_handlers(application)
+            logger.info("Handler de evidencias registrado correctamente")
+            evidencia_handler_registrado = True
+        except Exception as e:
+            logger.error(f"Error al registrar handler de evidencias: {e}")
+            logger.error(traceback.format_exc())
+    else:
+        logger.warning("No se importó el módulo evidencias, se usará el handler simple")
+    
+    # Handlers simples de respaldo
+    # Si el handler principal de documentos falla, usar la versión simple
     if not documento_handler_registrado:
         try:
             logger.info("Registrando handler simple para documentos...")
-            
-            # Registrar comando /documento
             application.add_handler(CommandHandler("documento", documento_simple))
-            
-            # Registrar handler para procesar fotos
-            application.add_handler(MessageHandler(filters.PHOTO, procesar_foto_evidencia))
-            
             logger.info("Handler simple para documentos registrado correctamente")
             documento_handler_registrado = True
         except Exception as e:
             logger.error(f"Error al registrar handler simple para documentos: {e}")
             logger.error(traceback.format_exc())
     
+    # NUEVO: Si el handler principal de evidencias falla, usar la versión simple
+    if not evidencia_handler_registrado:
+        try:
+            logger.info("Registrando handler simple para evidencias...")
+            application.add_handler(CommandHandler("evidencia", evidencia_simple))
+            logger.info("Handler simple para evidencias registrado correctamente")
+            evidencia_handler_registrado = True
+        except Exception as e:
+            logger.error(f"Error al registrar handler simple para evidencias: {e}")
+            logger.error(traceback.format_exc())
+    
+    # Registrar handler para procesar fotos (siempre como respaldo)
+    try:
+        application.add_handler(MessageHandler(filters.PHOTO, procesar_foto_evidencia))
+        logger.info("Handler para procesar fotos registrado correctamente")
+    except Exception as e:
+        logger.error(f"Error al registrar handler para procesar fotos: {e}")
+    
     # Registrar comando de prueba
     async def test_bot(update, context):
         await update.message.reply_text(
             "✅ El bot está funcionando correctamente.\n\n"
-            f"Sistema de documentos: {'ACTIVO' if documento_handler_registrado else 'INACTIVO'}"
+            f"Sistema de documentos: {'ACTIVO' if documento_handler_registrado else 'INACTIVO'}\n"
+            f"Sistema de evidencias: {'ACTIVO' if evidencia_handler_registrado else 'INACTIVO'}"
         )
     
     application.add_handler(CommandHandler("test_bot", test_bot))
