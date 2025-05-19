@@ -1,69 +1,77 @@
+import string
+import random
 import logging
-import datetime
-from decimal import Decimal
-import pytz
 
 # Configurar logging
 logger = logging.getLogger(__name__)
 
-def get_now_peru():
-    """Obtiene la fecha y hora actual en la zona horaria de Perú"""
-    peru_tz = pytz.timezone('America/Lima')
-    return datetime.datetime.now(peru_tz)
-
-def format_date_for_sheets(date_string):
+def safe_float(value):
     """
-    Formatea una cadena de fecha para evitar la conversión automática en Google Sheets.
+    Convierte un valor a float de forma segura
     
     Args:
-        date_string: Cadena de texto con la fecha
-        
+        value: Valor a convertir
+    
     Returns:
-        str: Fecha con un apóstrofe al inicio para forzar el formato de texto en Google Sheets
+        float: Valor convertido o 0.0 en caso de error
     """
-    if not date_string:
-        return ""
-    
-    # Añadir un apóstrofe al inicio para forzar el formato de texto en Google Sheets
-    return f"'{date_string}"
-
-def format_currency(amount, symbol="S/"):
-    """Formatea un valor como moneda"""
-    if not amount:
-        return f"{symbol} 0.00"
-    
     try:
-        # Convertir a Decimal para precisión
-        amount_dec = Decimal(str(amount))
-        
-        # Formatear a 2 decimales
-        formatted = f"{symbol} {amount_dec:.2f}"
-        return formatted
-    except:
-        return f"{symbol} {amount}"
-
-def calculate_total(cantidad, precio):
-    """Calcula el total (cantidad * precio)"""
-    try:
-        return float(cantidad) * float(precio)
+        if isinstance(value, (int, float)):
+            return float(value)
+        elif isinstance(value, str):
+            return float(value.replace(',', '.'))
+        return 0.0
     except (ValueError, TypeError):
-        return 0
+        return 0.0
 
-def safe_float(text):
+def generate_unique_id(length=6):
     """
-    Convierte un texto a número float, manejando comas como separador decimal.
+    Genera un ID único alfanumérico para compras
     
     Args:
-        text: Texto a convertir a float
-        
+        length: Longitud del ID (default: 6)
+    
     Returns:
-        float: Valor convertido, o 0.0 si hay error
+        str: ID único alfanumérico
     """
-    if not text:
-        return 0.0
-    try:
-        # Reemplazar comas por puntos para la conversión
-        return float(str(text).replace(',', '.').strip())
-    except (ValueError, TypeError):
-        logger.warning(f"Error al convertir '{text}' a float, retornando 0.0")
-        return 0.0
+    # Caracteres permitidos (letras mayúsculas y números)
+    chars = string.ascii_uppercase + string.digits
+    
+    # Generar un ID único con formato CP-XXXXXX (Café Purchase)
+    unique_id = 'CP-' + ''.join(random.choice(chars) for _ in range(length))
+    
+    return unique_id
+
+def generate_almacen_id(length=6):
+    """
+    Genera un ID único alfanumérico para registros del almacén
+    
+    Args:
+        length: Longitud del ID (default: 6)
+    
+    Returns:
+        str: ID único alfanumérico
+    """
+    # Caracteres permitidos (letras mayúsculas y números)
+    chars = string.ascii_uppercase + string.digits
+    
+    # Generar un ID único con formato AL-XXXXXX (Almacén)
+    unique_id = 'AL-' + ''.join(random.choice(chars) for _ in range(length))
+    
+    return unique_id
+
+def format_date_for_sheets(date_str):
+    """
+    Formatea una fecha para evitar que Google Sheets la convierta automáticamente
+    
+    Args:
+        date_str: Fecha en formato YYYY-MM-DD
+    
+    Returns:
+        str: Fecha formateada para Google Sheets
+    """
+    # Verificar formato
+    if isinstance(date_str, str) and len(date_str) == 10 and date_str[4] == '-' and date_str[7] == '-':
+        # Prefijo con comilla simple para forzar formato de texto en Google Sheets
+        return f"'{date_str}'"
+    return date_str
