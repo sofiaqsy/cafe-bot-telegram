@@ -232,12 +232,12 @@ async def seleccionar_destino(update: Update, context: ContextTypes.DEFAULT_TYPE
         # Extraer solo la fecha sin la hora
         fecha_solo = fecha.split(" ")[0] if " " in fecha else fecha
         
-        # Añadir fila de información con el formato ID, PROVEEDOR, FECHA
-        mensaje += f"{i+1}. {registro_id}, {proveedor}, {fecha_solo}\n"
+        # Añadir fila de información con el NUEVO formato: proveedor - id - kg - fecha
+        mensaje += f"{i+1}. {proveedor} - {registro_id} - {kg_disponibles} kg - {fecha_solo}\n"
         
-        # Crear botón para este registro
+        # Crear botón para este registro con el NUEVO formato
         keyboard.append([
-            InlineKeyboardButton(f"{registro_id} - {kg_disponibles} kg", callback_data=f"registro_{i}")
+            InlineKeyboardButton(f"{proveedor} - {registro_id} - {kg_disponibles} kg - {fecha_solo}", callback_data=f"registro_{i}")
         ])
     
     # Añadir botón para selección múltiple personalizada
@@ -268,12 +268,23 @@ async def seleccionar_registros_callback(update: Update, context: ContextTypes.D
         # Calcular total de kg disponibles
         total_kg = sum(safe_float(registro.get('cantidad_actual', 0)) for registro in almacen_disponible)
         
-        # Formatear mensaje con los registros seleccionados
+        # Formatear mensaje con los registros seleccionados en el NUEVO formato
         seleccionados_info = []
         for registro in almacen_disponible:
+            # Buscar información del proveedor
+            proveedor = "Desconocido"
+            compra_id = registro.get('compra_id', '')
+            if compra_id:
+                compras = get_filtered_data('compras', {'id': compra_id})
+                if compras:
+                    proveedor = compras[0].get('proveedor', 'Desconocido')
+                    
             kg = safe_float(registro.get('cantidad_actual', 0))
             registro_id = registro.get('id', 'Sin ID')
-            seleccionados_info.append(f"{registro_id} ({kg} kg)")
+            fecha = registro.get('fecha', 'Sin fecha')
+            fecha_solo = fecha.split(" ")[0] if " " in fecha else fecha
+            
+            seleccionados_info.append(f"{proveedor} - {registro_id} - {kg} kg - {fecha_solo}")
         
         seleccionados_texto = "\n- ".join([""] + seleccionados_info)
         
@@ -300,11 +311,23 @@ async def seleccionar_registros_callback(update: Update, context: ContextTypes.D
             kg_disponibles = safe_float(registro.get('cantidad_actual', 0))
             registro_id = registro.get('id', 'Sin ID')
             
-            # Estado inicial: no seleccionado
+            # Buscar información del proveedor
+            proveedor = "Desconocido"
+            compra_id = registro.get('compra_id', '')
+            if compra_id:
+                compras = get_filtered_data('compras', {'id': compra_id})
+                if compras:
+                    proveedor = compras[0].get('proveedor', 'Desconocido')
+            
+            # Extraer fecha sin hora
+            fecha = registro.get('fecha', 'Sin fecha')
+            fecha_solo = fecha.split(" ")[0] if " " in fecha else fecha
+            
+            # Estado inicial: no seleccionado con el NUEVO formato
             checkbox = "☐"  # Checkbox vacío
             keyboard.append([
                 InlineKeyboardButton(
-                    f"{checkbox} {registro_id} - {kg_disponibles} kg", 
+                    f"{checkbox} {proveedor} - {registro_id} - {kg_disponibles} kg - {fecha_solo}", 
                     callback_data=f"toggle_{i}"
                 )
             ])
@@ -344,11 +367,23 @@ async def seleccionar_registros_callback(update: Update, context: ContextTypes.D
             kg_disponibles = safe_float(registro.get('cantidad_actual', 0))
             registro_id = registro.get('id', 'Sin ID')
             
+            # Buscar información del proveedor
+            proveedor = "Desconocido"
+            compra_id = registro.get('compra_id', '')
+            if compra_id:
+                compras = get_filtered_data('compras', {'id': compra_id})
+                if compras:
+                    proveedor = compras[0].get('proveedor', 'Desconocido')
+            
+            # Extraer fecha sin hora
+            fecha = registro.get('fecha', 'Sin fecha')
+            fecha_solo = fecha.split(" ")[0] if " " in fecha else fecha
+            
             # Checkbox state based on selection
             checkbox = "☑" if str(i) in multi_seleccion else "☐"
             keyboard.append([
                 InlineKeyboardButton(
-                    f"{checkbox} {registro_id} - {kg_disponibles} kg", 
+                    f"{checkbox} {proveedor} - {registro_id} - {kg_disponibles} kg - {fecha_solo}", 
                     callback_data=f"toggle_{i}"
                 )
             ])
@@ -391,12 +426,23 @@ async def seleccionar_registros_callback(update: Update, context: ContextTypes.D
         # Calcular total de kg disponibles
         total_kg = sum(safe_float(registro.get('cantidad_actual', 0)) for registro in registros_seleccionados)
         
-        # Formatear mensaje con los registros seleccionados
+        # Formatear mensaje con los registros seleccionados (NUEVO formato)
         seleccionados_info = []
         for registro in registros_seleccionados:
+            # Buscar información del proveedor
+            proveedor = "Desconocido"
+            compra_id = registro.get('compra_id', '')
+            if compra_id:
+                compras = get_filtered_data('compras', {'id': compra_id})
+                if compras:
+                    proveedor = compras[0].get('proveedor', 'Desconocido')
+                    
             kg = safe_float(registro.get('cantidad_actual', 0))
             registro_id = registro.get('id', 'Sin ID')
-            seleccionados_info.append(f"{registro_id} ({kg} kg)")
+            fecha = registro.get('fecha', 'Sin fecha')
+            fecha_solo = fecha.split(" ")[0] if " " in fecha else fecha
+            
+            seleccionados_info.append(f"{proveedor} - {registro_id} - {kg} kg - {fecha_solo}")
         
         seleccionados_texto = "\n- ".join([""] + seleccionados_info)
         
@@ -421,13 +467,25 @@ async def seleccionar_registros_callback(update: Update, context: ContextTypes.D
         context.user_data['registros_seleccionados'] = [almacen_disponible[indice]]
         total_kg = safe_float(almacen_disponible[indice].get('cantidad_actual', 0))
         
-        # Formatear mensaje
+        # Formatear mensaje con el NUEVO formato
         registro = almacen_disponible[indice]
         kg = safe_float(registro.get('cantidad_actual', 0))
         registro_id = registro.get('id', 'Sin ID')
         
+        # Buscar información del proveedor
+        proveedor = "Desconocido"
+        compra_id = registro.get('compra_id', '')
+        if compra_id:
+            compras = get_filtered_data('compras', {'id': compra_id})
+            if compras:
+                proveedor = compras[0].get('proveedor', 'Desconocido')
+        
+        # Extraer fecha sin hora
+        fecha = registro.get('fecha', 'Sin fecha')
+        fecha_solo = fecha.split(" ")[0] if " " in fecha else fecha
+        
         await query.edit_message_text(
-            f"🛒 Has seleccionado el registro:\n- {registro_id} ({kg} kg)\n\n"
+            f"🛒 Has seleccionado el registro:\n- {proveedor} - {registro_id} - {kg} kg - {fecha_solo}\n\n"
             f"Total disponible: {total_kg} kg\n\n"
             f"¿Cuántos kg de café {origen} deseas transformar a {destino}?"
         )
@@ -554,12 +612,23 @@ async def agregar_notas(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     cantidad_resultante_esperada = context.user_data['cantidad_resultante_esperada']
     registros_seleccionados = context.user_data['registros_seleccionados']
     
-    # Formatear información de registros (simplificado, sin mostrar proveedor)
+    # Formatear información de registros con el NUEVO formato
     registros_info = []
     for registro in registros_seleccionados:
+        # Obtener información del proveedor
+        proveedor = "Desconocido"
+        compra_id = registro.get('compra_id', '')
+        if compra_id:
+            compras = get_filtered_data('compras', {'id': compra_id})
+            if compras:
+                proveedor = compras[0].get('proveedor', 'Desconocido')
+        
         kg = safe_float(registro.get('cantidad_actual', 0))
         registro_id = registro.get('id', 'Sin ID')
-        registros_info.append(f"{registro_id} ({kg} kg)")
+        fecha = registro.get('fecha', 'Sin fecha')
+        fecha_solo = fecha.split(" ")[0] if " " in fecha else fecha
+        
+        registros_info.append(f"{proveedor} - {registro_id} - {kg} kg - {fecha_solo}")
     
     registros_texto = "\n- ".join([""] + registros_info)
     
