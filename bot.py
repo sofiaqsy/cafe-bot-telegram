@@ -48,6 +48,16 @@ try:
         logger.error(traceback.format_exc())
         register_documents_handlers = None
     
+    # Import del módulo de diagnóstico
+    try:
+        logger.info("Importando módulo diagnostico...")
+        from handlers.diagnostico import register_diagnostico_handlers
+        logger.info("Módulo diagnostico importado correctamente")
+    except Exception as e:
+        logger.error(f"ERROR importando módulo diagnostico: {e}")
+        logger.error(traceback.format_exc())
+        register_diagnostico_handlers = None
+    
     logger.info("Todos los handlers importados correctamente")
     
 except Exception as e:
@@ -178,6 +188,37 @@ def main():
     else:
         logger.error("No se pudo registrar el handler de documentos: Módulo no disponible")
         handlers_fallidos += 1
+    
+    # Registrar handler de diagnóstico (con verificación especial)
+    if register_diagnostico_handlers is not None:
+        try:
+            logger.info("Registrando handler de diagnóstico...")
+            register_diagnostico_handlers(application)
+            logger.info("Handler de diagnóstico registrado correctamente")
+            handlers_registrados += 1
+        except Exception as e:
+            logger.error(f"Error al registrar handler de diagnóstico: {e}")
+            logger.error(traceback.format_exc())
+            handlers_fallidos += 1
+    else:
+        logger.error("No se pudo registrar el handler de diagnóstico: Módulo no disponible")
+        handlers_fallidos += 1
+    
+    # Registrar comando de test directo (sin usar el módulo documents)
+    try:
+        logger.info("Registrando comando de test directo...")
+        application.add_handler(
+            CommandHandler("test_bot", 
+                lambda update, context: update.message.reply_text(
+                    "\ud83d\udc4d El bot está funcionando correctamente y puede recibir comandos.\n\n"
+                    "Usa /diagnostico para obtener más información sobre el estado del bot."
+                )
+            )
+        )
+        logger.info("Comando de test directo registrado correctamente")
+    except Exception as e:
+        logger.error(f"Error al registrar comando de test directo: {e}")
+        logger.error(traceback.format_exc())
     
     # Resumen de registro de handlers
     logger.info(f"Resumen de registro de handlers: {handlers_registrados} éxitos, {handlers_fallidos} fallos")
