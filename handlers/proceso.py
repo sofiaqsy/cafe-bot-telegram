@@ -38,13 +38,13 @@ async def proceso_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     # Limpiar datos previos
     context.user_data.clear()
     
-    # Crear teclado con las fases disponibles como origen
+    # Crear teclado solo con las fases que tienen kg disponibles
     keyboard = []
     
     # Leer datos del almacén para mostrar disponibilidad
     almacen_data = leer_almacen_para_proceso()
     
-    # Mostrar información de disponibilidad en el almacén para cada fase
+    # Mostrar solo las fases con cantidad disponible
     for fase in FASES_CAFE:
         # Obtener cantidad disponible en el almacén para esta fase
         cantidad_disponible = 0
@@ -53,8 +53,15 @@ async def proceso_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         
         if cantidad_disponible > 0:
             keyboard.append([f"{fase} ({cantidad_disponible} kg)"])
-        else:
-            keyboard.append([fase])  # Sin mostrar cantidad si es 0
+    
+    # Si no hay fases con café disponible, informar al usuario
+    if not keyboard:
+        await update.message.reply_text(
+            "⚠️ No hay café disponible en el almacén para procesar.\n\n"
+            "Por favor, registra compras primero antes de iniciar un proceso.",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        return ConversationHandler.END
     
     reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
     
@@ -79,9 +86,15 @@ async def seleccionar_origen(update: Update, context: ContextTypes.DEFAULT_TYPE)
             cantidad_disponible = get_almacen_cantidad(fase)
             if cantidad_disponible > 0:
                 keyboard.append([f"{fase} ({cantidad_disponible} kg)"])
-            else:
-                keyboard.append([fase])
                 
+        if not keyboard:
+            await update.message.reply_text(
+                "⚠️ No hay café disponible en el almacén para procesar.\n\n"
+                "Por favor, registra compras primero antes de iniciar un proceso.",
+                reply_markup=ReplyKeyboardRemove()
+            )
+            return ConversationHandler.END
+        
         reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
         
         await update.message.reply_text(
@@ -181,7 +194,7 @@ async def seleccionar_destino(update: Update, context: ContextTypes.DEFAULT_TYPE
     context.user_data['almacen_disponible'] = almacen_disponible
     
     # Mostrar información de los registros disponibles y preguntar cuáles quiere procesar
-    mensaje = f"🔍 Registros en almacén fase {origen} disponibles para procesar:\n\n"
+    mensaje = f"🔍 Registros disponibles para procesar de fase {origen}:\n\n"
     
     # Crear teclado inline con los registros disponibles
     keyboard = []
@@ -209,7 +222,7 @@ async def seleccionar_destino(update: Update, context: ContextTypes.DEFAULT_TYPE
         # Extraer solo la fecha sin la hora
         fecha_solo = fecha.split(" ")[0] if " " in fecha else fecha
         
-        # Añadir fila de información con el nuevo formato solicitado
+        # Añadir fila de información con el formato ID, PROVEEDOR, FECHA
         mensaje += f"{i+1}. {registro_id}, {proveedor}, {fecha_solo}\n"
         
         # Crear botón para este registro
@@ -530,21 +543,12 @@ async def agregar_notas(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     cantidad_resultante_esperada = context.user_data['cantidad_resultante_esperada']
     registros_seleccionados = context.user_data['registros_seleccionados']
     
-    # Formatear información de registros
+    # Formatear información de registros (simplificado, sin mostrar proveedor)
     registros_info = []
     for registro in registros_seleccionados:
         kg = safe_float(registro.get('cantidad_actual', 0))
         registro_id = registro.get('id', 'Sin ID')
-        # Si hay compra_id, buscar el proveedor
-        compra_id = registro.get('compra_id', '')
-        info_adicional = ""
-        if compra_id:
-            compras = get_filtered_data('compras', {'id': compra_id})
-            if compras:
-                proveedor = compras[0].get('proveedor', 'Desconocido')
-                info_adicional = f" - Proveedor: {proveedor}"
-        
-        registros_info.append(f"{registro_id} ({kg} kg){info_adicional}")
+        registros_info.append(f"{registro_id} ({kg} kg)")
     
     registros_texto = "\n- ".join([""] + registros_info)
     
