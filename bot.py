@@ -185,6 +185,17 @@ def main():
             logger.error(f"Error al registrar handler de documentos: {e}")
             logger.error(traceback.format_exc())
             handlers_fallidos += 1
+            
+            # Fix para el handler de documentos - Registro manual del comando
+            try:
+                logger.info("Intentando registrar CommandHandler para /documento directamente...")
+                from handlers.documents import documento_command
+                application.add_handler(CommandHandler("documento", documento_command))
+                logger.info("CommandHandler para /documento registrado manualmente con éxito")
+                handlers_registrados += 1
+            except Exception as e_fix:
+                logger.error(f"Error al intentar registrar CommandHandler directo para /documento: {e_fix}")
+                logger.error(traceback.format_exc())
     else:
         logger.error("No se pudo registrar el handler de documentos: Módulo no disponible")
         handlers_fallidos += 1
