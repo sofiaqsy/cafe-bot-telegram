@@ -1,1 +1,109 @@
-"""\nMódulo para gestionar la conexión con el servicio de Google Sheets.\n"""\nimport json\nimport logging\nfrom typing import Any\nimport googleapiclient.discovery\nfrom google.oauth2 import service_account\nfrom config import SPREADSHEET_ID, GOOGLE_CREDENTIALS\n\n# Configurar logging\nlogger = logging.getLogger(__name__)\n\n# Variables globales para el servicio de Google Sheets\n_sheet_service = None\n# Variable para controlar la inicialización\n_sheets_initialized = False\n\ndef get_sheet_service():\n    """\n    Obtiene el servicio de Google Sheets, creándolo si es necesario.\n    \n    Returns:\n        El servicio de Google Sheets\n    """\n    global _sheet_service\n    \n    if _sheet_service is None:\n        try:\n            # Si GOOGLE_CREDENTIALS es un string JSON, cargarlo como un dict\n            if GOOGLE_CREDENTIALS.startswith('{'):\n                credentials_info = json.loads(GOOGLE_CREDENTIALS)\n            else:\n                # Si es un path a un archivo, cargarlo\n                with open(GOOGLE_CREDENTIALS, 'r') as f:\n                    credentials_info = json.load(f)\n            \n            # Crear credenciales a partir de la información\n            credentials = service_account.Credentials.from_service_account_info(\n                credentials_info, scopes=['https://www.googleapis.com/auth/spreadsheets']\n            )\n            \n            # Crear servicio\n            _sheet_service = googleapiclient.discovery.build('sheets', 'v4', credentials=credentials)\n            logger.info("Servicio de Google Sheets inicializado correctamente")\n        except Exception as e:\n            logger.error(f"Error al inicializar el servicio de Google Sheets: {e}")\n            raise\n    \n    return _sheet_service\n\ndef get_or_create_sheet():\n    """\n    Obtiene el ID de la hoja, verificando que exista y creándola si es necesario.\n    \n    Returns:\n        str: ID de la hoja de cálculo\n    """\n    # Por ahora, simplemente devolver el ID configurado\n    return SPREADSHEET_ID\n\ndef get_sheets_initialized():\n    """\n    Devuelve si las hojas ya han sido inicializadas en esta sesión.\n    \n    Returns:\n        bool: True si las hojas ya han sido inicializadas, False en caso contrario\n    """\n    global _sheets_initialized\n    return _sheets_initialized\n\ndef set_sheets_initialized(value: bool):\n    """\n    Establece el estado de inicialización de las hojas.\n    \n    Args:\n        value: True si las hojas están inicializadas, False en caso contrario\n    """\n    global _sheets_initialized\n    _sheets_initialized = value\n\ndef get_sheet_id(sheet_name: str) -> Any:\n    """\n    Obtiene el ID interno de una hoja específica dentro del spreadsheet.\n    \n    Args:\n        sheet_name: Nombre de la hoja\n        \n    Returns:\n        Any: ID interno de la hoja o None si no se encuentra\n    """\n    try:\n        sheets = get_sheet_service()\n        spreadsheet_id = get_or_create_sheet()\n        \n        # Obtener metadatos de todas las hojas\n        sheet_metadata = sheets.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()\n        sheets_list = sheet_metadata.get('sheets', [])\n        \n        # Buscar la hoja específica por nombre\n        for sheet in sheets_list:\n            if sheet['properties']['title'] == sheet_name:\n                return sheet['properties']['sheetId']\n        \n        logger.warning(f"No se encontró la hoja '{sheet_name}' en el spreadsheet")\n        return None\n    except Exception as e:\n        logger.error(f"Error al obtener ID de la hoja '{sheet_name}': {e}")\n        return None
+"""
+Módulo para gestionar la conexión con el servicio de Google Sheets.
+"""
+import json
+import logging
+from typing import Any
+import googleapiclient.discovery
+from google.oauth2 import service_account
+from config import SPREADSHEET_ID, GOOGLE_CREDENTIALS
+
+# Configurar logging
+logger = logging.getLogger(__name__)
+
+# Variables globales para el servicio de Google Sheets
+_sheet_service = None
+# Variable para controlar la inicialización
+_sheets_initialized = False
+
+def get_sheet_service():
+    """
+    Obtiene el servicio de Google Sheets, creándolo si es necesario.
+    
+    Returns:
+        El servicio de Google Sheets
+    """
+    global _sheet_service
+    
+    if _sheet_service is None:
+        try:
+            # Si GOOGLE_CREDENTIALS es un string JSON, cargarlo como un dict
+            if GOOGLE_CREDENTIALS.startswith('{'):
+                credentials_info = json.loads(GOOGLE_CREDENTIALS)
+            else:
+                # Si es un path a un archivo, cargarlo
+                with open(GOOGLE_CREDENTIALS, 'r') as f:
+                    credentials_info = json.load(f)
+            
+            # Crear credenciales a partir de la información
+            credentials = service_account.Credentials.from_service_account_info(
+                credentials_info, scopes=['https://www.googleapis.com/auth/spreadsheets']
+            )
+            
+            # Crear servicio
+            _sheet_service = googleapiclient.discovery.build('sheets', 'v4', credentials=credentials)
+            logger.info("Servicio de Google Sheets inicializado correctamente")
+        except Exception as e:
+            logger.error(f"Error al inicializar el servicio de Google Sheets: {e}")
+            raise
+    
+    return _sheet_service
+
+def get_or_create_sheet():
+    """
+    Obtiene el ID de la hoja, verificando que exista y creándola si es necesario.
+    
+    Returns:
+        str: ID de la hoja de cálculo
+    """
+    # Por ahora, simplemente devolver el ID configurado
+    return SPREADSHEET_ID
+
+def get_sheets_initialized():
+    """
+    Devuelve si las hojas ya han sido inicializadas en esta sesión.
+    
+    Returns:
+        bool: True si las hojas ya han sido inicializadas, False en caso contrario
+    """
+    global _sheets_initialized
+    return _sheets_initialized
+
+def set_sheets_initialized(value: bool):
+    """
+    Establece el estado de inicialización de las hojas.
+    
+    Args:
+        value: True si las hojas están inicializadas, False en caso contrario
+    """
+    global _sheets_initialized
+    _sheets_initialized = value
+
+def get_sheet_id(sheet_name: str) -> Any:
+    """
+    Obtiene el ID interno de una hoja específica dentro del spreadsheet.
+    
+    Args:
+        sheet_name: Nombre de la hoja
+        
+    Returns:
+        Any: ID interno de la hoja o None si no se encuentra
+    """
+    try:
+        sheets = get_sheet_service()
+        spreadsheet_id = get_or_create_sheet()
+        
+        # Obtener metadatos de todas las hojas
+        sheet_metadata = sheets.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+        sheets_list = sheet_metadata.get('sheets', [])
+        
+        # Buscar la hoja específica por nombre
+        for sheet in sheets_list:
+            if sheet['properties']['title'] == sheet_name:
+                return sheet['properties']['sheetId']
+        
+        logger.warning(f"No se encontró la hoja '{sheet_name}' en el spreadsheet")
+        return None
+    except Exception as e:
+        logger.error(f"Error al obtener ID de la hoja '{sheet_name}': {e}")
+        return None
