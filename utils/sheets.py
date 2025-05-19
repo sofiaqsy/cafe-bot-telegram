@@ -39,6 +39,8 @@ HEADERS = {
 
 # Variables globales para el servicio de Google Sheets
 _sheet_service = None
+# Variable para controlar la inicialización
+_sheets_initialized = False
 
 def get_sheet_service():
     """Obtiene el servicio de Google Sheets, creándolo si es necesario"""
@@ -75,6 +77,13 @@ def get_or_create_sheet():
 
 def initialize_sheets():
     """Inicializa las hojas de Google Sheets con las cabeceras correctas"""
+    global _sheets_initialized
+    
+    # Si ya se inicializaron las hojas en esta sesión, no volver a hacerlo
+    if _sheets_initialized:
+        logger.info("Las hojas ya fueron inicializadas en esta sesión, omitiendo...")
+        return True
+    
     try:
         sheets = get_sheet_service()
         spreadsheet_id = get_or_create_sheet()
@@ -175,28 +184,24 @@ def initialize_sheets():
                             logger.info(f"Creado registro en almacén para compra {compra_id} con {kg_disponibles} kg en fase {fase}")
             
             elif sheet_name == 'almacen':
-                # Para el almacén, asegurarse de que todas las fases estén inicializadas
-                almacen_data = get_all_data('almacen')
-                
-                # Verificar si ya hay entradas con notas de "Inicialización automática" y 0 kg
-                inicializacion_automatica_existente = [
-                    item for item in almacen_data 
-                    if "Inicialización automática" in str(item.get('notas', '')) 
-                    and safe_float(item.get('cantidad_actual', 0)) == 0
-                ]
-                
-                # Solo si no hay entradas de inicialización o si no hay entradas para alguna fase
-                if inicializacion_automatica_existente:
-                    # Ya existen entradas automáticas, no crear nuevas
-                    logger.info("Ya existen entradas de inicialización automática en el almacén, no se crearán más")
-                else:
-                    # Verificar fases existentes en el almacén
-                    fases_existentes = {str(item.get('fase_actual', '')).strip().upper() for item in almacen_data}
+                # Comprobación más rigurosa para evitar crear entradas de inicialización duplicadas
+                try:
+                    # Obtener datos del almacén
+                    almacen_data = get_all_data('almacen')
                     
-                    # Verificar si es necesario sincronizar
+                    # Verificar qué fases ya existen en el almacén
+                    fases_existentes = set()
+                    for item in almacen_data:
+                        fase_actual = str(item.get('fase_actual', '')).strip().upper()
+                        if fase_actual in FASES_CAFE:
+                            fases_existentes.add(fase_actual)
+                    
+                    # Verificar si hay fases faltantes
                     fases_faltantes = set(FASES_CAFE) - fases_existentes
+                    
+                    # Solo inicializar las fases que realmente falten
                     if fases_faltantes:
-                        logger.info(f"Inicializando fases faltantes en almacén: {fases_faltantes}")
+                        logger.info(f"Inicializando únicamente las fases faltantes en almacén: {fases_faltantes}")
                         
                         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         for fase in fases_faltantes:
@@ -212,6 +217,15 @@ def initialize_sheets():
                                 'notas': 'Inicialización automática',
                                 'fecha_actualizacion': now
                             })
+                            logger.info(f"Creado registro de inicialización para fase {fase}")
+                    else:
+                        logger.info("Todas las fases ya existen en almacén, no se crearán inicializaciones automáticas")
+                        
+                except Exception as e:
+                    logger.error(f"Error al comprobar/inicializar fases en almacén: {e}")
+        
+        # Marcar hojas como inicializadas para esta sesión
+        _sheets_initialized = True
         
         logger.info("Inicialización de hojas completada correctamente")
         return True
