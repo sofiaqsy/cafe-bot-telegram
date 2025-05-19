@@ -5,7 +5,7 @@ from telegram.ext import CommandHandler, ConversationHandler, MessageHandler, fi
 from config import VENTAS_FILE
 from utils.db import append_data
 from utils.helpers import safe_float
-from utils.sheets import get_almacen_cantidad, FASES_CAFE, update_almacen
+from utils.sheets import get_almacen_cantidad, FASES_CAFE, update_almacen, HEADERS
 
 # Configurar logging
 logger = logging.getLogger(__name__)
@@ -16,8 +16,8 @@ SELECCIONAR_TIPO, CLIENTE, CANTIDAD, PRECIO, CONFIRMAR = range(5)
 # Datos temporales
 datos_venta = {}
 
-# Headers para la hoja de ventas
-VENTAS_HEADERS = ["fecha", "cliente", "tipo_cafe", "cantidad", "precio", "total", "ultima_actualizacion", "actualizado_por", "creado_por"]
+# Usar los headers directamente desde sheets.py para estar siempre sincronizados
+VENTAS_HEADERS = HEADERS["ventas"]
 
 async def venta_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Inicia el proceso de registro de venta"""
@@ -31,7 +31,7 @@ async def venta_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         del datos_venta[user_id]
     
     # Crear registro temporal para esta venta
-    datos_venta[user_id] = {"creado_por": user_name}
+    datos_venta[user_id] = {"registrado_por": user_name}
     
     # Obtener tipos de café disponibles en el almacén
     tipos_disponibles = []
@@ -162,7 +162,8 @@ async def cantidad(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         
         logger.info(f"Usuario {user_id} ingresó cantidad: {cantidad} kg")
         
-        datos_venta[user_id]["cantidad"] = cantidad
+        # Guardar como "peso" según el header de la hoja de ventas
+        datos_venta[user_id]["peso"] = cantidad
         
         await update.message.reply_text(
             f"Cantidad: {cantidad} kg\n\n"
@@ -194,11 +195,12 @@ async def precio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         
         logger.info(f"Usuario {user_id} ingresó precio: {precio}")
         
-        datos_venta[user_id]["precio"] = precio
+        # Guardar como "precio_kg" según el header de la hoja de ventas
+        datos_venta[user_id]["precio_kg"] = precio
         
         # Calcular el total
         venta = datos_venta[user_id]
-        total = venta["cantidad"] * precio
+        total = venta["peso"] * precio
         datos_venta[user_id]["total"] = total
         
         # Crear teclado para confirmación
@@ -210,8 +212,8 @@ async def precio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             "📝 *RESUMEN DE LA VENTA*\n\n"
             f"Cliente: {venta['cliente']}\n"
             f"Tipo de café: {venta['tipo_cafe']}\n"
-            f"Cantidad: {venta['cantidad']} kg\n"
-            f"Precio por kg: {venta['precio']}\n"
+            f"Cantidad: {venta['peso']} kg\n"
+            f"Precio por kg: {venta['precio_kg']}\n"
             f"Total: {total}\n\n"
             "¿Confirmar esta venta?",
             parse_mode="Markdown",
@@ -248,8 +250,10 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         # Añadir fecha y hora actuales
         ahora = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         venta["fecha"] = ahora
-        venta["ultima_actualizacion"] = ahora
-        venta["actualizado_por"] = venta["creado_por"]
+        
+        # Añadir notas si no existe
+        if "notas" not in venta:
+            venta["notas"] = ""
         
         # Eliminar datos temporales que no van a la base de datos
         if "cantidad_disponible" in venta:
@@ -263,7 +267,7 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             
             # 2. Actualizar el almacén (restar la cantidad vendida)
             tipo_cafe = venta["tipo_cafe"]
-            cantidad = venta["cantidad"]
+            cantidad = venta["peso"]  # Ahora usamos "peso" en lugar de "cantidad"
             
             # Usamos el método update_almacen que ahora gestionará 
             # TOSTADO de manera especial sin crear nuevos registros
@@ -284,7 +288,7 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                 "✅ ¡Venta registrada exitosamente!\n\n"
                 f"Cliente: {venta['cliente']}\n"
                 f"Tipo de café: {venta['tipo_cafe']}\n"
-                f"Cantidad: {venta['cantidad']} kg\n"
+                f"Cantidad: {venta['peso']} kg\n"
                 f"Total: {venta['total']}\n\n"
                 "El almacén ha sido actualizado automáticamente.\n\n"
                 "Usa /venta para registrar otra venta o /almacen para verificar el inventario.",
