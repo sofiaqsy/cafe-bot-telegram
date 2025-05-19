@@ -34,7 +34,7 @@ HEADERS = {
     "ventas": ["fecha", "cliente", "tipo_cafe", "peso", "precio_kg", "total", "notas", "registrado_por"],
     "pedidos": ["fecha", "cliente", "tipo_cafe", "cantidad", "precio_kg", "total", "estado", "fecha_entrega", "notas", "registrado_por"],
     "adelantos": ["fecha", "hora", "cliente", "monto", "notas", "registrado_por"],
-    "almacen": ["id", "compra_id", "tipo_cafe_origen", "fecha", "cantidad", "fase_actual", "cantidad_actual", "notas"]
+    "almacen": ["id", "compra_id", "tipo_cafe_origen", "fecha", "cantidad", "fase_actual", "cantidad_actual", "notas", "fecha_actualizacion"]
 }
 
 # Variables globales para el servicio de Google Sheets
@@ -162,7 +162,8 @@ def initialize_sheets():
                                 'cantidad': compra.get('cantidad', 0),
                                 'fase_actual': fase,
                                 'cantidad_actual': kg_disponibles,
-                                'notas': f"Migración automática desde compra ID: {compra.get('id')}"
+                                'notas': f"Migración automática desde compra ID: {compra.get('id')}",
+                                'fecha_actualizacion': now
                             })
                             logger.info(f"Creado registro en almacén para compra {compra.get('id')} con {kg_disponibles} kg en fase {fase}")
             
@@ -187,7 +188,8 @@ def initialize_sheets():
                             'cantidad': 0,
                             'fase_actual': fase,
                             'cantidad_actual': 0,
-                            'notas': 'Inicialización automática'
+                            'notas': 'Inicialización automática',
+                            'fecha_actualizacion': now
                         })
         
         logger.info("Inicialización de hojas completada correctamente")
@@ -286,6 +288,11 @@ def append_data(sheet_name, data):
             # Si no tiene fecha, agregar la fecha actual
             if 'fecha' not in data or not data['fecha']:
                 data['fecha'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            # Agregar fecha de actualización si no existe
+            if 'fecha_actualizacion' not in data or not data['fecha_actualizacion']:
+                data['fecha_actualizacion'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                logger.info(f"Añadida fecha de actualización: {data['fecha_actualizacion']}")
         
         # Convertir el diccionario a una lista ordenada según las cabeceras
         headers = HEADERS[sheet_name]
@@ -308,6 +315,9 @@ def append_data(sheet_name, data):
                 elif header == 'fase_actual' and sheet_name == 'almacen' and 'tipo_cafe_origen' in data:
                     # Si es almacén, la fase_actual es la misma que la fase
                     data[header] = data.get('tipo_cafe_origen', "")
+                elif header == 'fecha_actualizacion' and sheet_name == 'almacen':
+                    # Fecha de actualización para registros de almacén
+                    data[header] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 else:
                     data[header] = ""
         
@@ -399,7 +409,8 @@ def append_data(sheet_name, data):
                         'cantidad': cantidad,
                         'fase_actual': fase,
                         'cantidad_actual': cantidad,
-                        'notas': f"Compra inicial ID: {data.get('id', 'sin ID')}"
+                        'notas': f"Compra inicial ID: {data.get('id', 'sin ID')}",
+                        'fecha_actualizacion': now
                     }
                     
                     # Añadir a la hoja de almacén
@@ -863,6 +874,104 @@ def get_almacen_cantidad(fase):
         logger.error(f"Error al obtener cantidad en almacén para fase {fase}: {e}")
         return 0.0
 
+def update_almacen_tostado(fase, cantidad_cambio, notas=""):
+    """
+    Actualiza la cantidad de café tostado disponible en el almacén (solo restar).
+    Esta función modificará el registro existente en lugar de crear uno nuevo.
+    
+    Args:
+        fase: Fase del café (TOSTADO)
+        cantidad_cambio: Cantidad a restar
+        notas: Notas adicionales sobre la operación
+    
+    Returns:
+        bool: True si se actualizó correctamente, False en caso contrario
+    """
+    try:
+        import datetime
+        
+        if fase.strip().upper() != "TOSTADO":
+            logger.error(f"Esta función solo es para actualizar café TOSTADO, se recibió: {fase}")
+            return False
+            
+        logger.info(f"Actualizando almacén TOSTADO - Cantidad a restar: {cantidad_cambio} kg")
+        
+        # Obtener todos los registros de TOSTADO con cantidad disponible
+        almacen_data = get_filtered_data('almacen', {'fase_actual': 'TOSTADO'})
+        
+        if not almacen_data:
+            logger.warning("No se encontraron registros de TOSTADO en el almacén")
+            return False
+        
+        # Filtrar los que tienen cantidad disponible
+        registros_con_disponible = []
+        for registro in almacen_data:
+            try:
+                kg_disponibles = float(str(registro.get('cantidad_actual', '0')).replace(',', '.'))
+                if kg_disponibles > 0:
+                    registros_con_disponible.append(registro)
+            except (ValueError, TypeError) as e:
+                logger.warning(f"Error al convertir cantidad_actual: {e}")
+        
+        if not registros_con_disponible:
+            logger.warning("No hay suficiente café TOSTADO disponible en el almacén")
+            return False
+        
+        # Ordenar los registros por fecha (primero los más antiguos)
+        registros_con_disponible.sort(key=lambda x: x.get('fecha', ''))
+        
+        # Cantidad restante por actualizar
+        cantidad_restante = float(cantidad_cambio)
+        resultados = []
+        
+        for registro in registros_con_disponible:
+            if cantidad_restante <= 0:
+                break
+                
+            try:
+                kg_disponibles = float(str(registro.get('cantidad_actual', '0')).replace(',', '.'))
+                
+                # Determinar cuánto restar de este registro
+                cantidad_a_restar = min(kg_disponibles, cantidad_restante)
+                nueva_cantidad = kg_disponibles - cantidad_a_restar
+                
+                # Actualizar en la hoja
+                row_index = registro.get('_row_index')
+                now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                
+                # Actualizar la celda de cantidad_actual
+                result1 = update_cell('almacen', row_index, 'cantidad_actual', str(nueva_cantidad))
+                
+                # Actualizar la fecha de actualización
+                result2 = update_cell('almacen', row_index, 'fecha_actualizacion', now)
+                
+                # Actualizar las notas para incluir esta operación
+                notas_actuales = registro.get('notas', '')
+                nuevas_notas = f"{notas_actuales}; {now}: Venta de {cantidad_a_restar} kg. {notas}"
+                result3 = update_cell('almacen', row_index, 'notas', nuevas_notas)
+                
+                resultados.extend([result1, result2, result3])
+                
+                logger.info(f"Actualizado registro {registro.get('id')}: restado {cantidad_a_restar} kg, nuevo valor: {nueva_cantidad} kg")
+                
+                # Actualizar cantidad restante
+                cantidad_restante -= cantidad_a_restar
+                
+            except Exception as e:
+                logger.error(f"Error al actualizar registro {registro.get('id')}: {e}")
+        
+        # Verificar si se pudo restar toda la cantidad solicitada
+        if cantidad_restante > 0:
+            logger.warning(f"No se pudo restar toda la cantidad solicitada. Faltan {cantidad_restante} kg")
+            return False
+        
+        # Verificar que todas las actualizaciones fueron exitosas
+        return all(resultados)
+        
+    except Exception as e:
+        logger.error(f"Error al actualizar almacén de TOSTADO: {e}")
+        return False
+
 def update_almacen(fase, cantidad_cambio, operacion="sumar", notas="", compra_id=""):
     """
     Actualiza la cantidad disponible en el almacén para una fase específica
@@ -882,6 +991,10 @@ def update_almacen(fase, cantidad_cambio, operacion="sumar", notas="", compra_id
         
         logger.info(f"Actualizando almacén - Fase: {fase}, Cambio: {cantidad_cambio} kg, Operación: {operacion}, Compra ID: {compra_id}")
         
+        # Si es TOSTADO y la operación es "restar", usar la nueva función
+        if fase.strip().upper() == "TOSTADO" and operacion == "restar":
+            return update_almacen_tostado(fase, cantidad_cambio, notas)
+        
         # Normalizar fase
         fase_normalizada = fase.strip().upper()
         
@@ -896,7 +1009,8 @@ def update_almacen(fase, cantidad_cambio, operacion="sumar", notas="", compra_id
             "cantidad": cantidad_cambio if operacion in ["sumar", "establecer"] else -cantidad_cambio,
             "fase_actual": fase_normalizada,
             "cantidad_actual": cantidad_cambio if operacion in ["sumar", "establecer"] else 0,
-            "notas": f"Operación: {operacion}. {notas}"
+            "notas": f"Operación: {operacion}. {notas}",
+            "fecha_actualizacion": now
         }
         
         # Añadir a la hoja
@@ -1052,7 +1166,8 @@ def sincronizar_almacen_con_compras():
                             'cantidad': cantidad,
                             'fase_actual': fase,
                             'cantidad_actual': cantidad,
-                            'notas': f"Sincronización automática - Compra ID: {compra_id}"
+                            'notas': f"Sincronización automática - Compra ID: {compra_id}",
+                            'fecha_actualizacion': now
                         })
                         resultados.append(resultado)
                         if resultado:
