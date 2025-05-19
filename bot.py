@@ -29,6 +29,7 @@ from handlers.pedidos import register_pedidos_handlers
 from handlers.adelantos import register_adelantos_handlers
 from handlers.compra_adelanto import register_compra_adelanto_handlers
 from handlers.almacen import register_almacen_handlers
+from handlers.documents import register_documents_handlers
 
 def eliminar_webhook():
     """Elimina cualquier webhook configurado antes de iniciar el polling"""
@@ -104,6 +105,7 @@ def main():
     register_adelantos_handlers(application)
     register_compra_adelanto_handlers(application)
     register_almacen_handlers(application)  # Registrar nuevo handler de almacén
+    register_documents_handlers(application)  # Registrar nuevo handler de documentos
     
     # Eliminar webhook existente
     if not eliminar_webhook():

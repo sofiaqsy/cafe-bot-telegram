@@ -27,6 +27,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "*/pedidos* - Ver pedidos pendientes\n"
         "*/adelantos* - Ver adelantos vigentes\n"
         "*/almacen* - Gestionar almacén central\n"
+        "*/documento* - Cargar evidencia de pago de compras/ventas\n"
         "*/ayuda* - Ver esta ayuda\n\n"
         "Para más información, consulta la documentación completa.",
         parse_mode="Markdown"
