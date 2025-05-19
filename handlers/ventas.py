@@ -265,6 +265,8 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             tipo_cafe = venta["tipo_cafe"]
             cantidad = venta["cantidad"]
             
+            # Usamos el método update_almacen que ahora gestionará 
+            # TOSTADO de manera especial sin crear nuevos registros
             resultado_almacen = update_almacen(
                 fase=tipo_cafe,
                 cantidad_cambio=cantidad,
