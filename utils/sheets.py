@@ -34,7 +34,7 @@ HEADERS = {
     "ventas": ["fecha", "cliente", "tipo_cafe", "peso", "precio_kg", "total", "notas", "registrado_por"],
     "pedidos": ["fecha", "cliente", "tipo_cafe", "cantidad", "precio_kg", "total", "estado", "fecha_entrega", "notas", "registrado_por"],
     "adelantos": ["fecha", "hora", "cliente", "monto", "notas", "registrado_por"],
-    "almacen": ["id", "compra_id", "tipo_cafe_origen", "fecha", "cantidad", "fase_actual", "cantidad_actual", "notas"]
+    "almacen": ["id", "compra_id", "tipo_cafe_origen", "fecha", "cantidad", "fase_actual", "cantidad_actual", "fecha_actualizacion", "actualizado_por", "notas"]
 }
 
 # Variables globales para el servicio de Google Sheets
@@ -162,11 +162,37 @@ def initialize_sheets():
                                 'cantidad': compra.get('cantidad', 0),
                                 'fase_actual': fase,
                                 'cantidad_actual': kg_disponibles,
+                                'fecha_actualizacion': now,
+                                'actualizado_por': 'sistema',
                                 'notas': f"Migración automática desde compra ID: {compra.get('id')}"
                             })
                             logger.info(f"Creado registro en almacén para compra {compra.get('id')} con {kg_disponibles} kg en fase {fase}")
             
             elif sheet_name == 'almacen':
+                # Verificar si existen las columnas de fecha_actualizacion y actualizado_por, si no crearlas
+                # Primero obtenemos las cabeceras actuales
+                almacen_data = get_all_data('almacen')
+                if almacen_data:
+                    # Verificar si las columnas existen en los datos
+                    if 'fecha_actualizacion' not in almacen_data[0] or 'actualizado_por' not in almacen_data[0]:
+                        logger.info("Añadiendo columnas de fecha_actualizacion y actualizado_por al almacén...")
+                        # Actualizar las cabeceras
+                        sheets.spreadsheets().values().update(
+                            spreadsheetId=spreadsheet_id,
+                            range=range_name,
+                            valueInputOption="RAW",
+                            body={"values": [headers]}
+                        ).execute()
+                        
+                        # Actualizar los registros existentes con valores predeterminados para las nuevas columnas
+                        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        for registro in almacen_data:
+                            row_index = registro.get('_row_index')
+                            if 'fecha_actualizacion' not in registro or not registro['fecha_actualizacion']:
+                                update_cell('almacen', row_index, 'fecha_actualizacion', now)
+                            if 'actualizado_por' not in registro or not registro['actualizado_por']:
+                                update_cell('almacen', row_index, 'actualizado_por', 'sistema')
+                
                 # Para el almacén, asegurarse de que todas las fases estén inicializadas
                 almacen_data = get_all_data('almacen')
                 fases_existentes = {str(item.get('fase_actual', '')).strip().upper() for item in almacen_data}
@@ -187,6 +213,8 @@ def initialize_sheets():
                             'cantidad': 0,
                             'fase_actual': fase,
                             'cantidad_actual': 0,
+                            'fecha_actualizacion': now,
+                            'actualizado_por': 'sistema',
                             'notas': 'Inicialización automática'
                         })
         
@@ -286,6 +314,10 @@ def append_data(sheet_name, data):
             # Si no tiene fecha, agregar la fecha actual
             if 'fecha' not in data or not data['fecha']:
                 data['fecha'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            # Si no tiene fecha de actualización, usar la fecha actual
+            if 'fecha_actualizacion' not in data or not data['fecha_actualizacion']:
+                data['fecha_actualizacion'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         # Convertir el diccionario a una lista ordenada según las cabeceras
         headers = HEADERS[sheet_name]
@@ -308,6 +340,12 @@ def append_data(sheet_name, data):
                 elif header == 'fase_actual' and sheet_name == 'almacen' and 'tipo_cafe_origen' in data:
                     # Si es almacén, la fase_actual es la misma que la fase
                     data[header] = data.get('tipo_cafe_origen', "")
+                elif header == 'fecha_actualizacion' and sheet_name == 'almacen':
+                    # Para fecha de actualización, usar la fecha actual
+                    data[header] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                elif header == 'actualizado_por' and sheet_name == 'almacen':
+                    # Para actualizado_por, usar "sistema" por defecto
+                    data[header] = "sistema"
                 else:
                     data[header] = ""
         
@@ -399,6 +437,8 @@ def append_data(sheet_name, data):
                         'cantidad': cantidad,
                         'fase_actual': fase,
                         'cantidad_actual': cantidad,
+                        'fecha_actualizacion': now,
+                        'actualizado_por': data.get('registrado_por', 'sistema'),
                         'notas': f"Compra inicial ID: {data.get('id', 'sin ID')}"
                     }
                     
@@ -863,7 +903,7 @@ def get_almacen_cantidad(fase):
         logger.error(f"Error al obtener cantidad en almacén para fase {fase}: {e}")
         return 0.0
 
-def update_almacen(fase, cantidad_cambio, operacion="sumar", notas="", compra_id=""):
+def update_almacen(fase, cantidad_cambio, operacion="sumar", notas="", actualizado_por="sistema"):
     """
     Actualiza la cantidad disponible en el almacén para una fase específica
     
@@ -872,47 +912,163 @@ def update_almacen(fase, cantidad_cambio, operacion="sumar", notas="", compra_id
         cantidad_cambio: Cantidad a sumar o restar
         operacion: "sumar" para añadir, "restar" para disminuir, "establecer" para fijar valor
         notas: Notas adicionales sobre la operación
-        compra_id: ID de compra relacionada (si aplica)
+        actualizado_por: Usuario que realiza la operación
     
     Returns:
         bool: True si se actualizó correctamente, False en caso contrario
     """
     try:
-        import datetime
-        
-        logger.info(f"Actualizando almacén - Fase: {fase}, Cambio: {cantidad_cambio} kg, Operación: {operacion}, Compra ID: {compra_id}")
+        logger.info(f"Actualizando almacén - Fase: {fase}, Cambio: {cantidad_cambio} kg, Operación: {operacion}")
         
         # Normalizar fase
         fase_normalizada = fase.strip().upper()
         
-        # Crear nuevo registro para esta operación de almacén
+        # Obtener registros actuales de la fase en almacén
+        almacen_data = get_filtered_data('almacen', {'fase_actual': fase_normalizada})
+        
+        # Verificar si hay registros de esta fase
+        if not almacen_data:
+            logger.warning(f"No se encontraron registros para la fase {fase_normalizada} en almacén")
+            
+            # Si no hay registros y estamos sumando, crear uno nuevo
+            if operacion == "sumar" or operacion == "establecer":
+                now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                nuevo_registro = {
+                    'id': generate_almacen_id(),
+                    'compra_id': "",
+                    'tipo_cafe_origen': fase_normalizada,
+                    'fecha': now,
+                    'cantidad': cantidad_cambio,
+                    'fase_actual': fase_normalizada,
+                    'cantidad_actual': cantidad_cambio,
+                    'fecha_actualizacion': now,
+                    'actualizado_por': actualizado_por,
+                    'notas': f"Operación inicial: {operacion}. {notas}"
+                }
+                resultado = append_data('almacen', nuevo_registro)
+                if resultado:
+                    logger.info(f"Creado nuevo registro para fase {fase_normalizada} con {cantidad_cambio} kg")
+                    return True
+                else:
+                    logger.error(f"Error al crear nuevo registro para fase {fase_normalizada}")
+                    return False
+            else:
+                logger.error(f"No se puede {operacion} en fase {fase_normalizada} porque no hay registros existentes")
+                return False
+        
+        # Filtrar registros con cantidad positiva
+        registros_con_disponible = []
+        for registro in almacen_data:
+            try:
+                cantidad_actual = safe_float(registro.get('cantidad_actual', 0))
+                if cantidad_actual > 0:
+                    registros_con_disponible.append(registro)
+            except Exception as e:
+                logger.error(f"Error al procesar cantidad actual: {e}")
+        
+        # Si estamos restando y no hay registros con cantidad positiva
+        if operacion == "restar" and not registros_con_disponible:
+            logger.error(f"No hay suficiente cantidad disponible en fase {fase_normalizada} para restar {cantidad_cambio} kg")
+            return False
+        
+        # Timestamp y acciones a realizar
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
-        nueva_entrada = {
-            "id": generate_almacen_id(),
-            "compra_id": compra_id,
-            "tipo_cafe_origen": fase_normalizada,
-            "fecha": now,
-            "cantidad": cantidad_cambio if operacion in ["sumar", "establecer"] else -cantidad_cambio,
-            "fase_actual": fase_normalizada,
-            "cantidad_actual": cantidad_cambio if operacion in ["sumar", "establecer"] else 0,
-            "notas": f"Operación: {operacion}. {notas}"
-        }
-        
-        # Añadir a la hoja
-        resultado = append_data("almacen", nueva_entrada)
-        
-        if resultado:
-            logger.info(f"Nuevo registro de almacén creado correctamente: {nueva_entrada['id']}")
+        if operacion == "establecer":
+            # Para establecer, actualizar el primer registro existente
+            registro = almacen_data[0]
+            row_index = registro.get('_row_index')
+            update_cell('almacen', row_index, 'cantidad_actual', str(cantidad_cambio))
+            update_cell('almacen', row_index, 'fecha_actualizacion', now)
+            update_cell('almacen', row_index, 'actualizado_por', actualizado_por)
+            update_cell('almacen', row_index, 'notas', f"Operación: establecer valor. {notas}")
+            logger.info(f"Establecido {cantidad_cambio} kg para fase {fase_normalizada}")
             return True
+            
+        elif operacion == "sumar":
+            # Para sumar, añadir a un registro existente o crear uno nuevo
+            if registros_con_disponible:
+                # Sumar a un registro existente (primero con cantidad positiva)
+                registro = registros_con_disponible[0]
+                row_index = registro.get('_row_index')
+                cantidad_actual = safe_float(registro.get('cantidad_actual', 0))
+                nueva_cantidad = cantidad_actual + cantidad_cambio
+                update_cell('almacen', row_index, 'cantidad_actual', str(nueva_cantidad))
+                update_cell('almacen', row_index, 'fecha_actualizacion', now)
+                update_cell('almacen', row_index, 'actualizado_por', actualizado_por)
+                update_cell('almacen', row_index, 'notas', f"Operación: sumar {cantidad_cambio} kg. {notas}")
+                logger.info(f"Sumado {cantidad_cambio} kg a registro existente en fase {fase_normalizada}")
+                return True
+            else:
+                # Crear un nuevo registro
+                nuevo_registro = {
+                    'id': generate_almacen_id(),
+                    'compra_id': "",
+                    'tipo_cafe_origen': fase_normalizada,
+                    'fecha': now,
+                    'cantidad': cantidad_cambio,
+                    'fase_actual': fase_normalizada,
+                    'cantidad_actual': cantidad_cambio,
+                    'fecha_actualizacion': now,
+                    'actualizado_por': actualizado_por,
+                    'notas': f"Operación: sumar {cantidad_cambio} kg. {notas}"
+                }
+                resultado = append_data('almacen', nuevo_registro)
+                if resultado:
+                    logger.info(f"Creado nuevo registro para fase {fase_normalizada} con {cantidad_cambio} kg")
+                    return True
+                else:
+                    logger.error(f"Error al crear nuevo registro para fase {fase_normalizada}")
+                    return False
+                
+        elif operacion == "restar":
+            # Para restar, verificamos si tenemos suficiente cantidad disponible
+            total_disponible = sum(safe_float(r.get('cantidad_actual', 0)) for r in registros_con_disponible)
+            
+            if total_disponible < cantidad_cambio:
+                logger.error(f"No hay suficiente cantidad disponible en fase {fase_normalizada} para restar {cantidad_cambio} kg")
+                return False
+            
+            # Restar de los registros disponibles, empezando por el primero
+            cantidad_a_restar = cantidad_cambio
+            for registro in registros_con_disponible:
+                if cantidad_a_restar <= 0:
+                    break
+                    
+                row_index = registro.get('_row_index')
+                cantidad_registro = safe_float(registro.get('cantidad_actual', 0))
+                
+                if cantidad_registro <= cantidad_a_restar:
+                    # Restar todo este registro
+                    update_cell('almacen', row_index, 'cantidad_actual', "0")
+                    update_cell('almacen', row_index, 'fecha_actualizacion', now)
+                    update_cell('almacen', row_index, 'actualizado_por', actualizado_por)
+                    update_cell('almacen', row_index, 'notas', f"Operación: restar {cantidad_registro} kg. {notas}")
+                    cantidad_a_restar -= cantidad_registro
+                    logger.info(f"Restado {cantidad_registro} kg de registro {registro.get('id')}")
+                else:
+                    # Restar parcialmente
+                    nueva_cantidad = cantidad_registro - cantidad_a_restar
+                    update_cell('almacen', row_index, 'cantidad_actual', str(nueva_cantidad))
+                    update_cell('almacen', row_index, 'fecha_actualizacion', now)
+                    update_cell('almacen', row_index, 'actualizado_por', actualizado_por)
+                    update_cell('almacen', row_index, 'notas', f"Operación: restar {cantidad_a_restar} kg. {notas}")
+                    logger.info(f"Restado {cantidad_a_restar} kg de registro {registro.get('id')}")
+                    cantidad_a_restar = 0
+                    break
+            
+            logger.info(f"Completada operación de resta en fase {fase_normalizada}")
+            return True
+            
         else:
-            logger.error(f"Error al crear nuevo registro de almacén")
+            logger.error(f"Operación no reconocida: {operacion}")
             return False
+            
     except Exception as e:
         logger.error(f"Error al actualizar almacén: {e}")
         return False
 
-def actualizar_almacen_desde_proceso(origen, destino, cantidad, merma):
+def actualizar_almacen_desde_proceso(origen, destino, cantidad, merma, actualizado_por="sistema"):
     """
     Actualiza el almacén basado en un proceso de transformación
     
@@ -921,6 +1077,7 @@ def actualizar_almacen_desde_proceso(origen, destino, cantidad, merma):
         destino: Fase de destino del café
         cantidad: Cantidad procesada en kg
         merma: Cantidad de merma en kg
+        actualizado_por: Usuario que realiza la operación
     
     Returns:
         bool: True si se actualizó correctamente, False en caso contrario
@@ -933,8 +1090,13 @@ def actualizar_almacen_desde_proceso(origen, destino, cantidad, merma):
             fase=origen,
             cantidad_cambio=cantidad,
             operacion="restar",
-            notas=f"Proceso a {destino}"
+            notas=f"Proceso a {destino}",
+            actualizado_por=actualizado_por
         )
+        
+        if not resultado_origen:
+            logger.error(f"Error al restar {cantidad} kg de fase {origen}")
+            return False
         
         # 2. Calcular cantidad resultante (restando merma)
         cantidad_resultante = max(0, float(cantidad) - float(merma))
@@ -944,10 +1106,17 @@ def actualizar_almacen_desde_proceso(origen, destino, cantidad, merma):
             fase=destino,
             cantidad_cambio=cantidad_resultante,
             operacion="sumar",
-            notas=f"Procesado desde {origen}"
+            notas=f"Procesado desde {origen}",
+            actualizado_por=actualizado_por
         )
         
-        return resultado_origen and resultado_destino
+        if not resultado_destino:
+            logger.error(f"Error al sumar {cantidad_resultante} kg a fase {destino}")
+            # Nota: no revertimos la operación en origen, podría ser complejo
+            return False
+        
+        logger.info(f"Proceso completado: {cantidad} kg de {origen} -> {cantidad_resultante} kg de {destino}")
+        return True
     except Exception as e:
         logger.error(f"Error al actualizar almacén desde proceso: {e}")
         return False
@@ -1052,6 +1221,8 @@ def sincronizar_almacen_con_compras():
                             'cantidad': cantidad,
                             'fase_actual': fase,
                             'cantidad_actual': cantidad,
+                            'fecha_actualizacion': now,
+                            'actualizado_por': 'sistema',
                             'notas': f"Sincronización automática - Compra ID: {compra_id}"
                         })
                         resultados.append(resultado)
