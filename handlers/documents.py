@@ -6,7 +6,7 @@ import sys
 from datetime import datetime
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import CommandHandler, ConversationHandler, MessageHandler, filters, ContextTypes
-from utils.sheets import append_data as append_sheets, generate_unique_id
+from utils.sheets import append_data as append_sheets, generate_unique_id, get_all_data, get_filtered_data
 from utils.helpers import get_now_peru, format_date_for_sheets
 from utils.drive import upload_file_to_drive, get_file_link
 from config import UPLOADS_FOLDER, DRIVE_ENABLED, DRIVE_EVIDENCIAS_COMPRAS_ID, DRIVE_EVIDENCIAS_VENTAS_ID
@@ -32,6 +32,7 @@ logger.info("=" * 80)
 
 # Estados para la conversación
 SELECCIONAR_TIPO, SELECCIONAR_ID, SUBIR_DOCUMENTO, CONFIRMAR = range(4)
+LISTAR_REGISTROS, SELECCIONAR_REGISTRO, SUBIR_EVIDENCIA = range(4, 7)
 
 # Datos temporales
 datos_documento = {}
@@ -93,7 +94,9 @@ def validate_handler():
         (append_sheets, "append_sheets"),
         (generate_unique_id, "generate_unique_id"),
         (get_now_peru, "get_now_peru"),
-        (format_date_for_sheets, "format_date_for_sheets")
+        (format_date_for_sheets, "format_date_for_sheets"),
+        (get_all_data, "get_all_data"),
+        (get_filtered_data, "get_filtered_data")
     ]
     
     for func, name in required_functions:
@@ -113,25 +116,24 @@ def validate_handler():
     
     # Verificar que los estados de conversación sean correctos
     logger.debug("Validando estados de conversación...")
-    if not (isinstance(SELECCIONAR_TIPO, int) and isinstance(SELECCIONAR_ID, int) and isinstance(SUBIR_DOCUMENTO, int) and isinstance(CONFIRMAR, int)):
+    if not (isinstance(SELECCIONAR_TIPO, int) and isinstance(SELECCIONAR_ID, int) and 
+            isinstance(SUBIR_DOCUMENTO, int) and isinstance(CONFIRMAR, int) and
+            isinstance(LISTAR_REGISTROS, int) and isinstance(SELECCIONAR_REGISTRO, int) and
+            isinstance(SUBIR_EVIDENCIA, int)):
         logger.error("Error de validación: Los estados de conversación deben ser enteros")
-        valid = False
-    
-    if not (SELECCIONAR_TIPO != SELECCIONAR_ID != SUBIR_DOCUMENTO != CONFIRMAR):
-        logger.error("Error de validación: Los estados de conversación deben ser distintos entre sí")
         valid = False
     
     logger.info("Validación del handler completada. Resultado: %s", "VÁLIDO" if valid else "INVÁLIDO")
     return valid
 
-async def documento_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Inicia el proceso de carga de un documento (evidencia de pago)"""
+async def evidencia_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Inicia el proceso de listar registros y cargar evidencia de pago"""
     try:
         # Obtener información del usuario
         user_id = update.effective_user.id
         username = update.effective_user.username or update.effective_user.first_name
         
-        logger.info("==== COMANDO /documento INICIADO por %s (ID: %s) ====", username, user_id)
+        logger.info("==== COMANDO /evidencia INICIADO por %s (ID: %s) ====", username, user_id)
         
         # Inicializar datos para este usuario
         datos_documento[user_id] = {
@@ -146,8 +148,8 @@ async def documento_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         logger.debug("Enviando opciones de tipo de operación a usuario %s", user_id)
         
         await update.message.reply_text(
-            "📎 CARGAR DOCUMENTO DE EVIDENCIA DE PAGO\n\n"
-            "Selecciona el tipo de operación al que pertenece el documento:",
+            "📎 EVIDENCIAS DE PAGO\n\n"
+            "Selecciona el tipo de operación para listar los registros:",
             reply_markup=reply_markup
         )
         
@@ -155,7 +157,7 @@ async def documento_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return SELECCIONAR_TIPO
     
     except Exception as e:
-        logger.critical("ERROR FATAL en documento_command: %s", e)
+        logger.critical("ERROR FATAL en evidencia_command: %s", e)
         logger.critical("Traceback completo: %s", traceback.format_exc())
         logger.critical("Context: %s", str(context))
         logger.critical("Update: %s", str(update))
@@ -163,7 +165,7 @@ async def documento_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         # Notificar al usuario
         try:
             await update.message.reply_text(
-                "⚠️ Ha ocurrido un error al iniciar el comando /documento. Por favor, intenta más tarde.\n\n"
+                "⚠️ Ha ocurrido un error al iniciar el comando /evidencia. Por favor, intenta más tarde.\n\n"
                 f"Error de diagnóstico: {type(e).__name__} - {str(e)}",
                 reply_markup=ReplyKeyboardRemove()
             )
@@ -173,7 +175,7 @@ async def documento_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return ConversationHandler.END
 
 async def seleccionar_tipo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Guarda el tipo de operación y solicita el ID"""
+    """Guarda el tipo de operación y lista los registros disponibles"""
     user_id = update.effective_user.id
     logger.debug("Ejecutando seleccionar_tipo para usuario %s", user_id)
     
@@ -209,15 +211,68 @@ async def seleccionar_tipo(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         
         datos_documento[user_id]["tipo_operacion"] = respuesta
         
+        # Obtener los registros del tipo seleccionado
+        registros = None
+        try:
+            registros = get_all_data(respuesta.lower())
+            logger.info(f"Obtenidos {len(registros)} registros de {respuesta.lower()}")
+        except Exception as e:
+            logger.error(f"Error al obtener registros de {respuesta.lower()}: {e}")
+            registros = []
+        
+        if not registros:
+            await update.message.reply_text(
+                f"⚠️ No hay registros de {respuesta} disponibles.\n\n"
+                "Por favor, verifica que existan registros o selecciona otro tipo de operación.",
+                reply_markup=ReplyKeyboardRemove()
+            )
+            return ConversationHandler.END
+        
+        # Limitar la lista a los 10 registros más recientes y ordenar por fecha (si está disponible)
+        registros_recientes = sorted(
+            registros, 
+            key=lambda x: x.get('fecha', ''), 
+            reverse=True
+        )[:10]
+        
+        # Guardar los registros en el contexto del usuario
+        datos_documento[user_id]["registros"] = registros_recientes
+        
+        # Crear teclado con los registros disponibles
+        keyboard = []
+        for registro in registros_recientes:
+            # Intentar obtener información relevante del registro
+            registro_id = registro.get('id', 'Sin ID')
+            fecha = registro.get('fecha', 'Sin fecha')
+            info_adicional = ''
+            
+            if respuesta.upper() == 'COMPRA':
+                cliente = registro.get('cliente', registro.get('proveedor', 'Sin nombre'))
+                cantidad = registro.get('cantidad', 'Sin cantidad')
+                info_adicional = f"{cliente} - {cantidad} kg"
+            elif respuesta.upper() == 'VENTA':
+                cliente = registro.get('cliente', 'Sin cliente')
+                cantidad = registro.get('cantidad', 'Sin cantidad')
+                info_adicional = f"{cliente} - {cantidad} kg"
+            
+            # Formato: ID (fecha): Info adicional
+            button_text = f"{registro_id} ({fecha}): {info_adicional}"
+            if len(button_text) > 40:  # Limitar el tamaño del texto
+                button_text = button_text[:37] + "..."
+            
+            keyboard.append([button_text])
+        
+        keyboard.append(["❌ Cancelar"])
+        reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+        
         await update.message.reply_text(
-            f"Has seleccionado: {respuesta}\n\n"
-            f"Por favor, ingresa el ID de la {respuesta.lower()} a la que deseas adjuntar evidencia de pago."
-            f"\n\nPuedes encontrar el ID en la confirmación que recibiste al registrar la {respuesta.lower()}.",
-            reply_markup=ReplyKeyboardRemove()
+            f"📋 REGISTROS DE {respuesta}\n\n"
+            f"Selecciona el registro al que deseas adjuntar evidencia de pago:",
+            reply_markup=reply_markup
         )
         
-        logger.info("Pasando al estado SELECCIONAR_ID (estado: %s)", SELECCIONAR_ID)
-        return SELECCIONAR_ID
+        logger.info("Pasando al estado SELECCIONAR_REGISTRO (estado: %s)", SELECCIONAR_REGISTRO)
+        return SELECCIONAR_REGISTRO
     
     except Exception as e:
         logger.critical("ERROR FATAL en seleccionar_tipo: %s", e)
@@ -239,47 +294,104 @@ async def seleccionar_tipo(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             
         return ConversationHandler.END
 
-async def seleccionar_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Guarda el ID de la operación y solicita el documento"""
+async def seleccionar_registro(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Guarda el registro seleccionado y solicita el documento"""
     user_id = update.effective_user.id
-    logger.debug("Ejecutando seleccionar_id para usuario %s", user_id)
+    logger.debug("Ejecutando seleccionar_registro para usuario %s", user_id)
     
     try:
-        operacion_id = update.message.text.strip()
+        respuesta = update.message.text.strip()
         
-        logger.info("Usuario %s ingresó ID de operación: %s", user_id, operacion_id)
+        if respuesta.lower() == "❌ cancelar":
+            logger.info("Usuario %s seleccionó cancelar", user_id)
+            await cancelar(update, context)
+            return ConversationHandler.END
         
-        if user_id not in datos_documento:
-            logger.error("ERROR: datos_documento[%s] no existe. Recreando diccionario...", user_id)
-            datos_documento[user_id] = {
-                "registrado_por": update.effective_user.username or update.effective_user.first_name,
-                "tipo_operacion": "DESCONOCIDO"  # Valor por defecto
-            }
+        # Verificar si existen datos para este usuario
+        if user_id not in datos_documento or "registros" not in datos_documento[user_id]:
+            logger.error("ERROR: datos_documento[%s] no contiene registros. Abortando...", user_id)
+            await update.message.reply_text(
+                "⚠️ Ha ocurrido un error en la selección de registros. Por favor, intenta nuevamente con /evidencia.",
+                reply_markup=ReplyKeyboardRemove()
+            )
+            return ConversationHandler.END
         
-        datos_documento[user_id]["operacion_id"] = operacion_id
+        # Extraer el ID del registro seleccionado (asumiendo que está al principio del texto)
+        seleccion_id = respuesta.split(' ')[0].strip()
+        logger.info("Usuario %s seleccionó registro con ID: %s", user_id, seleccion_id)
+        
+        # Buscar el registro correspondiente
+        registro_seleccionado = None
+        for registro in datos_documento[user_id]["registros"]:
+            if registro.get('id', '') == seleccion_id:
+                registro_seleccionado = registro
+                break
+        
+        if not registro_seleccionado:
+            logger.error("ERROR: No se encontró el registro con ID %s", seleccion_id)
+            await update.message.reply_text(
+                f"⚠️ No se encontró el registro con ID {seleccion_id}. Por favor, intenta nuevamente.",
+                reply_markup=ReplyKeyboardRemove()
+            )
+            return ConversationHandler.END
+        
+        # Guardar el ID de la operación
+        datos_documento[user_id]["operacion_id"] = seleccion_id
         
         # Modo de almacenamiento
         almacenamiento = "Google Drive" if DRIVE_ENABLED else "almacenamiento local"
         logger.info("Usando %s para usuario %s", almacenamiento, user_id)
         
+        # Detalles del registro seleccionado
+        tipo_op = datos_documento[user_id]["tipo_operacion"]
+        detalles = ""
+        
+        if tipo_op == "COMPRA":
+            proveedor = registro_seleccionado.get('cliente', registro_seleccionado.get('proveedor', 'Sin nombre'))
+            cantidad = registro_seleccionado.get('cantidad', 'No especificada')
+            precio = registro_seleccionado.get('precio', 'No especificado')
+            total = registro_seleccionado.get('preciototal', 'No especificado')
+            fecha = registro_seleccionado.get('fecha', 'No especificada')
+            
+            detalles = f"Proveedor: {proveedor}\n" \
+                      f"Cantidad: {cantidad} kg\n" \
+                      f"Precio: S/ {precio} por kg\n" \
+                      f"Total: S/ {total}\n" \
+                      f"Fecha: {fecha}"
+        elif tipo_op == "VENTA":
+            cliente = registro_seleccionado.get('cliente', 'Sin cliente')
+            cantidad = registro_seleccionado.get('cantidad', 'No especificada')
+            precio = registro_seleccionado.get('precio', 'No especificado')
+            total = registro_seleccionado.get('total', 'No especificado')
+            fecha = registro_seleccionado.get('fecha', 'No especificada')
+            
+            detalles = f"Cliente: {cliente}\n" \
+                      f"Cantidad: {cantidad} kg\n" \
+                      f"Precio: S/ {precio} por kg\n" \
+                      f"Total: S/ {total}\n" \
+                      f"Fecha: {fecha}"
+        
         await update.message.reply_text(
-            f"ID de operación: {operacion_id}\n\n"
-            f"Ahora, envía la imagen de la evidencia de pago.\n"
+            f"📄 DETALLES DEL REGISTRO\n\n"
+            f"ID: {seleccion_id}\n"
+            f"Tipo: {tipo_op}\n"
+            f"{detalles}\n\n"
+            f"Por favor, envía la imagen de la evidencia de pago.\n"
             f"La imagen debe ser clara y legible.\n\n"
             f"Nota: La imagen se guardará en {almacenamiento}."
         )
         
-        logger.info("Pasando al estado SUBIR_DOCUMENTO (estado: %s)", SUBIR_DOCUMENTO)
-        return SUBIR_DOCUMENTO
+        logger.info("Pasando al estado SUBIR_EVIDENCIA (estado: %s)", SUBIR_EVIDENCIA)
+        return SUBIR_EVIDENCIA
     
     except Exception as e:
-        logger.critical("ERROR FATAL en seleccionar_id: %s", e)
+        logger.critical("ERROR FATAL en seleccionar_registro: %s", e)
         logger.critical("Traceback completo: %s", traceback.format_exc())
         
         # Notificar al usuario
         try:
             await update.message.reply_text(
-                "⚠️ Ha ocurrido un error al procesar el ID. Por favor, intenta nuevamente.\n\n"
+                "⚠️ Ha ocurrido un error al procesar la selección. Por favor, intenta nuevamente.\n\n"
                 f"Error de diagnóstico: {type(e).__name__} - {str(e)}",
                 reply_markup=ReplyKeyboardRemove()
             )
@@ -293,10 +405,10 @@ async def seleccionar_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             
         return ConversationHandler.END
 
-async def subir_documento(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Procesa el documento cargado"""
+async def subir_evidencia(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Procesa el documento cargado como evidencia"""
     user_id = update.effective_user.id
-    logger.debug("Ejecutando subir_documento para usuario %s", user_id)
+    logger.debug("Ejecutando subir_evidencia para usuario %s", user_id)
     
     try:
         # Verificar si el mensaje contiene una foto
@@ -306,7 +418,7 @@ async def subir_documento(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 "⚠️ Por favor, envía una imagen de la evidencia de pago.\n"
                 "Si deseas cancelar, usa el comando /cancelar."
             )
-            return SUBIR_DOCUMENTO
+            return SUBIR_EVIDENCIA
         
         # Obtener la foto de mejor calidad (la última en la lista)
         photo = update.message.photo[-1]
@@ -336,7 +448,7 @@ async def subir_documento(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await update.message.reply_text(
                 "⚠️ Error al obtener la imagen. Por favor, intenta enviando otra imagen."
             )
-            return SUBIR_DOCUMENTO
+            return SUBIR_EVIDENCIA
         
         # Crear un nombre único para el archivo
         tipo_op = datos_documento[user_id]["tipo_operacion"].lower()
@@ -419,7 +531,7 @@ async def subir_documento(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return CONFIRMAR
     
     except Exception as e:
-        logger.critical("ERROR FATAL en subir_documento: %s", e)
+        logger.critical("ERROR FATAL en subir_evidencia: %s", e)
         logger.critical("Traceback completo: %s", traceback.format_exc())
         
         # Notificar al usuario
@@ -480,7 +592,7 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             logger.error("ERROR CRÍTICO: datos_documento[%s] no existe en fase de confirmación", user_id)
             await update.message.reply_text(
                 "⚠️ Error crítico: No se encontraron los datos de tu documento.\n"
-                "Por favor, inicia el proceso de nuevo con /documento.",
+                "Por favor, inicia el proceso de nuevo con /evidencia.",
                 reply_markup=ReplyKeyboardRemove()
             )
             return ConversationHandler.END
@@ -496,7 +608,7 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             logger.error("ERROR: Faltan campos obligatorios en los datos del documento: %s", missing_fields)
             await update.message.reply_text(
                 "⚠️ Error: Faltan datos obligatorios para completar el registro.\n"
-                "Por favor, inicia el proceso de nuevo con /documento.",
+                "Por favor, inicia el proceso de nuevo con /evidencia.",
                 reply_markup=ReplyKeyboardRemove()
             )
             return ConversationHandler.END
@@ -563,7 +675,7 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                 if DRIVE_ENABLED and documento.get("drive_view_link"):
                     mensaje += f"\n\nPuedes ver el documento en Drive:\n{documento['drive_view_link']}"
                 
-                mensaje += "\n\nUsa /documento para registrar otro documento."
+                mensaje += "\n\nUsa /evidencia para registrar otro documento."
                 
                 await update.message.reply_text(
                     mensaje,
@@ -591,7 +703,7 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             logger.debug("Eliminando datos temporales para usuario %s", user_id)
             del datos_documento[user_id]
         
-        logger.info("==== PROCESO DE DOCUMENTO COMPLETADO para usuario %s ====", user_id)
+        logger.info("==== PROCESO DE EVIDENCIA COMPLETADO para usuario %s ====", user_id)
         return ConversationHandler.END
     
     except Exception as e:
@@ -640,7 +752,7 @@ async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         
         await update.message.reply_text(
             "❌ Operación cancelada.\n\n"
-            "Usa /documento para iniciar de nuevo cuando quieras.",
+            "Usa /evidencia para iniciar de nuevo cuando quieras.",
             reply_markup=ReplyKeyboardRemove()
         )
         
@@ -667,13 +779,28 @@ async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             
         return ConversationHandler.END
 
+# Mantener la función del comando antiguo para compatibilidad
+async def documento_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Redirecciona al nuevo comando /evidencia"""
+    user_id = update.effective_user.id
+    logger.info(f"Usuario {user_id} utilizó comando antiguo /documento, redirigiendo a /evidencia")
+    
+    await update.message.reply_text(
+        "⚠️ El comando /documento ha sido reemplazado por /evidencia.\n\n"
+        "Redirigiendo al nuevo comando...\n"
+        "Por favor, usa /evidencia directamente en el futuro."
+    )
+    
+    # Redirigir al nuevo comando
+    return await evidencia_command(update, context)
+
 # Función simple para probar que el módulo funciona
 async def test_documento(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Función simple para verificar que el módulo está cargado correctamente"""
     logger.info("Comando test_documento ejecutado por usuario %s", update.effective_user.id)
     await update.message.reply_text(
-        "✅ El módulo de documentos está cargado correctamente.\n\n"
-        "Usa /documento para registrar un documento."
+        "✅ El módulo de evidencias está cargado correctamente.\n\n"
+        "Usa /evidencia para registrar un documento."
     )
 
 def register_documents_handlers(application):
@@ -691,47 +818,41 @@ def register_documents_handlers(application):
         application.add_handler(CommandHandler("test_documento", test_documento))
         logger.info("Comando de prueba test_documento registrado exitosamente")
         
-        # Crear manejador de conversación
-        logger.debug("Creando ConversationHandler para /documento...")
-        conv_handler = ConversationHandler(
-            entry_points=[CommandHandler("documento", documento_command)],
+        # Crear manejador de conversación para el nuevo comando /evidencia
+        logger.debug("Creando ConversationHandler para /evidencia...")
+        evidencia_conv_handler = ConversationHandler(
+            entry_points=[CommandHandler("evidencia", evidencia_command)],
             states={
                 SELECCIONAR_TIPO: [MessageHandler(filters.TEXT & ~filters.COMMAND, seleccionar_tipo)],
-                SELECCIONAR_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, seleccionar_id)],
-                SUBIR_DOCUMENTO: [MessageHandler(filters.PHOTO, subir_documento)],
+                SELECCIONAR_REGISTRO: [MessageHandler(filters.TEXT & ~filters.COMMAND, seleccionar_registro)],
+                SUBIR_EVIDENCIA: [MessageHandler(filters.PHOTO, subir_evidencia)],
                 CONFIRMAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirmar)],
             },
             fallbacks=[CommandHandler("cancelar", cancelar)],
         )
         
-        # Agregar el manejador al dispatcher
-        logger.debug("Agregando ConversationHandler a la aplicación...")
-        application.add_handler(conv_handler)
-        logger.info("ConversationHandler para documentos registrado exitosamente")
+        # Agregar el manejador nuevo al dispatcher
+        logger.debug("Agregando ConversationHandler para /evidencia a la aplicación...")
+        application.add_handler(evidencia_conv_handler)
+        logger.info("ConversationHandler para /evidencia registrado exitosamente")
         
-        # También registrar el comando /documento como handler directo para diagnóstico
-        logger.debug("Registrando CommandHandler directo para /documento (respaldo)...")
+        # Mantener el comando antiguo /documento por compatibilidad
+        logger.debug("Creando ConversationHandler para /documento (compatibilidad)...")
+        documento_conv_handler = ConversationHandler(
+            entry_points=[CommandHandler("documento", documento_command)],
+            states={
+                SELECCIONAR_TIPO: [MessageHandler(filters.TEXT & ~filters.COMMAND, seleccionar_tipo)],
+                SELECCIONAR_REGISTRO: [MessageHandler(filters.TEXT & ~filters.COMMAND, seleccionar_registro)],
+                SUBIR_EVIDENCIA: [MessageHandler(filters.PHOTO, subir_evidencia)],
+                CONFIRMAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirmar)],
+            },
+            fallbacks=[CommandHandler("cancelar", cancelar)],
+        )
         
-        # Función de respaldo para /documento
-        async def documento_fallback(update, context):
-            logger.info("Ejecutando handler de respaldo para /documento")
-            await update.message.reply_text(
-                "ℹ️ Intentando iniciar proceso de documento usando handler alternativo.\n"
-                "Por favor, usa el comando /test_documento para verificar si el módulo está cargado correctamente."
-            )
-            # Intentar ejecutar la función documento_command directamente
-            try:
-                return await documento_command(update, context)
-            except Exception as e:
-                logger.error("Error en handler de respaldo: %s", e)
-                await update.message.reply_text(
-                    "❌ Error en handler alternativo. Por favor, contacta al administrador."
-                )
-                return ConversationHandler.END
-        
-        # Agregar comando de respaldo
-        application.add_handler(CommandHandler("documento_fallback", documento_fallback))
-        logger.info("Handler alternativo documento_fallback registrado para diagnóstico")
+        # Agregar el manejador antiguo al dispatcher
+        logger.debug("Agregando ConversationHandler para /documento a la aplicación...")
+        application.add_handler(documento_conv_handler)
+        logger.info("ConversationHandler para /documento registrado exitosamente")
         
         logger.info("Todos los handlers para el módulo de documentos registrados exitosamente")
         return True
