@@ -18,7 +18,7 @@ FASES_CAFE = ["CEREZO", "MOTE", "PERGAMINO", "VERDE", "TOSTADO", "MOLIDO"]
 
 # Definir transiciones válidas entre fases
 TRANSICIONES_PERMITIDAS = {
-    "CEREZO": ["MOTE"],
+    "CEREZO": ["MOTE", "PERGAMINO"],
     "MOTE": ["PERGAMINO"],
     "PERGAMINO": ["VERDE", "TOSTADO", "MOLIDO"],
     "VERDE": ["TOSTADO"],
