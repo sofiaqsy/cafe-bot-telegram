@@ -2,7 +2,7 @@ import os
 import logging
 import traceback
 import requests
-from telegram.ext import Application, CommandHandler
+from telegram.ext import Application, CommandHandler, ConversationHandler, MessageHandler, filters
 
 # Configuración de logging avanzada
 logging.basicConfig(
@@ -47,6 +47,17 @@ try:
         logger.error(f"ERROR importando módulo documents: {e}")
         logger.error(traceback.format_exc())
         register_documents_handlers = None
+    
+    # Import especial del módulo simple_document como backup para /documento
+    try:
+        logger.info("Importando módulo simple_document (backup)...")
+        from handlers.simple_document import simple_documento_command, simple_cancelar
+        logger.info("Módulo simple_document importado correctamente")
+    except Exception as e:
+        logger.error(f"ERROR importando módulo simple_document: {e}")
+        logger.error(traceback.format_exc())
+        simple_documento_command = None
+        simple_cancelar = None
     
     # Import del módulo de diagnóstico
     try:
@@ -174,31 +185,90 @@ def main():
             logger.error(traceback.format_exc())
             handlers_fallidos += 1
     
-    # Registrar handler de documentos (con verificación especial)
+    # IMPLEMENTACIÓN ROBUSTA DEL HANDLER DE DOCUMENTOS
+    documento_handler_registrado = False
+    
+    # Intento 1: Registrar el handler completo desde el módulo documents
     if register_documents_handlers is not None:
         try:
-            logger.info("Registrando handler de documentos...")
+            logger.info("Intento 1: Registrando handler de documentos completo...")
             register_documents_handlers(application)
             logger.info("Handler de documentos registrado correctamente")
             handlers_registrados += 1
+            documento_handler_registrado = True
         except Exception as e:
-            logger.error(f"Error al registrar handler de documentos: {e}")
+            logger.error(f"Error al registrar handler de documentos completo: {e}")
             logger.error(traceback.format_exc())
             handlers_fallidos += 1
-            
-            # Fix para el handler de documentos - Registro manual del comando
-            try:
-                logger.info("Intentando registrar CommandHandler para /documento directamente...")
-                from handlers.documents import documento_command
-                application.add_handler(CommandHandler("documento", documento_command))
-                logger.info("CommandHandler para /documento registrado manualmente con éxito")
-                handlers_registrados += 1
-            except Exception as e_fix:
-                logger.error(f"Error al intentar registrar CommandHandler directo para /documento: {e_fix}")
-                logger.error(traceback.format_exc())
     else:
         logger.error("No se pudo registrar el handler de documentos: Módulo no disponible")
         handlers_fallidos += 1
+    
+    # Intento 2: Si falló el primero, registrar directamente el comando desde handlers.documents
+    if not documento_handler_registrado:
+        try:
+            logger.info("Intento 2: Importando documento_command desde handlers.documents...")
+            from handlers.documents import documento_command, cancelar
+            
+            logger.info("Registrando CommandHandler directo para /documento desde módulo documents...")
+            application.add_handler(CommandHandler("documento", documento_command))
+            application.add_handler(CommandHandler("cancelar", cancelar))
+            logger.info("CommandHandler para /documento desde módulo documents registrado correctamente")
+            handlers_registrados += 1
+            documento_handler_registrado = True
+        except Exception as e:
+            logger.error(f"Error al registrar CommandHandler directo para /documento desde module documents: {e}")
+            logger.error(traceback.format_exc())
+    
+    # Intento 3: Si todavía no se ha registrado, usar la implementación simplificada
+    if not documento_handler_registrado and simple_documento_command is not None:
+        try:
+            logger.info("Intento 3: Registrando implementación simplificada para /documento...")
+            
+            # Registrar el CommandHandler simple
+            application.add_handler(CommandHandler("documento", simple_documento_command))
+            
+            # Crear y registrar un ConversationHandler sencillo
+            SELECCIONAR_TIPO, SELECCIONAR_ID, SUBIR_DOCUMENTO, CONFIRMAR = range(4)
+            simple_conv_handler = ConversationHandler(
+                entry_points=[],  # No entry points, solo como fallback
+                states={
+                    SELECCIONAR_TIPO: [MessageHandler(filters.TEXT & ~filters.COMMAND, simple_cancelar)],
+                    SELECCIONAR_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, simple_cancelar)],
+                    SUBIR_DOCUMENTO: [MessageHandler(filters.PHOTO, simple_cancelar)],
+                    CONFIRMAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, simple_cancelar)],
+                },
+                fallbacks=[CommandHandler("cancelar", simple_cancelar)],
+            )
+            
+            application.add_handler(simple_conv_handler)
+            application.add_handler(CommandHandler("cancelar", simple_cancelar))  # También registrar cancelar directo
+            
+            logger.info("Implementación simplificada para /documento registrada correctamente")
+            handlers_registrados += 1
+            documento_handler_registrado = True
+        except Exception as e:
+            logger.error(f"Error al registrar implementación simplificada para /documento: {e}")
+            logger.error(traceback.format_exc())
+    
+    # Intento 4: Último recurso, registrar un handler simple que solo muestra un mensaje
+    if not documento_handler_registrado:
+        try:
+            logger.info("Intento 4: Registrando handler de último recurso para /documento...")
+            
+            async def documento_fallback(update, context):
+                await update.message.reply_text(
+                    "⚠️ El sistema de documentos está en mantenimiento. Por favor, intenta más tarde.\n\n"
+                    "Para cargar evidencia de pago, envía directamente la imagen y describe a qué operación corresponde."
+                )
+            
+            application.add_handler(CommandHandler("documento", documento_fallback))
+            logger.info("Handler de último recurso para /documento registrado correctamente")
+            handlers_registrados += 1
+            documento_handler_registrado = True
+        except Exception as e:
+            logger.error(f"Error al registrar handler de último recurso para /documento: {e}")
+            logger.error(traceback.format_exc())
     
     # Registrar handler de diagnóstico (con verificación especial)
     if register_diagnostico_handlers is not None:
@@ -233,6 +303,7 @@ def main():
     
     # Resumen de registro de handlers
     logger.info(f"Resumen de registro de handlers: {handlers_registrados} éxitos, {handlers_fallidos} fallos")
+    logger.info(f"Estado del handler de documento: {'REGISTRADO' if documento_handler_registrado else 'NO REGISTRADO'}")
     
     # Si todos los handlers fallaron, salir
     if handlers_registrados == 0 and handlers_fallidos > 0:
