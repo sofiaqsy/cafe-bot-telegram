@@ -151,46 +151,67 @@ def initialize_sheets():
                     if ('fase_actual' in compra or 'kg_disponibles' in compra) and compra.get('tipo_cafe'):
                         fase = compra.get('fase_actual', compra.get('tipo_cafe'))
                         kg_disponibles = safe_float(compra.get('kg_disponibles', compra.get('cantidad', 0)))
-                        if kg_disponibles > 0:
-                            # Crear registro en almacén para esta compra
+                        
+                        # Verificar si ya existe un registro en almacén para esta compra
+                        compra_id = compra.get('id', '')
+                        almacen_existente = []
+                        if compra_id:
+                            almacen_existente = get_filtered_data('almacen', {'compra_id': compra_id})
+                        
+                        # Solo crear registro si no existe y si hay kg disponibles
+                        if not almacen_existente and kg_disponibles > 0:
                             now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                             append_data('almacen', {
                                 'id': generate_almacen_id(),
-                                'compra_id': compra.get('id'),
+                                'compra_id': compra_id,
                                 'tipo_cafe_origen': fase,
                                 'fecha': now,
                                 'cantidad': compra.get('cantidad', 0),
                                 'fase_actual': fase,
                                 'cantidad_actual': kg_disponibles,
-                                'notas': f"Migración automática desde compra ID: {compra.get('id')}",
+                                'notas': f"Migración automática desde compra ID: {compra_id}",
                                 'fecha_actualizacion': now
                             })
-                            logger.info(f"Creado registro en almacén para compra {compra.get('id')} con {kg_disponibles} kg en fase {fase}")
+                            logger.info(f"Creado registro en almacén para compra {compra_id} con {kg_disponibles} kg en fase {fase}")
             
             elif sheet_name == 'almacen':
                 # Para el almacén, asegurarse de que todas las fases estén inicializadas
                 almacen_data = get_all_data('almacen')
-                fases_existentes = {str(item.get('fase_actual', '')).strip().upper() for item in almacen_data}
                 
-                # Verificar si es necesario sincronizar
-                fases_faltantes = set(FASES_CAFE) - fases_existentes
-                if fases_faltantes:
-                    logger.info(f"Inicializando fases faltantes en almacén: {fases_faltantes}")
+                # Verificar si ya hay entradas con notas de "Inicialización automática" y 0 kg
+                inicializacion_automatica_existente = [
+                    item for item in almacen_data 
+                    if "Inicialización automática" in str(item.get('notas', '')) 
+                    and safe_float(item.get('cantidad_actual', 0)) == 0
+                ]
+                
+                # Solo si no hay entradas de inicialización o si no hay entradas para alguna fase
+                if inicializacion_automatica_existente:
+                    # Ya existen entradas automáticas, no crear nuevas
+                    logger.info("Ya existen entradas de inicialización automática en el almacén, no se crearán más")
+                else:
+                    # Verificar fases existentes en el almacén
+                    fases_existentes = {str(item.get('fase_actual', '')).strip().upper() for item in almacen_data}
                     
-                    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    for fase in fases_faltantes:
-                        # Añadir la fase con cantidad 0
-                        append_data('almacen', {
-                            'id': generate_almacen_id(),
-                            'compra_id': '',
-                            'tipo_cafe_origen': fase,
-                            'fecha': now,
-                            'cantidad': 0,
-                            'fase_actual': fase,
-                            'cantidad_actual': 0,
-                            'notas': 'Inicialización automática',
-                            'fecha_actualizacion': now
-                        })
+                    # Verificar si es necesario sincronizar
+                    fases_faltantes = set(FASES_CAFE) - fases_existentes
+                    if fases_faltantes:
+                        logger.info(f"Inicializando fases faltantes en almacén: {fases_faltantes}")
+                        
+                        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        for fase in fases_faltantes:
+                            # Añadir la fase con cantidad 0
+                            append_data('almacen', {
+                                'id': generate_almacen_id(),
+                                'compra_id': '',
+                                'tipo_cafe_origen': fase,
+                                'fecha': now,
+                                'cantidad': 0,
+                                'fase_actual': fase,
+                                'cantidad_actual': 0,
+                                'notas': 'Inicialización automática',
+                                'fecha_actualizacion': now
+                            })
         
         logger.info("Inicialización de hojas completada correctamente")
         return True
@@ -391,35 +412,48 @@ def append_data(sheet_name, data):
             logger.info(f"Datos añadidos correctamente a '{sheet_name}' usando appendCells")
             
             # Si se agregó exitosamente una compra, crear también el registro en almacén
+            # SOLO crear registro en almacén si es una compra nueva y no si ya estamos creando un registro de almacén
+            # para evitar duplicación
             if sheet_name == 'compras' and 'tipo_cafe' in data and 'cantidad' in data:
                 try:
                     # Extraer datos de la compra
                     fase = data['tipo_cafe']
                     cantidad = float(str(data.get('cantidad', '0')).replace(',', '.'))
+                    compra_id = data.get('id', '')
                     
-                    # Crear registro en almacén para esta compra
-                    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    # Verificar si ya existe un registro en almacén para esta compra
+                    almacen_existente = []
+                    if compra_id:
+                        almacen_existente = get_filtered_data('almacen', {'compra_id': compra_id})
                     
-                    # Registro de almacén para la nueva compra
-                    nuevo_almacen = {
-                        'id': generate_almacen_id(),
-                        'compra_id': data.get('id', ''),
-                        'tipo_cafe_origen': fase,
-                        'fecha': now,
-                        'cantidad': cantidad,
-                        'fase_actual': fase,
-                        'cantidad_actual': cantidad,
-                        'notas': f"Compra inicial ID: {data.get('id', 'sin ID')}",
-                        'fecha_actualizacion': now
-                    }
-                    
-                    # Añadir a la hoja de almacén
-                    result_almacen = append_data('almacen', nuevo_almacen)
-                    
-                    if result_almacen:
-                        logger.info(f"Registro de almacén creado para compra {data.get('id')}: {cantidad} kg de {fase}")
+                    # SOLO crear registro si no existe y si hay kg disponibles
+                    if not almacen_existente and cantidad > 0:
+                        # Crear registro en almacén para esta compra
+                        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        
+                        # Registro de almacén para la nueva compra
+                        nuevo_almacen = {
+                            'id': generate_almacen_id(),
+                            'compra_id': data.get('id', ''),
+                            'tipo_cafe_origen': fase,
+                            'fecha': now,
+                            'cantidad': cantidad,
+                            'fase_actual': fase,
+                            'cantidad_actual': cantidad,
+                            'notas': f"Compra inicial ID: {data.get('id', 'sin ID')}",
+                            'fecha_actualizacion': now
+                        }
+                        
+                        # Añadir a la hoja de almacén
+                        result_almacen = append_data('almacen', nuevo_almacen)
+                        
+                        if result_almacen:
+                            logger.info(f"Registro de almacén creado para compra {data.get('id')}: {cantidad} kg de {fase}")
+                        else:
+                            logger.warning(f"No se pudo crear registro en almacén para compra {data.get('id')}")
                     else:
-                        logger.warning(f"No se pudo crear registro en almacén para compra {data.get('id')}")
+                        if almacen_existente:
+                            logger.info(f"Ya existe un registro en almacén para la compra {compra_id}, no se creará otro")
                     
                 except Exception as e:
                     logger.error(f"Error al crear registro en almacén después de compra: {e}")
