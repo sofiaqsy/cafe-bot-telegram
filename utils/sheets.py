@@ -18,12 +18,24 @@ FASES_CAFE = ["CEREZO", "MOTE", "PERGAMINO", "VERDE", "TOSTADO", "MOLIDO"]
 
 # Definir transiciones válidas entre fases
 TRANSICIONES_PERMITIDAS = {
-    "CEREZO": ["MOTE"],
+    "CEREZO": ["MOTE", "PERGAMINO"],  # Actualizado para permitir CEREZO a PERGAMINO
     "MOTE": ["PERGAMINO"],
     "PERGAMINO": ["VERDE", "TOSTADO", "MOLIDO"],
     "VERDE": ["TOSTADO"],
     "TOSTADO": ["MOLIDO"],
     "MOLIDO": []
+}
+
+# Porcentajes aproximados de merma por tipo de transición
+MERMAS_SUGERIDAS = {
+    "CEREZO_MOTE": 0.85,      # 85% de pérdida de peso cerezo a mote
+    "CEREZO_PERGAMINO": 0.88, # 88% de pérdida de cerezo a pergamino (agregado)
+    "MOTE_PERGAMINO": 0.20,   # 20% de pérdida de mote a pergamino
+    "PERGAMINO_VERDE": 0.18,  # 18% de pérdida de pergamino a verde
+    "PERGAMINO_TOSTADO": 0.20, # 20% de pérdida de pergamino a tostado
+    "PERGAMINO_MOLIDO": 0.25, # 25% de pérdida de pergamino a molido
+    "VERDE_TOSTADO": 0.15,    # 15% de pérdida de verde a tostado
+    "TOSTADO_MOLIDO": 0.05    # 5% de pérdida de tostado a molido
 }
 
 # Cabeceras para las hojas
