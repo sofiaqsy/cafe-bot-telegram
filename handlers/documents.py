@@ -43,6 +43,12 @@ DOCUMENTS_HEADERS = ["id", "fecha", "tipo_operacion", "operacion_id", "archivo_i
 # Tipos de operaciones soportadas
 TIPOS_OPERACION = ["COMPRA", "VENTA"]
 
+# Mapeo de tipos de operación a nombre de hoja
+TIPO_HOJA_MAPPING = {
+    "COMPRA": "compras",
+    "VENTA": "ventas"
+}
+
 # Asegurar que existe el directorio de uploads con manejo de excepciones detallado
 try:
     logger.debug("Verificando directorio de uploads: %s", UPLOADS_FOLDER)
@@ -211,13 +217,24 @@ async def seleccionar_tipo(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         
         datos_documento[user_id]["tipo_operacion"] = respuesta
         
+        # Obtener el nombre correcto de la hoja según el tipo seleccionado
+        nombre_hoja = TIPO_HOJA_MAPPING.get(respuesta, "")
+        if not nombre_hoja:
+            logger.error("ERROR: Nombre de hoja no encontrado para tipo %s", respuesta)
+            await update.message.reply_text(
+                f"⚠️ Error interno: Tipo de operación no reconocido: {respuesta}.\n\n"
+                "Por favor, contacta al administrador.",
+                reply_markup=ReplyKeyboardRemove()
+            )
+            return ConversationHandler.END
+        
         # Obtener los registros del tipo seleccionado
         registros = None
         try:
-            registros = get_all_data(respuesta.lower())
-            logger.info(f"Obtenidos {len(registros)} registros de {respuesta.lower()}")
+            registros = get_all_data(nombre_hoja)
+            logger.info(f"Obtenidos {len(registros)} registros de {nombre_hoja}")
         except Exception as e:
-            logger.error(f"Error al obtener registros de {respuesta.lower()}: {e}")
+            logger.error(f"Error al obtener registros de {nombre_hoja}: {e}")
             registros = []
         
         if not registros:
