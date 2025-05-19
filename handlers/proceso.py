@@ -132,6 +132,7 @@ async def seleccionar_origen(update: Update, context: ContextTypes.DEFAULT_TYPE)
         
         # Crear teclado con destinos posibles
         keyboard = [[destino] for destino in destinos_posibles]
+        keyboard.append(["❌ Cancelar"])
         reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
         
         await update.message.reply_text(
@@ -154,11 +155,20 @@ async def seleccionar_destino(update: Update, context: ContextTypes.DEFAULT_TYPE
     destino = update.message.text.strip().upper()
     origen = context.user_data['origen']
     
+    # Verificar si es cancelación
+    if destino == "❌ CANCELAR":
+        await update.message.reply_text(
+            "❌ Operación cancelada.",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        return ConversationHandler.END
+    
     # Verificar que la fase de destino sea válida
     if not es_transicion_valida(origen, destino):
         # Mostrar error y regresar a selección de destino
         destinos_posibles = TRANSICIONES_PERMITIDAS.get(origen, [])
         keyboard = [[destino] for destino in destinos_posibles]
+        keyboard.append(["❌ Cancelar"])
         reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
         
         await update.message.reply_text(
@@ -679,10 +689,18 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                     compra_id=compras_ids_str if compras_ids_str else ""
                 )
                 
-                if result_destino:
-                    logger.info(f"Creado nuevo registro en almacén para fase {destino}: {cantidad_resultante} kg")
+                # Manejar el caso en que result_destino es una tupla (desde actualizaciones recientes)
+                if isinstance(result_destino, tuple):
+                    resultado, almacen_id = result_destino
+                    if resultado:
+                        logger.info(f"Creado nuevo registro en almacén para fase {destino}: {cantidad_resultante} kg, ID: {almacen_id}")
+                    else:
+                        logger.warning(f"Error al crear registro en almacén para fase {destino}")
                 else:
-                    logger.warning(f"Error al crear registro en almacén para fase {destino}")
+                    if result_destino:
+                        logger.info(f"Creado nuevo registro en almacén para fase {destino}: {cantidad_resultante} kg")
+                    else:
+                        logger.warning(f"Error al crear registro en almacén para fase {destino}")
             
             # 4. Mostrar mensaje de éxito
             # Obtener cantidades actualizadas para mostrar
