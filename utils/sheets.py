@@ -31,7 +31,7 @@ HEADERS = {
     "compras": ["id", "fecha", "tipo_cafe", "proveedor", "cantidad", "precio", "preciototal", "registrado_por", "notas"],
     "proceso": ["fecha", "origen", "destino", "cantidad", "compras_ids", "merma", "merma_estimada", "cantidad_resultante_esperada", "cantidad_resultante", "notas", "registrado_por"],
     "gastos": ["fecha", "categoria", "monto", "descripcion", "registrado_por"],
-    "ventas": ["fecha", "cliente", "tipo_cafe", "peso", "precio_kg", "total", "notas", "registrado_por"],
+    "ventas": ["fecha", "cliente", "tipo_cafe", "peso", "precio_kg", "total", "almacen_id", "notas", "registrado_por"],
     "pedidos": ["fecha", "cliente", "tipo_cafe", "cantidad", "precio_kg", "total", "estado", "fecha_entrega", "notas", "registrado_por"],
     "adelantos": ["fecha", "hora", "cliente", "monto", "notas", "registrado_por"],
     "almacen": ["id", "compra_id", "tipo_cafe_origen", "fecha", "cantidad", "fase_actual", "cantidad_actual", "notas", "fecha_actualizacion"]
@@ -893,13 +893,14 @@ def update_almacen_tostado(fase, cantidad_cambio, notas=""):
     
     Returns:
         bool: True si se actualizó correctamente, False en caso contrario
+        str: ID del registro de almacén utilizado (para ventas)
     """
     try:
         import datetime
         
         if fase.strip().upper() != "TOSTADO":
             logger.error(f"Esta función solo es para actualizar café TOSTADO, se recibió: {fase}")
-            return False
+            return False, ""
             
         logger.info(f"Actualizando almacén TOSTADO - Cantidad a restar: {cantidad_cambio} kg")
         
@@ -908,7 +909,7 @@ def update_almacen_tostado(fase, cantidad_cambio, notas=""):
         
         if not almacen_data:
             logger.warning("No se encontraron registros de TOSTADO en el almacén")
-            return False
+            return False, ""
         
         # Filtrar los que tienen cantidad disponible
         registros_con_disponible = []
@@ -922,7 +923,7 @@ def update_almacen_tostado(fase, cantidad_cambio, notas=""):
         
         if not registros_con_disponible:
             logger.warning("No hay suficiente café TOSTADO disponible en el almacén")
-            return False
+            return False, ""
         
         # Ordenar los registros por fecha (primero los más antiguos)
         registros_con_disponible.sort(key=lambda x: x.get('fecha', ''))
@@ -930,6 +931,7 @@ def update_almacen_tostado(fase, cantidad_cambio, notas=""):
         # Cantidad restante por actualizar
         cantidad_restante = float(cantidad_cambio)
         resultados = []
+        registro_usado = None
         
         for registro in registros_con_disponible:
             if cantidad_restante <= 0:
@@ -961,6 +963,10 @@ def update_almacen_tostado(fase, cantidad_cambio, notas=""):
                 
                 logger.info(f"Actualizado registro {registro.get('id')}: restado {cantidad_a_restar} kg, nuevo valor: {nueva_cantidad} kg")
                 
+                # Guardar el registro usado para relación en ventas
+                if registro_usado is None:
+                    registro_usado = registro
+                
                 # Actualizar cantidad restante
                 cantidad_restante -= cantidad_a_restar
                 
@@ -970,14 +976,15 @@ def update_almacen_tostado(fase, cantidad_cambio, notas=""):
         # Verificar si se pudo restar toda la cantidad solicitada
         if cantidad_restante > 0:
             logger.warning(f"No se pudo restar toda la cantidad solicitada. Faltan {cantidad_restante} kg")
-            return False
+            return False, ""
         
         # Verificar que todas las actualizaciones fueron exitosas
-        return all(resultados)
+        almacen_id = registro_usado.get('id', '') if registro_usado else ""
+        return all(resultados), almacen_id
         
     except Exception as e:
         logger.error(f"Error al actualizar almacén de TOSTADO: {e}")
-        return False
+        return False, ""
 
 def update_almacen(fase, cantidad_cambio, operacion="sumar", notas="", compra_id=""):
     """
@@ -991,7 +998,9 @@ def update_almacen(fase, cantidad_cambio, operacion="sumar", notas="", compra_id
         compra_id: ID de compra relacionada (si aplica)
     
     Returns:
-        bool: True si se actualizó correctamente, False en caso contrario
+        bool or tuple: 
+            - Si es una venta: (bool, str) donde el bool indica si se actualizó correctamente, y el str es el ID del almacén usado.
+            - En otros casos: bool que indica si se actualizó correctamente.
     """
     try:
         import datetime
@@ -1025,12 +1034,21 @@ def update_almacen(fase, cantidad_cambio, operacion="sumar", notas="", compra_id
         
         if resultado:
             logger.info(f"Nuevo registro de almacén creado correctamente: {nueva_entrada['id']}")
+            # Para las operaciones que no son de TOSTADO y restar, devolver un tuple (True, id)
+            if operacion == "restar":
+                return True, nueva_entrada["id"]
             return True
         else:
             logger.error(f"Error al crear nuevo registro de almacén")
+            # Para las operaciones que no son de TOSTADO y restar, devolver un tuple (False, "")
+            if operacion == "restar":
+                return False, ""
             return False
     except Exception as e:
         logger.error(f"Error al actualizar almacén: {e}")
+        # Para las operaciones que no son de TOSTADO y restar, devolver un tuple (False, "")
+        if operacion == "restar":
+            return False, ""
         return False
 
 def actualizar_almacen_desde_proceso(origen, destino, cantidad, merma):
@@ -1056,6 +1074,10 @@ def actualizar_almacen_desde_proceso(origen, destino, cantidad, merma):
             operacion="restar",
             notas=f"Proceso a {destino}"
         )
+        
+        # Manejar el caso donde resultado_origen es una tuple (usado en ventas)
+        if isinstance(resultado_origen, tuple):
+            resultado_origen = resultado_origen[0]
         
         # 2. Calcular cantidad resultante (restando merma)
         cantidad_resultante = max(0, float(cantidad) - float(merma))
