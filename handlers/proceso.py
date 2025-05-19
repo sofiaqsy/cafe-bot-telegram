@@ -472,6 +472,7 @@ async def ingresar_cantidad(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     cantidad_resultante_esperada = cantidad - merma_sugerida
     
     # Guardar la merma sugerida y cantidad resultante esperada
+    # El campo cantidad_resultante_esperada se guarda posteriormente en la base de datos
     context.user_data['merma_sugerida'] = merma_sugerida
     context.user_data['cantidad_resultante_esperada'] = cantidad_resultante_esperada
     
@@ -616,6 +617,7 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         now = get_now_peru()
         
         # Datos para el proceso (actualizados con nuevos campos)
+        # El campo cantidad_resultante_esperada se incluye aquí y se guarda en la base de datos
         proceso_data = {
             "fecha": now.strftime("%Y-%m-%d %H:%M:%S"),
             "origen": origen,
@@ -624,7 +626,7 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             "compras_ids": compras_ids_str,  # IDs de compras relacionadas
             "merma": merma,
             "merma_estimada": merma_sugerida,
-            "cantidad_resultante_esperada": cantidad_resultante_esperada,
+            "cantidad_resultante_esperada": cantidad_resultante_esperada,  # Este campo ya se guarda correctamente
             "cantidad_resultante": cantidad_resultante,
             "notas": notas,
             "registrado_por": update.effective_user.username or update.effective_user.first_name
