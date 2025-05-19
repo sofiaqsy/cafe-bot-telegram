@@ -38,6 +38,8 @@ try:
     from handlers.adelantos import register_adelantos_handlers
     from handlers.compra_adelanto import register_compra_adelanto_handlers
     from handlers.almacen import register_almacen_handlers
+    from handlers.documents import register_documents_handlers
+    from handlers.evidencias import register_evidencias_handlers
     
     # NUEVO: Importar el módulo de emergencia para documentos
     try:
@@ -48,16 +50,6 @@ try:
         logger.error(f"ERROR importando módulo de emergencia para documentos: {e}")
         logger.error(traceback.format_exc())
         register_documento_emergency_handlers = None
-    
-    # Intentar importar el módulo original de documents (para diagnóstico)
-    try:
-        logger.info("Intentando importar módulo documents original (solo para diagnóstico)...")
-        from handlers.documents import register_documents_handlers
-        logger.info("Módulo documents original importado correctamente")
-    except Exception as e:
-        logger.error(f"ERROR importando módulo documents original: {e}")
-        logger.error(traceback.format_exc())
-        register_documents_handlers = None
     
     # Import del módulo de diagnóstico
     try:
@@ -114,6 +106,21 @@ def main():
             logger.error(f"Error al inicializar Google Sheets: {e}")
             logger.error(traceback.format_exc())
             logger.warning("El bot continuará funcionando, pero los datos no se guardarán en Google Sheets")
+    
+    # Inicializar la configuración de Google Drive si está habilitado
+    from config import DRIVE_ENABLED
+    if DRIVE_ENABLED:
+        logger.info("Google Drive está habilitado, configurando carpetas...")
+        try:
+            from utils.drive import setup_drive_folders
+            result = setup_drive_folders()
+            if result:
+                logger.info("Estructura de carpetas en Google Drive configurada correctamente")
+            else:
+                logger.warning("No se pudo configurar la estructura de carpetas en Google Drive")
+        except Exception as e:
+            logger.error(f"Error al configurar Google Drive: {e}")
+            logger.warning("El bot continuará funcionando, pero es posible que las evidencias no se guarden correctamente")
     else:
         logger.warning("Google Sheets no está configurado. Los datos no se guardarán correctamente.")
         logger.info("Asegúrate de configurar SPREADSHEET_ID y GOOGLE_CREDENTIALS en las variables de entorno")
@@ -153,7 +160,9 @@ def main():
         ("pedidos", register_pedidos_handlers),
         ("adelantos", register_adelantos_handlers),
         ("compra_adelanto", register_compra_adelanto_handlers),
-        ("almacen", register_almacen_handlers)
+        ("almacen", register_almacen_handlers),
+        ("documents", register_documents_handlers),
+        ("evidencias", register_evidencias_handlers)
     ]
     
     # Registrar cada handler con manejo de excepciones individual
@@ -181,19 +190,6 @@ def main():
             handlers_registrados += 1
         except Exception as e:
             logger.error(f"ERROR al registrar handler de emergencia para documentos: {e}")
-            logger.error(traceback.format_exc())
-            handlers_fallidos += 1
-    
-    # Solo intentar registrar el handler original si el de emergencia no funcionó
-    if not documento_handler_registrado and register_documents_handlers:
-        try:
-            logger.info("Intentando registrar handler de documentos original...")
-            register_documents_handlers(application)
-            logger.info("Handler de documentos original registrado correctamente")
-            documento_handler_registrado = True
-            handlers_registrados += 1
-        except Exception as e:
-            logger.error(f"Error al registrar handler de documentos original: {e}")
             logger.error(traceback.format_exc())
             handlers_fallidos += 1
     

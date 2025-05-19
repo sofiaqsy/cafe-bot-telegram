@@ -1,3 +1,8 @@
+"""
+Módulo para la interacción con Google Drive.
+Permite subir archivos al Drive asociado a la cuenta de servicio.
+"""
+
 import logging
 import io
 import os
@@ -13,9 +18,9 @@ logger = logging.getLogger(__name__)
 # Ámbitos (scopes) necesarios para Google Drive
 SCOPES = ['https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/spreadsheets']
 
-# ID de la carpeta en Google Drive donde se guardarán las evidencias de pago
-# Este valor debe ser configurado según tu estructura de Drive
-EVIDENCIAS_FOLDER_ID = os.getenv("DRIVE_EVIDENCIAS_FOLDER_ID", "")
+# IDs de las carpetas en Google Drive donde se guardarán las evidencias de pago
+# Estos valores deben ser configurados según tu estructura de Drive
+from config import DRIVE_EVIDENCIAS_ROOT_ID, DRIVE_EVIDENCIAS_COMPRAS_ID, DRIVE_EVIDENCIAS_VENTAS_ID
 
 def get_drive_service():
     """Inicializa y retorna el servicio de Google Drive"""
@@ -68,9 +73,11 @@ def upload_file_to_drive(file_bytes, file_name, mime_type="image/jpeg", folder_i
             logger.error("No se pudo obtener el servicio de Drive")
             return None
         
-        # Si no se especifica folder_id, usar la carpeta de evidencias predeterminada
-        if not folder_id and EVIDENCIAS_FOLDER_ID:
-            folder_id = EVIDENCIAS_FOLDER_ID
+        # Si no se especifica folder_id, usar la carpeta de evidencias raíz predeterminada
+        if not folder_id:
+            if DRIVE_EVIDENCIAS_ROOT_ID:
+                folder_id = DRIVE_EVIDENCIAS_ROOT_ID
+                logger.info(f"Usando carpeta raíz de evidencias: {folder_id}")
             
         # Preparar metadatos del archivo
         file_metadata = {'name': file_name}
