@@ -152,6 +152,8 @@ async def mostrar_inventario(update: Update, context: ContextTypes.DEFAULT_TYPE)
                     fecha = registro.get('fecha', 'Sin fecha')
                     fecha_solo = fecha.split(" ")[0] if " " in fecha else fecha
                     kg_disponibles = safe_float(registro.get('cantidad_actual', 0))
+                    fecha_actualizacion = registro.get('fecha_actualizacion', 'No registrada')
+                    actualizado_por = registro.get('actualizado_por', 'Desconocido')
                     
                     # Buscar el nombre del proveedor si hay compra_id
                     proveedor = "Desconocido"
@@ -161,8 +163,9 @@ async def mostrar_inventario(update: Update, context: ContextTypes.DEFAULT_TYPE)
                         if compras:
                             proveedor = compras[0].get('proveedor', 'Desconocido')
                     
-                    # Añadir información del registro con el formato: ID, PROVEEDOR, FECHA(SIN HORA)
-                    mensaje += f"    • {registro_id}, {proveedor}, {fecha_solo}\n"
+                    # Añadir información del registro con el formato actualizado
+                    mensaje += f"    • {registro_id}, {proveedor}, {fecha_solo}, {kg_disponibles} kg, "
+                    mensaje += f"Última act: {fecha_actualizacion.split(' ')[0]}, Por: {actualizado_por}\n"
             
             mensaje += "\n"
         
@@ -356,7 +359,8 @@ async def confirmar_actualizacion(update: Update, context: ContextTypes.DEFAULT_
                 fase=fase,
                 cantidad_cambio=cantidad_cambio,
                 operacion=operacion,
-                notas=notas
+                notas=notas,
+                actualizado_por=usuario
             )
             
             if resultado:
