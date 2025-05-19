@@ -255,6 +255,9 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         if "notas" not in venta:
             venta["notas"] = ""
         
+        # Inicializar almacen_id como vacío
+        venta["almacen_id"] = ""
+        
         # Eliminar datos temporales que no van a la base de datos
         if "cantidad_disponible" in venta:
             del venta["cantidad_disponible"]
@@ -262,38 +265,46 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         logger.info(f"Guardando venta en sistema: {venta}")
         
         try:
-            # 1. Guardar la venta en la hoja correspondiente
-            append_data(VENTAS_FILE, venta, VENTAS_HEADERS)
-            
-            # 2. Actualizar el almacén (restar la cantidad vendida)
+            # 1. Actualizar el almacén (restar la cantidad vendida)
             tipo_cafe = venta["tipo_cafe"]
             cantidad = venta["peso"]  # Ahora usamos "peso" en lugar de "cantidad"
             
-            # Usamos el método update_almacen que ahora gestionará 
-            # TOSTADO de manera especial sin crear nuevos registros
-            resultado_almacen = update_almacen(
+            # Usamos el método update_almacen que ahora devuelve también el almacen_id
+            resultado_almacen, almacen_id = update_almacen(
                 fase=tipo_cafe,
                 cantidad_cambio=cantidad,
                 operacion="restar",
                 notas=f"Venta a cliente: {venta['cliente']}",
             )
             
+            # Guardar el almacen_id en la venta
+            venta["almacen_id"] = almacen_id
+            
             if resultado_almacen:
-                logger.info(f"Almacén actualizado correctamente tras venta de {cantidad} kg de {tipo_cafe}")
+                logger.info(f"Almacén actualizado correctamente tras venta de {cantidad} kg de {tipo_cafe}. Almacen ID: {almacen_id}")
+                
+                # 2. Guardar la venta en la hoja correspondiente
+                append_data(VENTAS_FILE, venta, VENTAS_HEADERS)
+                
+                # Mensaje de éxito incluyendo el ID del almacén
+                await update.message.reply_text(
+                    "✅ ¡Venta registrada exitosamente!\n\n"
+                    f"Cliente: {venta['cliente']}\n"
+                    f"Tipo de café: {venta['tipo_cafe']}\n"
+                    f"Cantidad: {venta['peso']} kg\n"
+                    f"Total: {venta['total']}\n"
+                    f"ID de almacén: {almacen_id}\n\n"
+                    "El almacén ha sido actualizado automáticamente.\n\n"
+                    "Usa /venta para registrar otra venta o /almacen para verificar el inventario.",
+                    reply_markup=ReplyKeyboardRemove()
+                )
             else:
                 logger.error(f"Error al actualizar almacén tras venta de {cantidad} kg de {tipo_cafe}")
-            
-            # Mensaje de éxito
-            await update.message.reply_text(
-                "✅ ¡Venta registrada exitosamente!\n\n"
-                f"Cliente: {venta['cliente']}\n"
-                f"Tipo de café: {venta['tipo_cafe']}\n"
-                f"Cantidad: {venta['peso']} kg\n"
-                f"Total: {venta['total']}\n\n"
-                "El almacén ha sido actualizado automáticamente.\n\n"
-                "Usa /venta para registrar otra venta o /almacen para verificar el inventario.",
-                reply_markup=ReplyKeyboardRemove()
-            )
+                await update.message.reply_text(
+                    "❌ Error al actualizar el almacén. La venta no se ha registrado.\n\n"
+                    "Por favor, verifica el inventario con /almacen e intenta nuevamente.",
+                    reply_markup=ReplyKeyboardRemove()
+                )
         except Exception as e:
             logger.error(f"Error al guardar venta: {e}")
             await update.message.reply_text(
