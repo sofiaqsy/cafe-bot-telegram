@@ -23,6 +23,7 @@ SELECCIONAR_ORIGEN, SELECCIONAR_DESTINO, SELECCIONAR_REGISTROS_ALMACEN, INGRESAR
 # Porcentajes aproximados de merma por tipo de transición
 MERMAS_SUGERIDAS = {
     "CEREZO_MOTE": 0.85,      # 85% de pérdida de peso cerezo a mote
+    "CEREZO_PERGAMINO": 0.88, # 88% de pérdida de peso cerezo a pergamino
     "MOTE_PERGAMINO": 0.20,   # 20% de pérdida de mote a pergamino
     "PERGAMINO_VERDE": 0.18,  # 18% de pérdida de pergamino a verde
     "PERGAMINO_TOSTADO": 0.20, # 20% de pérdida de pergamino a tostado
