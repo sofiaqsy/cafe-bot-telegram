@@ -244,12 +244,13 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if respuesta in ["✅ confirmar", "confirmar", "sí", "si", "s", "yes", "y"]:
         # Preparar datos para guardar
         venta = datos_venta[user_id].copy()
+        usuario = venta["creado_por"]
         
         # Añadir fecha y hora actuales
         ahora = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         venta["fecha"] = ahora
         venta["ultima_actualizacion"] = ahora
-        venta["actualizado_por"] = venta["creado_por"]
+        venta["actualizado_por"] = usuario
         
         # Eliminar datos temporales que no van a la base de datos
         if "cantidad_disponible" in venta:
@@ -270,6 +271,7 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                 cantidad_cambio=cantidad,
                 operacion="restar",
                 notas=f"Venta a cliente: {venta['cliente']}",
+                actualizado_por=usuario
             )
             
             if resultado_almacen:
