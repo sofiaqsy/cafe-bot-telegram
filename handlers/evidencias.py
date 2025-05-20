@@ -8,7 +8,7 @@ import os
 import uuid
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
-from utils.sheets import get_all_data, append_data as append_sheets, generate_unique_id
+from utils.sheets import get_all_data, append_data as append_sheets, generate_unique_id, get_filtered_data
 from utils.helpers import get_now_peru, format_date_for_sheets
 from utils.drive import upload_file_to_drive
 from config import UPLOADS_FOLDER, DRIVE_ENABLED, DRIVE_EVIDENCIAS_COMPRAS_ID, DRIVE_EVIDENCIAS_VENTAS_ID
@@ -183,6 +183,29 @@ async def seleccionar_operacion(update: Update, context: ContextTypes.DEFAULT_TY
     # Guardar los datos de la operación
     datos_evidencia[user_id]["operacion_id"] = operacion_id
     
+    # Guardar información adicional sobre la operación
+    operacion_sheet = "compras" if tipo_operacion == "COMPRA" else "ventas"
+    operacion_data = get_filtered_data(operacion_sheet, {"id": operacion_id})
+    
+    if operacion_data and len(operacion_data) > 0:
+        # Guardar el monto para usarlo en el nombre del archivo
+        if tipo_operacion == "COMPRA":
+            monto = operacion_data[0].get('preciototal', '0')
+        else:  # VENTA
+            monto = operacion_data[0].get('total', '0')
+        
+        # Limpiar el monto (quitar caracteres no numéricos excepto punto)
+        monto_limpio = ''.join(c for c in str(monto) if c.isdigit() or c == '.')
+        if not monto_limpio:
+            monto_limpio = '0'  # Si quedó vacío, usar '0'
+            
+        datos_evidencia[user_id]["monto"] = monto_limpio
+        logger.info(f"Monto para {tipo_operacion} {operacion_id}: S/ {monto_limpio}")
+    else:
+        # Si no se encuentra la operación, usar '0' como valor predeterminado
+        datos_evidencia[user_id]["monto"] = '0'
+        logger.warning(f"No se encontró información para {tipo_operacion} {operacion_id}")
+    
     # Modo de almacenamiento
     almacenamiento = "Google Drive" if DRIVE_ENABLED else "almacenamiento local"
     
@@ -221,10 +244,11 @@ async def subir_documento(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     # Obtener el archivo
     file = await context.bot.get_file(file_id)
     
-    # Crear un nombre único para el archivo
+    # Crear un nombre único para el archivo incluyendo el monto
     tipo_op = datos_evidencia[user_id]["tipo_operacion"].lower()
     op_id = datos_evidencia[user_id]["operacion_id"]
-    nombre_archivo = f"{tipo_op}_{op_id}_{uuid.uuid4().hex[:8]}.jpg"
+    monto = datos_evidencia[user_id]["monto"]
+    nombre_archivo = f"{tipo_op}_{op_id}_S{monto}_{uuid.uuid4().hex[:8]}.jpg"
     
     # Guardar el nombre del archivo
     datos_evidencia[user_id]["nombre_archivo"] = nombre_archivo
@@ -276,6 +300,7 @@ async def subir_documento(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     # Preparar mensaje de confirmación
     mensaje_confirmacion = f"Tipo de operación: {datos_evidencia[user_id]['tipo_operacion']}\n" \
                          f"ID de operación: {op_id}\n" \
+                         f"Monto: S/ {monto}\n" \
                          f"Archivo guardado como: {nombre_archivo}"
     
     # Añadir información de la carpeta
@@ -383,6 +408,7 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             mensaje = "✅ ¡Documento registrado exitosamente!\n\n" \
                     f"ID del documento: {documento['id']}\n" \
                     f"Asociado a: {documento['tipo_operacion']} - {documento['operacion_id']}\n" \
+                    f"Monto: S/ {documento.get('monto', '0')}\n" \
                     f"Guardado en carpeta: {documento['folder_name']}"
             
             # Añadir enlace de Drive si está disponible
