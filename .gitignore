@@ -36,3 +36,16 @@ env/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Archivos de evidencias y uploads
+uploads/
+/uploads/
+/uploads/*
+uploads/*
+*.jpg
+*.jpeg
+*.png
+
+# Archivos temporales y logs
+*.log
+*.tmp
