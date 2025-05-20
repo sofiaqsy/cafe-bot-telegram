@@ -5,9 +5,9 @@ específicamente para que sea más intuitivo para los usuarios.
 """
 
 import logging
-from telegram import Update, ReplyKeyboardMarkup
+from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
-from handlers.documents import documento_command, registro_documento, register_documents_handlers
+from handlers.documents import documento_command, registro_documento, SUBIR_DOCUMENTO, register_documents_handlers
 from utils.sheets import get_all_data
 from utils.helpers import get_now_peru
 
@@ -16,7 +16,6 @@ logger = logging.getLogger(__name__)
 
 # Estados para la conversación
 SELECCIONAR_COMPRA = 0
-SUBIR_DOCUMENTO = 1
 
 # Datos temporales
 datos_evidencia = {}
@@ -101,11 +100,7 @@ async def seleccionar_compra(update: Update, context: ContextTypes.DEFAULT_TYPE)
     compra_id = partes[-1].strip()
     logger.info(f"Usuario {user_id} seleccionó compra con ID: {compra_id}")
     
-    # Guardar datos para el siguiente paso
-    datos_evidencia[user_id]["tipo_operacion"] = "COMPRA"
-    datos_evidencia[user_id]["operacion_id"] = compra_id
-    
-    # Iniciar la carga del documento/evidencia
+    # Informar al usuario que se ha seleccionado correctamente la compra
     await update.message.reply_text(
         f"Has seleccionado la compra con ID: {compra_id}\n\n"
         f"Ahora, envía la imagen de la evidencia de pago.\n"
@@ -114,10 +109,12 @@ async def seleccionar_compra(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     # Redirección al flujo de documentos para subir la evidencia
     logger.info(f"Redirigiendo al flujo de /documento con tipo COMPRA y ID {compra_id}")
+    
+    # Guardar datos en el contexto para pasarlos a la función registro_documento
     context.user_data["tipo_operacion"] = "COMPRA"
     context.user_data["operacion_id"] = compra_id
     
-    # Iniciar el proceso de carga de documentos directamente con los datos preseleccionados
+    # Iniciar el proceso de carga de documentos directamente
     return await registro_documento(update, context)
 
 async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -143,6 +140,8 @@ def register_evidencias_handlers(application):
         entry_points=[CommandHandler("evidencia", evidencia_command)],
         states={
             SELECCIONAR_COMPRA: [MessageHandler(filters.TEXT & ~filters.COMMAND, seleccionar_compra)],
+            # Agregar el estado SUBIR_DOCUMENTO para que el ConversationHandler lo reconozca
+            SUBIR_DOCUMENTO: [MessageHandler(filters.PHOTO, lambda update, context: None)],
         },
         fallbacks=[CommandHandler("cancelar", cancelar)],
     )
