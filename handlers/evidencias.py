@@ -10,7 +10,7 @@ from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
 from utils.sheets import get_all_data, append_data as append_sheets, generate_unique_id, get_filtered_data
 from utils.helpers import get_now_peru, format_date_for_sheets
-from utils.drive import upload_file_to_drive
+from utils.drive import upload_file_to_drive, setup_drive_folders
 from config import UPLOADS_FOLDER, DRIVE_ENABLED, DRIVE_EVIDENCIAS_COMPRAS_ID, DRIVE_EVIDENCIAS_VENTAS_ID
 
 # Configurar logging
@@ -38,6 +38,22 @@ if not os.path.exists(COMPRAS_FOLDER):
 if not os.path.exists(VENTAS_FOLDER):
     os.makedirs(VENTAS_FOLDER)
     logger.info(f"Directorio para evidencias de ventas creado: {VENTAS_FOLDER}")
+
+# Verificar la configuración de Google Drive al cargar el módulo
+if DRIVE_ENABLED:
+    logger.info("Google Drive está habilitado. Verificando estructura de carpetas...")
+    # Verificar que los IDs de carpetas estén configurados, o crearlos si no existen
+    if not (DRIVE_EVIDENCIAS_ROOT_ID and DRIVE_EVIDENCIAS_COMPRAS_ID and DRIVE_EVIDENCIAS_VENTAS_ID):
+        logger.warning("IDs de carpetas de Drive no encontrados. Intentando configurar estructura de carpetas...")
+        setup_result = setup_drive_folders()
+        if setup_result:
+            logger.info("Estructura de carpetas en Drive configurada correctamente")
+        else:
+            logger.error("No se pudo configurar la estructura de carpetas en Drive")
+    else:
+        logger.info("IDs de carpetas de Drive verificados correctamente")
+else:
+    logger.info("Google Drive está deshabilitado. Se usará almacenamiento local.")
 
 async def evidencia_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """
@@ -270,32 +286,58 @@ async def subir_documento(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             # Descargar el archivo a memoria
             file_bytes = await file.download_as_bytearray()
             
-            # Subir el archivo a Drive
-            drive_file_info = upload_file_to_drive(file_bytes, nombre_archivo, "image/jpeg", folder_id)
-            
-            if drive_file_info:
-                # Guardar la información de Drive
-                datos_evidencia[user_id]["drive_file_id"] = drive_file_info.get("id")
-                datos_evidencia[user_id]["drive_view_link"] = drive_file_info.get("webViewLink")
-                logger.info(f"Archivo subido a Drive: {drive_file_info}")
-                ruta_completa = f"GoogleDrive:{drive_file_info.get('id')}:{nombre_archivo}"
-            else:
-                logger.error("Error al subir archivo a Drive, usando almacenamiento local como respaldo")
+            # Verificar que el folder_id es válido
+            if not folder_id or folder_id.strip() == "":
+                logger.error(f"ID de carpeta de Drive inválido: '{folder_id}'. Verificar configuración.")
+                await update.message.reply_text(
+                    "⚠️ Error en la configuración de Google Drive. Se usará almacenamiento local.",
+                    parse_mode="Markdown"
+                )
                 # Fallback a almacenamiento local
                 ruta_completa = os.path.join(local_folder, nombre_archivo)
                 await file.download_to_drive(ruta_completa)
+            else:
+                # Subir el archivo a Drive
+                logger.info(f"Iniciando subida a Drive en carpeta: {folder_id}")
+                drive_file_info = upload_file_to_drive(file_bytes, nombre_archivo, "image/jpeg", folder_id)
+                
+                if drive_file_info and drive_file_info.get("id"):
+                    # Guardar la información de Drive
+                    datos_evidencia[user_id]["drive_file_id"] = drive_file_info.get("id")
+                    datos_evidencia[user_id]["drive_view_link"] = drive_file_info.get("webViewLink")
+                    logger.info(f"Archivo subido a Drive: ID={drive_file_info.get('id')}, Enlace={drive_file_info.get('webViewLink')}")
+                    
+                    # Guardar la ruta con formato especial para identificar que está en Drive
+                    ruta_completa = f"GoogleDrive:{drive_file_info.get('id')}:{nombre_archivo}"
+                    datos_evidencia[user_id]["ruta_archivo"] = ruta_completa
+                    
+                    # También guardar localmente como respaldo
+                    try:
+                        local_path = os.path.join(local_folder, nombre_archivo)
+                        await file.download_to_drive(local_path)
+                        logger.info(f"Copia de respaldo guardada localmente en: {local_path}")
+                    except Exception as e:
+                        logger.warning(f"No se pudo guardar copia local de respaldo: {e}")
+                else:
+                    logger.error("Error al subir archivo a Drive, usando almacenamiento local como respaldo")
+                    # Fallback a almacenamiento local
+                    ruta_completa = os.path.join(local_folder, nombre_archivo)
+                    await file.download_to_drive(ruta_completa)
+                    datos_evidencia[user_id]["ruta_archivo"] = ruta_completa
         except Exception as e:
-            logger.error(f"Error al subir a Drive: {e}, usando almacenamiento local como respaldo")
+            logger.error(f"Error al subir a Drive: {e}")
+            logger.error(f"Detalles del error: {str(e)}")
             # Fallback a almacenamiento local
             ruta_completa = os.path.join(local_folder, nombre_archivo)
             await file.download_to_drive(ruta_completa)
+            datos_evidencia[user_id]["ruta_archivo"] = ruta_completa
     else:
         # Almacenamiento local específico para el tipo de operación
         ruta_completa = os.path.join(local_folder, nombre_archivo)
         await file.download_to_drive(ruta_completa)
+        datos_evidencia[user_id]["ruta_archivo"] = ruta_completa
     
     logger.info(f"Archivo guardado en: {ruta_completa}")
-    datos_evidencia[user_id]["ruta_archivo"] = ruta_completa
     
     # Preparar mensaje de confirmación
     mensaje_confirmacion = f"Tipo de operación: {datos_evidencia[user_id]['tipo_operacion']}\n" \
@@ -308,8 +350,8 @@ async def subir_documento(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     mensaje_confirmacion += f"\nCarpeta: {folder_name}"
     
     # Añadir enlace de Drive si está disponible
-    if DRIVE_ENABLED and drive_file_info and "drive_view_link" in datos_evidencia[user_id]:
-        mensaje_confirmacion += f"\n\nEnlace en Drive: {datos_evidencia[user_id]['drive_view_link']}"
+    if DRIVE_ENABLED and drive_file_info and drive_file_info.get("webViewLink"):
+        mensaje_confirmacion += f"\n\nEnlace en Drive: {drive_file_info.get('webViewLink')}"
     
     # Teclado para confirmación
     keyboard = [["✅ Confirmar"], ["❌ Cancelar"]]
