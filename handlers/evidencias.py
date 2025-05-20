@@ -133,6 +133,13 @@ async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     
     return ConversationHandler.END
 
+# Handler vacío asíncrono para el estado SUBIR_DOCUMENTO
+async def dummy_photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handler vacío para el estado SUBIR_DOCUMENTO, ya que el procesamiento real se hace en documents.py"""
+    # Este handler nunca se ejecutará realmente, pero se necesita para que el ConversationHandler acepte el estado
+    logger.info("Handler dummy_photo_handler ejecutado, esto no debería ocurrir normalmente.")
+    return ConversationHandler.END
+
 def register_evidencias_handlers(application):
     """Registra los handlers para el módulo de evidencias"""
     # Crear un handler de conversación específico para evidencias
@@ -141,7 +148,8 @@ def register_evidencias_handlers(application):
         states={
             SELECCIONAR_COMPRA: [MessageHandler(filters.TEXT & ~filters.COMMAND, seleccionar_compra)],
             # Agregar el estado SUBIR_DOCUMENTO para que el ConversationHandler lo reconozca
-            SUBIR_DOCUMENTO: [MessageHandler(filters.PHOTO, lambda update, context: None)],
+            # Usar una función async correcta, no una lambda que devuelve None
+            SUBIR_DOCUMENTO: [MessageHandler(filters.PHOTO, dummy_photo_handler)],
         },
         fallbacks=[CommandHandler("cancelar", cancelar)],
     )
