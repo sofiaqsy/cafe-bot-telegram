@@ -105,9 +105,9 @@ async def seleccionar_tipo(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         
         if operaciones:
             # Ordenar las operaciones por fecha (más recientes primero)
-            operaciones_recientes = sorted(operaciones, key=lambda x: x.get('fecha', ''), reverse=True)[:10]
+            operaciones_recientes = sorted(operaciones, key=lambda x: x.get('fecha', ''), reverse=True)
             
-            # Crear teclado con las operaciones
+            # Crear teclado con las operaciones - mostrar todas
             keyboard = []
             for operacion in operaciones_recientes:
                 operacion_id = operacion.get('id', 'Sin ID')
@@ -135,6 +135,7 @@ async def seleccionar_tipo(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
             
             mensaje = f"📋 *SELECCIONA UNA {tipo_operacion} PARA ADJUNTAR EVIDENCIA*\n\n"
+            mensaje += f"Mostrando {len(operaciones_recientes)} {operacion_plural} disponibles"
             
             await update.message.reply_text(mensaje, parse_mode="Markdown", reply_markup=reply_markup)
             
