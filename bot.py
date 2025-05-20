@@ -87,6 +87,72 @@ def eliminar_webhook():
         logger.error(traceback.format_exc())
         return False
 
+def verificar_y_configurar_google_drive():
+    """Verifica la configuración de Google Drive y configura las carpetas necesarias"""
+    from config import DRIVE_ENABLED, DRIVE_EVIDENCIAS_ROOT_ID, DRIVE_EVIDENCIAS_COMPRAS_ID, DRIVE_EVIDENCIAS_VENTAS_ID
+    
+    if not DRIVE_ENABLED:
+        logger.info("Google Drive está deshabilitado. No se iniciará la integración con Drive.")
+        return False
+    
+    logger.info("Google Drive está habilitado, verificando configuración...")
+    
+    # Verificar si las credenciales de Google están disponibles
+    from config import GOOGLE_CREDENTIALS
+    if not GOOGLE_CREDENTIALS:
+        logger.error("No se encontraron credenciales de Google. Google Drive no funcionará correctamente.")
+        return False
+    
+    try:
+        # Verificar si tenemos los IDs de las carpetas
+        if not (DRIVE_EVIDENCIAS_ROOT_ID and DRIVE_EVIDENCIAS_COMPRAS_ID and DRIVE_EVIDENCIAS_VENTAS_ID):
+            logger.warning("No se encontraron todos los IDs de carpetas de Google Drive necesarios.")
+            logger.info("Configurando estructura de carpetas en Google Drive...")
+            
+            # Importar función para configurar carpetas
+            from utils.drive import setup_drive_folders
+            
+            # Intentar configurar las carpetas
+            result = setup_drive_folders()
+            
+            if result:
+                logger.info("✅ Estructura de carpetas en Google Drive configurada exitosamente")
+                
+                # Verificar que los IDs se hayan actualizado correctamente
+                from config import DRIVE_EVIDENCIAS_ROOT_ID, DRIVE_EVIDENCIAS_COMPRAS_ID, DRIVE_EVIDENCIAS_VENTAS_ID
+                logger.info(f"ID carpeta raíz: {DRIVE_EVIDENCIAS_ROOT_ID}")
+                logger.info(f"ID carpeta compras: {DRIVE_EVIDENCIAS_COMPRAS_ID}")
+                logger.info(f"ID carpeta ventas: {DRIVE_EVIDENCIAS_VENTAS_ID}")
+                
+                return True
+            else:
+                logger.error("❌ No se pudo configurar la estructura de carpetas en Google Drive")
+                return False
+        else:
+            # Si ya tenemos los IDs, verificar que sean válidos
+            logger.info("IDs de carpetas de Google Drive encontrados. Verificando conexión...")
+            
+            # Importar función para probar la conexión
+            from utils.drive import get_drive_service
+            
+            # Intentar obtener el servicio de Drive
+            service = get_drive_service()
+            
+            if service:
+                logger.info("✅ Conexión con Google Drive establecida correctamente")
+                logger.info(f"ID carpeta raíz: {DRIVE_EVIDENCIAS_ROOT_ID}")
+                logger.info(f"ID carpeta compras: {DRIVE_EVIDENCIAS_COMPRAS_ID}")
+                logger.info(f"ID carpeta ventas: {DRIVE_EVIDENCIAS_VENTAS_ID}")
+                return True
+            else:
+                logger.error("❌ No se pudo establecer conexión con Google Drive")
+                return False
+    
+    except Exception as e:
+        logger.error(f"Error al configurar Google Drive: {e}")
+        logger.error(traceback.format_exc())
+        return False
+
 def main():
     """Iniciar el bot"""
     logger.info("Iniciando bot de Telegram para Gestión de Café en Heroku")
@@ -106,23 +172,12 @@ def main():
             logger.error(traceback.format_exc())
             logger.warning("El bot continuará funcionando, pero los datos no se guardarán en Google Sheets")
     
-    # Inicializar la configuración de Google Drive si está habilitado
-    from config import DRIVE_ENABLED
-    if DRIVE_ENABLED:
-        logger.info("Google Drive está habilitado, configurando carpetas...")
-        try:
-            from utils.drive import setup_drive_folders
-            result = setup_drive_folders()
-            if result:
-                logger.info("Estructura de carpetas en Google Drive configurada correctamente")
-            else:
-                logger.warning("No se pudo configurar la estructura de carpetas en Google Drive")
-        except Exception as e:
-            logger.error(f"Error al configurar Google Drive: {e}")
-            logger.warning("El bot continuará funcionando, pero es posible que las evidencias no se guarden correctamente")
+    # Inicializar la configuración de Google Drive
+    drive_ok = verificar_y_configurar_google_drive()
+    if not drive_ok:
+        logger.warning("⚠️ Google Drive no está correctamente configurado. Las evidencias se guardarán localmente.")
     else:
-        logger.warning("Google Sheets no está configurado. Los datos no se guardarán correctamente.")
-        logger.info("Asegúrate de configurar SPREADSHEET_ID y GOOGLE_CREDENTIALS en las variables de entorno")
+        logger.info("✅ Google Drive configurado correctamente para el almacenamiento de evidencias.")
     
     # Crear la aplicación
     try:
@@ -230,6 +285,38 @@ def main():
         logger.error("No se pudo registrar el handler de diagnóstico: Módulo no disponible")
         handlers_fallidos += 1
     
+    # Registrar comando de drive_status
+    try:
+        logger.info("Registrando comando de estado de Google Drive...")
+        
+        async def drive_status(update, context):
+            from config import DRIVE_ENABLED, DRIVE_EVIDENCIAS_ROOT_ID, DRIVE_EVIDENCIAS_COMPRAS_ID, DRIVE_EVIDENCIAS_VENTAS_ID
+            
+            if DRIVE_ENABLED:
+                await update.message.reply_text(
+                    "📊 *ESTADO DE GOOGLE DRIVE*\n\n"
+                    f"Estado: {'✅ ACTIVO' if drive_ok else '⚠️ CONFIGURADO PERO CON ERRORES'}\n"
+                    f"Carpeta Raíz: {DRIVE_EVIDENCIAS_ROOT_ID[:10]}... (ID)\n"
+                    f"Carpeta Compras: {DRIVE_EVIDENCIAS_COMPRAS_ID[:10]}... (ID)\n"
+                    f"Carpeta Ventas: {DRIVE_EVIDENCIAS_VENTAS_ID[:10]}... (ID)\n\n"
+                    "Si tienes problemas al subir evidencias, contacta al administrador.",
+                    parse_mode="Markdown"
+                )
+            else:
+                await update.message.reply_text(
+                    "📊 *ESTADO DE GOOGLE DRIVE*\n\n"
+                    "Estado: ❌ DESACTIVADO\n\n"
+                    "La integración con Google Drive está desactivada. "
+                    "Las evidencias se guardarán solo localmente.",
+                    parse_mode="Markdown"
+                )
+        
+        application.add_handler(CommandHandler("drive_status", drive_status))
+        logger.info("Comando de estado de Google Drive registrado correctamente")
+    except Exception as e:
+        logger.error(f"Error al registrar comando de estado de Google Drive: {e}")
+        logger.error(traceback.format_exc())
+    
     # Registrar comando de test directo (sin usar el módulo documents)
     try:
         logger.info("Registrando comando de test directo...")
@@ -237,8 +324,10 @@ def main():
             CommandHandler("test_bot", 
                 lambda update, context: update.message.reply_text(
                     "\ud83d\udc4d El bot está funcionando correctamente y puede recibir comandos.\n\n"
-                    f"Sistema de documentos: {'ACTIVO (modo emergencia)' if documento_handler_registrado else 'INACTIVO'}\n\n"
-                    "Usa /documento_status para más información sobre el sistema de documentos."
+                    f"Sistema de documentos: {'ACTIVO (modo emergencia)' if documento_handler_registrado else 'INACTIVO'}\n"
+                    f"Google Drive: {'ACTIVO' if drive_ok else 'INACTIVO'}\n\n"
+                    "Usa /documento_status para más información sobre el sistema de documentos.\n"
+                    "Usa /drive_status para información sobre Google Drive."
                 )
             )
         )
@@ -250,6 +339,7 @@ def main():
     # Resumen de registro de handlers
     logger.info(f"Resumen de registro de handlers: {handlers_registrados} éxitos, {handlers_fallidos} fallos")
     logger.info(f"Estado del handler de documentos: {'REGISTRADO' if documento_handler_registrado else 'NO REGISTRADO'}")
+    logger.info(f"Estado de Google Drive: {'ACTIVO' if drive_ok else 'INACTIVO'}")
     
     # Si todos los handlers fallaron, salir
     if handlers_registrados == 0 and handlers_fallidos > 0:
