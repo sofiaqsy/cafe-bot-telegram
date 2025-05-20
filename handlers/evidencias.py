@@ -10,7 +10,7 @@ from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
 from utils.sheets import get_all_data, append_data as append_sheets, generate_unique_id, get_filtered_data
 from utils.helpers import get_now_peru, format_date_for_sheets
-from utils.drive import upload_file_to_drive
+from utils.drive import upload_file_to_drive, setup_drive_folders
 from config import UPLOADS_FOLDER, DRIVE_ENABLED, DRIVE_EVIDENCIAS_COMPRAS_ID, DRIVE_EVIDENCIAS_VENTAS_ID
 
 # Configurar logging
@@ -38,6 +38,22 @@ if not os.path.exists(COMPRAS_FOLDER):
 if not os.path.exists(VENTAS_FOLDER):
     os.makedirs(VENTAS_FOLDER)
     logger.info(f"Directorio para evidencias de ventas creado: {VENTAS_FOLDER}")
+
+# Verificar la configuración de Google Drive
+if DRIVE_ENABLED:
+    logger.info("Google Drive está habilitado para almacenamiento de evidencias")
+    if not DRIVE_EVIDENCIAS_COMPRAS_ID or not DRIVE_EVIDENCIAS_VENTAS_ID:
+        logger.warning("Faltan IDs de carpetas de Google Drive. Intentando configurar automáticamente...")
+        try:
+            setup_result = setup_drive_folders()
+            if setup_result:
+                logger.info("Carpetas de Google Drive configuradas automáticamente")
+            else:
+                logger.error("No se pudieron configurar automáticamente las carpetas de Google Drive")
+        except Exception as e:
+            logger.error(f"Error al configurar carpetas de Google Drive: {e}")
+else:
+    logger.info("Google Drive está deshabilitado. Las evidencias se guardarán localmente.")
 
 async def evidencia_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """
@@ -265,32 +281,48 @@ async def subir_documento(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     
     # Determinar si usar Google Drive o almacenamiento local
     drive_file_info = None
-    if DRIVE_ENABLED and folder_id:
-        try:
-            # Descargar el archivo a memoria
-            file_bytes = await file.download_as_bytearray()
-            
-            # Subir el archivo a Drive
-            drive_file_info = upload_file_to_drive(file_bytes, nombre_archivo, "image/jpeg", folder_id)
-            
-            if drive_file_info:
-                # Guardar la información de Drive
-                datos_evidencia[user_id]["drive_file_id"] = drive_file_info.get("id")
-                datos_evidencia[user_id]["drive_view_link"] = drive_file_info.get("webViewLink")
-                logger.info(f"Archivo subido a Drive: {drive_file_info}")
-                ruta_completa = f"GoogleDrive:{drive_file_info.get('id')}:{nombre_archivo}"
-            else:
-                logger.error("Error al subir archivo a Drive, usando almacenamiento local como respaldo")
+    if DRIVE_ENABLED:
+        logger.info(f"Google Drive está habilitado, intentando subir archivo a Drive")
+        logger.info(f"Folder ID para {tipo_op}: {folder_id}")
+        
+        if folder_id:
+            try:
+                # Descargar el archivo a memoria
+                file_bytes = await file.download_as_bytearray()
+                logger.info(f"Archivo descargado correctamente, tamaño: {len(file_bytes)} bytes")
+                
+                # Subir el archivo a Drive
+                drive_file_info = upload_file_to_drive(file_bytes, nombre_archivo, "image/jpeg", folder_id)
+                
+                if drive_file_info:
+                    # Guardar la información de Drive
+                    datos_evidencia[user_id]["drive_file_id"] = drive_file_info.get("id")
+                    datos_evidencia[user_id]["drive_view_link"] = drive_file_info.get("webViewLink")
+                    logger.info(f"Archivo subido a Drive: {drive_file_info}")
+                    ruta_completa = f"GoogleDrive:{drive_file_info.get('id')}:{nombre_archivo}"
+                    
+                    # Detalles adicionales para depuración
+                    logger.info(f"Drive File ID: {drive_file_info.get('id', 'No disponible')}")
+                    logger.info(f"Drive View Link: {drive_file_info.get('webViewLink', 'No disponible')}")
+                else:
+                    logger.error("Error al subir archivo a Drive, usando almacenamiento local como respaldo")
+                    logger.error("El método upload_file_to_drive devolvió None")
+                    # Fallback a almacenamiento local
+                    ruta_completa = os.path.join(local_folder, nombre_archivo)
+                    await file.download_to_drive(ruta_completa)
+            except Exception as e:
+                logger.error(f"Error al subir a Drive: {str(e)}, usando almacenamiento local como respaldo")
+                logger.error(f"Detalles del error: {str(e)}")
                 # Fallback a almacenamiento local
                 ruta_completa = os.path.join(local_folder, nombre_archivo)
                 await file.download_to_drive(ruta_completa)
-        except Exception as e:
-            logger.error(f"Error al subir a Drive: {e}, usando almacenamiento local como respaldo")
-            # Fallback a almacenamiento local
+        else:
+            logger.error(f"No se encontró ID de carpeta para {tipo_op}, usando almacenamiento local")
             ruta_completa = os.path.join(local_folder, nombre_archivo)
             await file.download_to_drive(ruta_completa)
     else:
         # Almacenamiento local específico para el tipo de operación
+        logger.info(f"Google Drive está deshabilitado, guardando archivo localmente")
         ruta_completa = os.path.join(local_folder, nombre_archivo)
         await file.download_to_drive(ruta_completa)
     
