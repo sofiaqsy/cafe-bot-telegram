@@ -7,6 +7,7 @@ import logging
 import io
 import os
 import traceback
+import json
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseUpload
@@ -42,16 +43,24 @@ def get_drive_service():
         try:
             info = GOOGLE_CREDENTIALS
             # Si las credenciales son una ruta de archivo
-            if os.path.exists(info):
+            if info and os.path.exists(info):
                 logger.info(f"Cargando credenciales desde archivo: {info}")
                 credentials = service_account.Credentials.from_service_account_file(info, scopes=SCOPES)
             # Si las credenciales son un JSON en string
-            else:
+            elif info:
                 logger.info("Cargando credenciales desde JSON en variable de entorno")
-                import json
-                service_account_info = json.loads(info)
-                credentials = service_account.Credentials.from_service_account_info(
-                    service_account_info, scopes=SCOPES)
+                try:
+                    service_account_info = json.loads(info)
+                    credentials = service_account.Credentials.from_service_account_info(
+                        service_account_info, scopes=SCOPES)
+                except json.JSONDecodeError as e:
+                    logger.error(f"Error al decodificar JSON de credenciales: {e}")
+                    logger.error(f"Primeros 50 caracteres de credenciales: {info[:50]}...")
+                    logger.error(f"Caracteres totales en GOOGLE_CREDENTIALS: {len(info)}")
+                    return None
+            else:
+                logger.error("GOOGLE_CREDENTIALS está vacío o no es válido")
+                return None
             
             logger.info("Credenciales cargadas correctamente")
         except Exception as e:
@@ -101,15 +110,17 @@ def upload_file_to_drive(file_bytes, file_name, mime_type="image/jpeg", folder_i
             else:
                 logger.warning("DRIVE_EVIDENCIAS_ROOT_ID no está configurado, el archivo se subirá sin carpeta específica")
         
+        # Verificar que el ID de la carpeta no sea vacío
+        if not folder_id:
+            logger.error("ID de carpeta vacío, el archivo no puede ser subido")
+            return None
+            
         # Preparar metadatos del archivo
         file_metadata = {'name': file_name}
         
-        # Si se especificó una carpeta, añadirla a los metadatos
-        if folder_id:
-            file_metadata['parents'] = [folder_id]
-            logger.info(f"Archivo será guardado en carpeta con ID: {folder_id}")
-        else:
-            logger.warning("El archivo se subirá sin especificar carpeta")
+        # Añadir la carpeta a los metadatos
+        file_metadata['parents'] = [folder_id]
+        logger.info(f"Archivo será guardado en carpeta con ID: {folder_id}")
         
         # Preparar el contenido del archivo
         media = MediaIoBaseUpload(io.BytesIO(file_bytes), mimetype=mime_type, resumable=True)
@@ -130,6 +141,8 @@ def upload_file_to_drive(file_bytes, file_name, mime_type="image/jpeg", folder_i
     
     except HttpError as e:
         logger.error(f"Error HTTP al subir archivo a Drive: {e}")
+        logger.error(f"Código de error: {e.status_code}")
+        logger.error(f"Detalles: {e.error_details if hasattr(e, 'error_details') else 'No disponible'}")
         logger.error(traceback.format_exc())
         return None
     except Exception as e:
@@ -280,3 +293,20 @@ def get_file_link(file_id):
         logger.error(f"Error al obtener enlace de archivo en Drive: {e}")
         logger.error(traceback.format_exc())
         return None
+
+# Realizar un test de conexión al inicializar el módulo
+try:
+    logger.info("Realizando test de conexión a Google Drive...")
+    service = get_drive_service()
+    if service:
+        logger.info("✅ Conexión a Google Drive exitosa")
+        
+        # Verificar las carpetas
+        if DRIVE_EVIDENCIAS_ROOT_ID and DRIVE_EVIDENCIAS_COMPRAS_ID and DRIVE_EVIDENCIAS_VENTAS_ID:
+            logger.info("✅ Carpetas de Drive configuradas correctamente")
+        else:
+            logger.warning("⚠️ Carpetas de Drive no configuradas completamente")
+    else:
+        logger.error("❌ No se pudo conectar a Google Drive")
+except Exception as e:
+    logger.error(f"Error durante el test de conexión a Drive: {e}")
