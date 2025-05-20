@@ -1,1 +1,1 @@
-runtime: python-3.9
+release=3.9.7
