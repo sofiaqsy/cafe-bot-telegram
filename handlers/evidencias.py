@@ -5,56 +5,148 @@ específicamente para que sea más intuitivo para los usuarios.
 """
 
 import logging
-from telegram import Update
-from telegram.ext import CommandHandler, ContextTypes
-from handlers.documents import documento_command, register_documents_handlers
+from telegram import Update, ReplyKeyboardMarkup
+from telegram.ext import CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
+from handlers.documents import documento_command, registro_documento, register_documents_handlers
 from utils.sheets import get_all_data
+from utils.helpers import get_now_peru
 
 # Configurar logging
 logger = logging.getLogger(__name__)
 
+# Estados para la conversación
+SELECCIONAR_COMPRA = 0
+SUBIR_DOCUMENTO = 1
+
+# Datos temporales
+datos_evidencia = {}
+
 async def evidencia_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """
-    Comando /evidencia para mostrar las compras registradas y permitir subir evidencias
+    Comando /evidencia para mostrar una lista seleccionable de compras registradas
+    para adjuntar evidencias de pago
     """
     user_id = update.effective_user.id
     username = update.effective_user.username or update.effective_user.first_name
     logger.info(f"=== COMANDO /evidencia INICIADO por {username} (ID: {user_id}) ===")
     
-    # Mostrar las compras recientes para que el usuario pueda ver sus IDs
+    # Inicializar datos para este usuario
+    datos_evidencia[user_id] = {}
+    
+    # Mostrar las compras recientes en un teclado seleccionable
     try:
         compras = get_all_data('compras')
         if compras:
             # Ordenar las compras por fecha (más recientes primero)
             compras_recientes = sorted(compras, key=lambda x: x.get('fecha', ''), reverse=True)[:10]
             
-            mensaje = "📋 *ÚLTIMAS COMPRAS REGISTRADAS*\n\n"
+            # Crear teclado con las compras
+            keyboard = []
             for compra in compras_recientes:
                 compra_id = compra.get('id', 'Sin ID')
-                fecha = compra.get('fecha', 'Fecha desconocida')
                 proveedor = compra.get('proveedor', 'Proveedor desconocido')
                 tipo_cafe = compra.get('tipo_cafe', 'Tipo desconocido')
-                cantidad = compra.get('cantidad', '0')
-                total = compra.get('preciototal', '0')
                 
-                mensaje += f"• *ID: {compra_id}*\n"
-                mensaje += f"  📅 {fecha} | {proveedor}\n"
-                mensaje += f"  ☕ {tipo_cafe}: {cantidad} kg | S/ {total}\n\n"
+                # Formatear fecha sin hora (solo YYYY-MM-DD)
+                fecha_completa = compra.get('fecha', '')
+                fecha_corta = fecha_completa.split(' ')[0] if ' ' in fecha_completa else fecha_completa
+                
+                # Crear botón con el formato: proveedor, tipo_cafe, fecha(sin hora), id
+                boton_text = f"{proveedor}, {tipo_cafe}, {fecha_corta}, {compra_id}"
+                keyboard.append([boton_text])
             
-            mensaje += "Para subir una evidencia de pago, selecciona una de las compras."
-            await update.message.reply_text(mensaje, parse_mode="Markdown")
+            keyboard.append(["❌ Cancelar"])
+            reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+            
+            mensaje = "📋 *SELECCIONA UNA COMPRA PARA ADJUNTAR EVIDENCIA DE PAGO*\n\n"
+            mensaje += "Formato: proveedor, tipo de café, fecha, ID"
+            
+            await update.message.reply_text(mensaje, parse_mode="Markdown", reply_markup=reply_markup)
+            
+            # Redirigir al estado de selección de compra
+            return SELECCIONAR_COMPRA
         else:
-            await update.message.reply_text("No hay compras registradas. Usa /compra para registrar una nueva compra.")
+            await update.message.reply_text(
+                "No hay compras registradas. Usa /compra para registrar una nueva compra.",
+                parse_mode="Markdown"
+            )
+            return ConversationHandler.END
     except Exception as e:
         logger.error(f"Error al obtener compras: {e}")
-        await update.message.reply_text("Ocurrió un error al obtener las compras. Continuando con el proceso de carga de evidencia.")
+        await update.message.reply_text(
+            "❌ Ocurrió un error al obtener las compras. Por favor, intenta nuevamente o usa /documento directamente.",
+            parse_mode="Markdown"
+        )
+        return ConversationHandler.END
+
+async def seleccionar_compra(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Procesa la selección de compra por el usuario"""
+    user_id = update.effective_user.id
+    respuesta = update.message.text.strip()
     
-    logger.info(f"Redirigiendo al flujo de /documento para seleccionar tipo de operación")
-    # Redirigimos al comando /documento para mantener un solo flujo
-    return await documento_command(update, context)
+    # Verificar si el usuario cancela
+    if respuesta.lower() == "❌ cancelar":
+        await update.message.reply_text("Operación cancelada. Usa /evidencia para iniciar nuevamente.")
+        return ConversationHandler.END
+    
+    # Extraer el ID de la compra (que está al final de la línea después de la última coma)
+    partes = respuesta.split(',')
+    if len(partes) < 4:
+        await update.message.reply_text(
+            "❌ Formato de selección inválido. Por favor, usa /evidencia para intentar nuevamente.",
+            parse_mode="Markdown"
+        )
+        return ConversationHandler.END
+    
+    compra_id = partes[-1].strip()
+    logger.info(f"Usuario {user_id} seleccionó compra con ID: {compra_id}")
+    
+    # Guardar datos para el siguiente paso
+    datos_evidencia[user_id]["tipo_operacion"] = "COMPRA"
+    datos_evidencia[user_id]["operacion_id"] = compra_id
+    
+    # Iniciar la carga del documento/evidencia
+    await update.message.reply_text(
+        f"Has seleccionado la compra con ID: {compra_id}\n\n"
+        f"Ahora, envía la imagen de la evidencia de pago.\n"
+        f"La imagen debe ser clara y legible."
+    )
+    
+    # Redirección al flujo de documentos para subir la evidencia
+    logger.info(f"Redirigiendo al flujo de /documento con tipo COMPRA y ID {compra_id}")
+    context.user_data["tipo_operacion"] = "COMPRA"
+    context.user_data["operacion_id"] = compra_id
+    
+    # Iniciar el proceso de carga de documentos directamente con los datos preseleccionados
+    return await registro_documento(update, context)
+
+async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Cancela el proceso de evidencia"""
+    user_id = update.effective_user.id
+    logger.info(f"Usuario {user_id} canceló el proceso de evidencia")
+    
+    # Limpiar datos temporales
+    if user_id in datos_evidencia:
+        del datos_evidencia[user_id]
+    
+    await update.message.reply_text(
+        "❌ Operación cancelada.\n\n"
+        "Usa /evidencia para iniciar de nuevo cuando quieras."
+    )
+    
+    return ConversationHandler.END
 
 def register_evidencias_handlers(application):
     """Registra los handlers para el módulo de evidencias"""
-    # Agregar el comando /evidencia como alias de /documento
-    application.add_handler(CommandHandler("evidencia", evidencia_command))
+    # Crear un handler de conversación específico para evidencias
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("evidencia", evidencia_command)],
+        states={
+            SELECCIONAR_COMPRA: [MessageHandler(filters.TEXT & ~filters.COMMAND, seleccionar_compra)],
+        },
+        fallbacks=[CommandHandler("cancelar", cancelar)],
+    )
+    
+    # Agregar el manejador al dispatcher
+    application.add_handler(conv_handler)
     logger.info("Handler de evidencias registrado")
