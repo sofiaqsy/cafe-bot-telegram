@@ -113,23 +113,19 @@ async def seleccionar_tipo(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 operacion_id = operacion.get('id', 'Sin ID')
                 
                 if tipo_operacion == "COMPRA":
-                    # Para compras, mostrar proveedor, monto y tipo de café (NUEVO FORMATO)
+                    # FORMATO SIMPLIFICADO: solo mostrar proveedor, monto y tipo de café
                     proveedor = operacion.get('proveedor', 'Proveedor desconocido')
                     tipo_cafe = operacion.get('tipo_cafe', 'Tipo desconocido')
                     total = operacion.get('preciototal', '0')
-                    descripcion = f"{proveedor}, S/ {total}, {tipo_cafe}"
+                    # Botón solo con la información visible más importante (sin fecha ni ID)
+                    boton_text = f"{proveedor} | S/ {total} | {tipo_cafe} | ID:{operacion_id}"
                 else:  # VENTA
-                    # Para ventas, mostrar cliente y producto
+                    # Para ventas, también simplificar
                     cliente = operacion.get('cliente', 'Cliente desconocido')
                     producto = operacion.get('producto', 'Producto desconocido')
-                    descripcion = f"{cliente}, {producto}"
+                    # Botón simplificado
+                    boton_text = f"{cliente} | {producto} | ID:{operacion_id}"
                 
-                # Formatear fecha sin hora (solo YYYY-MM-DD)
-                fecha_completa = operacion.get('fecha', '')
-                fecha_corta = fecha_completa.split(' ')[0] if ' ' in fecha_completa else fecha_completa
-                
-                # Crear botón con el formato: descripción, fecha(sin hora), id
-                boton_text = f"{descripcion}, {fecha_corta}, {operacion_id}"
                 keyboard.append([boton_text])
             
             keyboard.append(["❌ Cancelar"])
@@ -167,16 +163,20 @@ async def seleccionar_operacion(update: Update, context: ContextTypes.DEFAULT_TY
         await update.message.reply_text("Operación cancelada. Usa /evidencia para iniciar nuevamente.")
         return ConversationHandler.END
     
-    # Extraer el ID de la operación (que está al final de la línea después de la última coma)
-    partes = respuesta.split(',')
-    if len(partes) < 3:
-        await update.message.reply_text(
-            "❌ Formato de selección inválido. Por favor, usa /evidencia para intentar nuevamente.",
-            parse_mode="Markdown"
-        )
-        return ConversationHandler.END
+    # Extraer el ID de la operación (ahora está después de "ID:")
+    if "ID:" in respuesta:
+        operacion_id = respuesta.split("ID:")[1].strip()
+    else:
+        # Mantener comportamiento anterior como fallback
+        partes = respuesta.split(',')
+        if len(partes) < 3:
+            await update.message.reply_text(
+                "❌ Formato de selección inválido. Por favor, usa /evidencia para intentar nuevamente.",
+                parse_mode="Markdown"
+            )
+            return ConversationHandler.END
+        operacion_id = partes[-1].strip()
     
-    operacion_id = partes[-1].strip()
     tipo_operacion = datos_evidencia[user_id]["tipo_operacion"]
     logger.info(f"Usuario {user_id} seleccionó {tipo_operacion} con ID: {operacion_id}")
     
