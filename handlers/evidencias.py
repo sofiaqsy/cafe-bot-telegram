@@ -113,10 +113,11 @@ async def seleccionar_tipo(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 operacion_id = operacion.get('id', 'Sin ID')
                 
                 if tipo_operacion == "COMPRA":
-                    # Para compras, mostrar proveedor y tipo de café
+                    # Para compras, mostrar proveedor, monto y tipo de café (NUEVO FORMATO)
                     proveedor = operacion.get('proveedor', 'Proveedor desconocido')
                     tipo_cafe = operacion.get('tipo_cafe', 'Tipo desconocido')
-                    descripcion = f"{proveedor}, {tipo_cafe}"
+                    total = operacion.get('preciototal', '0')
+                    descripcion = f"{proveedor}, S/ {total}, {tipo_cafe}"
                 else:  # VENTA
                     # Para ventas, mostrar cliente y producto
                     cliente = operacion.get('cliente', 'Cliente desconocido')
