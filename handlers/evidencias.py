@@ -51,7 +51,7 @@ async def evidencia_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                 fecha_corta = fecha_completa.split(' ')[0] if ' ' in fecha_completa else fecha_completa
                 
                 # Crear botón con el formato: proveedor, tipo_cafe, fecha(sin hora), id
-                boton_text = f"{proveedor}, {tipo_cafe}, '{fecha_corta}, {compra_id}"
+                boton_text = f"{proveedor}, {tipo_cafe}, {fecha_corta}, {compra_id}"
                 keyboard.append([boton_text])
             
             keyboard.append(["❌ Cancelar"])
