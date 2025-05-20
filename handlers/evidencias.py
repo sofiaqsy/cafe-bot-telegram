@@ -1,6 +1,6 @@
 """
-Manejador para el comando /evidencia.
-Este comando permite seleccionar una compra y subir una evidencia de pago.
+Manejador para el comando /evidencias.
+Este comando permite seleccionar una operación (compra o venta) y subir una evidencia.
 """
 
 import logging
@@ -17,7 +17,7 @@ from config import UPLOADS_FOLDER, DRIVE_ENABLED, DRIVE_EVIDENCIAS_COMPRAS_ID, D
 logger = logging.getLogger(__name__)
 
 # Estados para la conversación
-SELECCIONAR_COMPRA, SUBIR_DOCUMENTO, CONFIRMAR = range(3)
+SELECCIONAR_TIPO, SELECCIONAR_OPERACION, SUBIR_DOCUMENTO, CONFIRMAR = range(4)
 
 # Datos temporales
 datos_evidencia = {}
@@ -27,99 +27,165 @@ if not os.path.exists(UPLOADS_FOLDER):
     os.makedirs(UPLOADS_FOLDER)
     logger.info(f"Directorio de uploads creado: {UPLOADS_FOLDER}")
 
-async def evidencia_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+# Asegurar que existen los directorios para cada tipo de operación
+COMPRAS_FOLDER = os.path.join(UPLOADS_FOLDER, "compras")
+VENTAS_FOLDER = os.path.join(UPLOADS_FOLDER, "ventas")
+
+if not os.path.exists(COMPRAS_FOLDER):
+    os.makedirs(COMPRAS_FOLDER)
+    logger.info(f"Directorio para evidencias de compras creado: {COMPRAS_FOLDER}")
+
+if not os.path.exists(VENTAS_FOLDER):
+    os.makedirs(VENTAS_FOLDER)
+    logger.info(f"Directorio para evidencias de ventas creado: {VENTAS_FOLDER}")
+
+async def evidencias_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """
-    Comando /evidencia para mostrar una lista seleccionable de compras registradas
-    para adjuntar evidencias de pago
+    Comando /evidencias para seleccionar el tipo de operación
     """
     user_id = update.effective_user.id
     username = update.effective_user.username or update.effective_user.first_name
-    logger.info(f"=== COMANDO /evidencia INICIADO por {username} (ID: {user_id}) ===")
+    logger.info(f"=== COMANDO /evidencias INICIADO por {username} (ID: {user_id}) ===")
     
     # Inicializar datos para este usuario
     datos_evidencia[user_id] = {
         "registrado_por": update.effective_user.username or update.effective_user.first_name
     }
     
-    # Mostrar las compras recientes en un teclado seleccionable
-    try:
-        compras = get_all_data('compras')
-        if compras:
-            # Ordenar las compras por fecha (más recientes primero)
-            compras_recientes = sorted(compras, key=lambda x: x.get('fecha', ''), reverse=True)[:10]
-            
-            # Crear teclado con las compras
-            keyboard = []
-            for compra in compras_recientes:
-                compra_id = compra.get('id', 'Sin ID')
-                proveedor = compra.get('proveedor', 'Proveedor desconocido')
-                tipo_cafe = compra.get('tipo_cafe', 'Tipo desconocido')
-                
-                # Formatear fecha sin hora (solo YYYY-MM-DD)
-                fecha_completa = compra.get('fecha', '')
-                fecha_corta = fecha_completa.split(' ')[0] if ' ' in fecha_completa else fecha_completa
-                
-                # Crear botón con el formato: proveedor, tipo_cafe, fecha(sin hora), id
-                boton_text = f"{proveedor}, {tipo_cafe}, {fecha_corta}, {compra_id}"
-                keyboard.append([boton_text])
-            
-            keyboard.append(["❌ Cancelar"])
-            reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
-            
-            mensaje = "📋 *SELECCIONA UNA COMPRA PARA ADJUNTAR EVIDENCIA DE PAGO*\n\n"
-            mensaje += "Formato: proveedor, tipo de café, fecha, ID"
-            
-            await update.message.reply_text(mensaje, parse_mode="Markdown", reply_markup=reply_markup)
-            
-            # Redirigir al estado de selección de compra
-            return SELECCIONAR_COMPRA
-        else:
-            await update.message.reply_text(
-                "No hay compras registradas. Usa /compra para registrar una nueva compra.",
-                parse_mode="Markdown"
-            )
-            return ConversationHandler.END
-    except Exception as e:
-        logger.error(f"Error al obtener compras: {e}")
-        await update.message.reply_text(
-            "❌ Ocurrió un error al obtener las compras. Por favor, intenta nuevamente.",
-            parse_mode="Markdown"
-        )
-        return ConversationHandler.END
+    # Ofrecer opciones para compras o ventas
+    keyboard = [
+        ["🛒 Compras"],
+        ["💰 Ventas"],
+        ["❌ Cancelar"]
+    ]
+    reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+    
+    mensaje = "📋 *SELECCIONA EL TIPO DE OPERACIÓN*\n\n"
+    mensaje += "Elige si quieres registrar una evidencia de compra o de venta."
+    
+    await update.message.reply_text(mensaje, parse_mode="Markdown", reply_markup=reply_markup)
+    
+    # Pasar al estado de selección de tipo
+    return SELECCIONAR_TIPO
 
-async def seleccionar_compra(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Procesa la selección de compra por el usuario"""
+async def seleccionar_tipo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Procesa la selección del tipo de operación por el usuario"""
     user_id = update.effective_user.id
     respuesta = update.message.text.strip()
     
     # Verificar si el usuario cancela
     if respuesta.lower() == "❌ cancelar":
-        await update.message.reply_text("Operación cancelada. Usa /evidencia para iniciar nuevamente.")
+        await update.message.reply_text("Operación cancelada. Usa /evidencias para iniciar nuevamente.")
         return ConversationHandler.END
     
-    # Extraer el ID de la compra (que está al final de la línea después de la última coma)
-    partes = respuesta.split(',')
-    if len(partes) < 4:
+    # Determinar el tipo de operación
+    if "compras" in respuesta.lower():
+        tipo_operacion = "COMPRA"
+        operacion_plural = "compras"
+        datos_evidencia[user_id]["tipo_operacion"] = tipo_operacion
+        logger.info(f"Usuario {user_id} seleccionó tipo de operación: {tipo_operacion}")
+    elif "ventas" in respuesta.lower():
+        tipo_operacion = "VENTA"
+        operacion_plural = "ventas"
+        datos_evidencia[user_id]["tipo_operacion"] = tipo_operacion
+        logger.info(f"Usuario {user_id} seleccionó tipo de operación: {tipo_operacion}")
+    else:
         await update.message.reply_text(
-            "❌ Formato de selección inválido. Por favor, usa /evidencia para intentar nuevamente.",
+            "❌ Opción no válida. Por favor, selecciona 'Compras' o 'Ventas'.",
+            parse_mode="Markdown"
+        )
+        return SELECCIONAR_TIPO
+    
+    # Mostrar las operaciones recientes en un teclado seleccionable
+    try:
+        # Obtener datos según el tipo de operación seleccionado
+        operaciones = get_all_data(operacion_plural)
+        
+        if operaciones:
+            # Ordenar las operaciones por fecha (más recientes primero)
+            operaciones_recientes = sorted(operaciones, key=lambda x: x.get('fecha', ''), reverse=True)[:10]
+            
+            # Crear teclado con las operaciones
+            keyboard = []
+            for operacion in operaciones_recientes:
+                operacion_id = operacion.get('id', 'Sin ID')
+                
+                if tipo_operacion == "COMPRA":
+                    # Para compras, mostrar proveedor y tipo de café
+                    proveedor = operacion.get('proveedor', 'Proveedor desconocido')
+                    tipo_cafe = operacion.get('tipo_cafe', 'Tipo desconocido')
+                    descripcion = f"{proveedor}, {tipo_cafe}"
+                else:  # VENTA
+                    # Para ventas, mostrar cliente y producto
+                    cliente = operacion.get('cliente', 'Cliente desconocido')
+                    producto = operacion.get('producto', 'Producto desconocido')
+                    descripcion = f"{cliente}, {producto}"
+                
+                # Formatear fecha sin hora (solo YYYY-MM-DD)
+                fecha_completa = operacion.get('fecha', '')
+                fecha_corta = fecha_completa.split(' ')[0] if ' ' in fecha_completa else fecha_completa
+                
+                # Crear botón con el formato: descripción, fecha(sin hora), id
+                boton_text = f"{descripcion}, {fecha_corta}, {operacion_id}"
+                keyboard.append([boton_text])
+            
+            keyboard.append(["❌ Cancelar"])
+            reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+            
+            mensaje = f"📋 *SELECCIONA UNA {tipo_operacion} PARA ADJUNTAR EVIDENCIA*\n\n"
+            
+            await update.message.reply_text(mensaje, parse_mode="Markdown", reply_markup=reply_markup)
+            
+            # Redirigir al estado de selección de operación
+            return SELECCIONAR_OPERACION
+        else:
+            comando_registro = "/compra" if tipo_operacion == "COMPRA" else "/venta"
+            await update.message.reply_text(
+                f"No hay {operacion_plural} registradas. Usa {comando_registro} para registrar una nueva operación.",
+                parse_mode="Markdown"
+            )
+            return ConversationHandler.END
+    except Exception as e:
+        logger.error(f"Error al obtener {operacion_plural}: {e}")
+        await update.message.reply_text(
+            f"❌ Ocurrió un error al obtener las {operacion_plural}. Por favor, intenta nuevamente.",
+            parse_mode="Markdown"
+        )
+        return ConversationHandler.END
+
+async def seleccionar_operacion(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Procesa la selección de la operación por el usuario"""
+    user_id = update.effective_user.id
+    respuesta = update.message.text.strip()
+    
+    # Verificar si el usuario cancela
+    if respuesta.lower() == "❌ cancelar":
+        await update.message.reply_text("Operación cancelada. Usa /evidencias para iniciar nuevamente.")
+        return ConversationHandler.END
+    
+    # Extraer el ID de la operación (que está al final de la línea después de la última coma)
+    partes = respuesta.split(',')
+    if len(partes) < 3:
+        await update.message.reply_text(
+            "❌ Formato de selección inválido. Por favor, usa /evidencias para intentar nuevamente.",
             parse_mode="Markdown"
         )
         return ConversationHandler.END
     
-    compra_id = partes[-1].strip()
-    logger.info(f"Usuario {user_id} seleccionó compra con ID: {compra_id}")
+    operacion_id = partes[-1].strip()
+    tipo_operacion = datos_evidencia[user_id]["tipo_operacion"]
+    logger.info(f"Usuario {user_id} seleccionó {tipo_operacion} con ID: {operacion_id}")
     
-    # Guardar los datos de la compra
-    datos_evidencia[user_id]["tipo_operacion"] = "COMPRA"
-    datos_evidencia[user_id]["operacion_id"] = compra_id
+    # Guardar los datos de la operación
+    datos_evidencia[user_id]["operacion_id"] = operacion_id
     
     # Modo de almacenamiento
     almacenamiento = "Google Drive" if DRIVE_ENABLED else "almacenamiento local"
     
-    # Informar al usuario que se ha seleccionado correctamente la compra
+    # Informar al usuario que se ha seleccionado correctamente la operación
     await update.message.reply_text(
-        f"Has seleccionado la compra con ID: {compra_id}\n\n"
-        f"Ahora, envía la imagen de la evidencia de pago.\n"
+        f"Has seleccionado la {tipo_operacion} con ID: {operacion_id}\n\n"
+        f"Ahora, envía la imagen de la evidencia.\n"
         f"La imagen debe ser clara y legible.\n\n"
         f"Nota: La imagen se guardará en {almacenamiento}."
     )
@@ -134,7 +200,7 @@ async def subir_documento(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     # Verificar si el mensaje contiene una foto
     if not update.message.photo:
         await update.message.reply_text(
-            "⚠️ Por favor, envía una imagen de la evidencia de pago.\n"
+            "⚠️ Por favor, envía una imagen de la evidencia.\n"
             "Si deseas cancelar, usa el comando /cancelar."
         )
         return SUBIR_DOCUMENTO
@@ -156,6 +222,9 @@ async def subir_documento(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     op_id = datos_evidencia[user_id]["operacion_id"]
     nombre_archivo = f"{tipo_op}_{op_id}_{uuid.uuid4().hex[:8]}.jpg"
     
+    # Determinar la carpeta local según el tipo de operación
+    local_folder = COMPRAS_FOLDER if tipo_op.upper() == "COMPRA" else VENTAS_FOLDER
+    
     # Determinar si usar Google Drive o almacenamiento local
     drive_file_info = None
     if DRIVE_ENABLED:
@@ -163,7 +232,7 @@ async def subir_documento(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             # Descargar el archivo a memoria
             file_bytes = await file.download_as_bytearray()
             
-            # Determinar la carpeta donde guardar el archivo según tipo de operación
+            # Determinar la carpeta de Google Drive donde guardar el archivo según tipo de operación
             if tipo_op.upper() == "COMPRA":
                 folder_id = DRIVE_EVIDENCIAS_COMPRAS_ID
                 logger.info(f"Guardando evidencia de COMPRA en carpeta ID: {folder_id}")
@@ -183,16 +252,16 @@ async def subir_documento(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             else:
                 logger.error("Error al subir archivo a Drive, usando almacenamiento local como respaldo")
                 # Fallback a almacenamiento local
-                ruta_completa = os.path.join(UPLOADS_FOLDER, nombre_archivo)
+                ruta_completa = os.path.join(local_folder, nombre_archivo)
                 await file.download_to_drive(ruta_completa)
         except Exception as e:
             logger.error(f"Error al subir a Drive: {e}, usando almacenamiento local como respaldo")
             # Fallback a almacenamiento local
-            ruta_completa = os.path.join(UPLOADS_FOLDER, nombre_archivo)
+            ruta_completa = os.path.join(local_folder, nombre_archivo)
             await file.download_to_drive(ruta_completa)
     else:
-        # Almacenamiento local
-        ruta_completa = os.path.join(UPLOADS_FOLDER, nombre_archivo)
+        # Almacenamiento local específico para el tipo de operación
+        ruta_completa = os.path.join(local_folder, nombre_archivo)
         await file.download_to_drive(ruta_completa)
     
     logger.info(f"Archivo guardado en: {ruta_completa}")
@@ -212,7 +281,6 @@ async def subir_documento(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
     
     # Mostrar la imagen y solicitar confirmación
-    # MODIFICADO: Evitamos usar parse_mode="Markdown" para evitar errores de formato
     await update.message.reply_photo(
         photo=file_id,
         caption=f"📝 RESUMEN\n\n{mensaje_confirmacion}\n\n¿Confirmar la carga de este documento?",
@@ -267,8 +335,10 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         # Es un archivo en Drive, mantener la cadena completa para referencia
         pass
     else:
-        # Es un archivo local, extraer solo el nombre
-        documento["ruta_archivo"] = os.path.basename(documento["ruta_archivo"])
+        # Es un archivo local, extraer solo el nombre pero mantener la información de la carpeta
+        tipo_op = documento["tipo_operacion"].lower()
+        nombre_archivo = os.path.basename(documento["ruta_archivo"])
+        documento["ruta_archivo"] = f"{tipo_op}/{nombre_archivo}"
     
     # Asegurar que los campos de Drive estén presentes
     if "drive_file_id" not in documento:
@@ -308,7 +378,7 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             if DRIVE_ENABLED and documento.get("drive_view_link"):
                 mensaje += f"\n\nPuedes ver el documento en Drive:\n{documento['drive_view_link']}"
             
-            mensaje += "\n\nUsa /evidencia para registrar otra evidencia."
+            mensaje += "\n\nUsa /evidencias para registrar otra evidencia."
             
             await update.message.reply_text(
                 mensaje,
@@ -356,7 +426,7 @@ async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     
     await update.message.reply_text(
         "❌ Operación cancelada.\n\n"
-        "Usa /evidencia para iniciar de nuevo cuando quieras.",
+        "Usa /evidencias para iniciar de nuevo cuando quieras.",
         reply_markup=ReplyKeyboardRemove()
     )
     
@@ -366,9 +436,10 @@ def register_evidencias_handlers(application):
     """Registra los handlers para el módulo de evidencias"""
     # Crear un handler de conversación para el flujo completo de evidencias
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("evidencia", evidencia_command)],
+        entry_points=[CommandHandler("evidencias", evidencias_command)],
         states={
-            SELECCIONAR_COMPRA: [MessageHandler(filters.TEXT & ~filters.COMMAND, seleccionar_compra)],
+            SELECCIONAR_TIPO: [MessageHandler(filters.TEXT & ~filters.COMMAND, seleccionar_tipo)],
+            SELECCIONAR_OPERACION: [MessageHandler(filters.TEXT & ~filters.COMMAND, seleccionar_operacion)],
             SUBIR_DOCUMENTO: [MessageHandler(filters.PHOTO, subir_documento)],
             CONFIRMAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirmar)],
         },
