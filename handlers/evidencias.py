@@ -224,6 +224,7 @@ async def subir_documento(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     
     # Determinar la carpeta local según el tipo de operación
     local_folder = COMPRAS_FOLDER if tipo_op.upper() == "COMPRA" else VENTAS_FOLDER
+    folder_name = "compras" if tipo_op.upper() == "COMPRA" else "ventas"  # Nombre de la carpeta para la BD
     
     # Determinar si usar Google Drive o almacenamiento local
     drive_file_info = None
@@ -247,6 +248,8 @@ async def subir_documento(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 # Guardar la información de Drive
                 datos_evidencia[user_id]["drive_file_id"] = drive_file_info.get("id")
                 datos_evidencia[user_id]["drive_view_link"] = drive_file_info.get("webViewLink")
+                # Guardar también el nombre de carpeta para la BD
+                datos_evidencia[user_id]["folder_name"] = folder_name
                 logger.info(f"Archivo subido a Drive: {drive_file_info}")
                 ruta_completa = f"GoogleDrive:{drive_file_info.get('id')}:{nombre_archivo}"
             else:
@@ -254,18 +257,25 @@ async def subir_documento(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 # Fallback a almacenamiento local
                 ruta_completa = os.path.join(local_folder, nombre_archivo)
                 await file.download_to_drive(ruta_completa)
+                # Guardar la carpeta para la BD
+                datos_evidencia[user_id]["folder_name"] = folder_name
         except Exception as e:
             logger.error(f"Error al subir a Drive: {e}, usando almacenamiento local como respaldo")
             # Fallback a almacenamiento local
             ruta_completa = os.path.join(local_folder, nombre_archivo)
             await file.download_to_drive(ruta_completa)
+            # Guardar la carpeta para la BD
+            datos_evidencia[user_id]["folder_name"] = folder_name
     else:
         # Almacenamiento local específico para el tipo de operación
         ruta_completa = os.path.join(local_folder, nombre_archivo)
         await file.download_to_drive(ruta_completa)
+        # Guardar la carpeta para la BD
+        datos_evidencia[user_id]["folder_name"] = folder_name
     
     logger.info(f"Archivo guardado en: {ruta_completa}")
     datos_evidencia[user_id]["ruta_archivo"] = ruta_completa
+    datos_evidencia[user_id]["nombre_archivo"] = nombre_archivo
     
     # Preparar mensaje de confirmación
     mensaje_confirmacion = f"Tipo de operación: {datos_evidencia[user_id]['tipo_operacion']}\n" \
@@ -335,10 +345,10 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         # Es un archivo en Drive, mantener la cadena completa para referencia
         pass
     else:
-        # Es un archivo local, extraer solo el nombre pero mantener la información de la carpeta
-        tipo_op = documento["tipo_operacion"].lower()
-        nombre_archivo = os.path.basename(documento["ruta_archivo"])
-        documento["ruta_archivo"] = f"{tipo_op}/{nombre_archivo}"
+        # Es un archivo local, usar el nombre de la carpeta y el nombre del archivo
+        folder_name = documento["folder_name"]  # Guardado previamente en subir_documento
+        nombre_archivo = documento["nombre_archivo"]
+        documento["ruta_archivo"] = f"{folder_name}/{nombre_archivo}"
     
     # Asegurar que los campos de Drive estén presentes
     if "drive_file_id" not in documento:
