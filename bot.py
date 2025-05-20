@@ -38,7 +38,6 @@ try:
     from handlers.adelantos import register_adelantos_handlers
     from handlers.compra_adelanto import register_compra_adelanto_handlers
     from handlers.almacen import register_almacen_handlers
-    from handlers.documents import register_documents_handlers
     from handlers.evidencias import register_evidencias_handlers
     
     # NUEVO: Importar el módulo de emergencia para documentos
@@ -161,7 +160,6 @@ def main():
         ("adelantos", register_adelantos_handlers),
         ("compra_adelanto", register_compra_adelanto_handlers),
         ("almacen", register_almacen_handlers),
-        ("documents", register_documents_handlers),
         ("evidencias", register_evidencias_handlers)
     ]
     
