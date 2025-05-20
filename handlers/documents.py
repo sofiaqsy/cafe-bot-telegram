@@ -13,8 +13,8 @@ from config import UPLOADS_FOLDER, DRIVE_ENABLED, DRIVE_EVIDENCIAS_COMPRAS_ID, D
 # Configurar logging
 logger = logging.getLogger(__name__)
 
-# Estados para la conversación
-SELECCIONAR_TIPO, SELECCIONAR_ID, LISTAR_REGISTROS, SELECCIONAR_REGISTRO, SUBIR_DOCUMENTO, CONFIRMAR = range(6)
+# Estados para la conversación - CORREGIDO: Mantener estados consecutivos para evitar confusiones
+SELECCIONAR_TIPO, SELECCIONAR_REGISTRO, SUBIR_DOCUMENTO, CONFIRMAR = range(4)
 
 # Datos temporales
 datos_documento = {}
@@ -606,7 +606,7 @@ def register_documents_handlers(application):
     try:
         logger.info("=== REGISTRANDO HANDLERS DE DOCUMENTOS ===")
         
-        # Crear manejador de conversación
+        # Crear manejador de conversación - CORREGIDO: Asegurar que los estados coincidan con los definidos arriba
         conv_handler = ConversationHandler(
             entry_points=[CommandHandler("documento", documento_command)],
             states={
