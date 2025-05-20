@@ -1,5 +1,5 @@
 """
-Manejador para el comando /evidencias.
+Manejador para el comando /evidencia.
 Este comando permite seleccionar una operación (compra o venta) y subir una evidencia.
 """
 
@@ -39,13 +39,13 @@ if not os.path.exists(VENTAS_FOLDER):
     os.makedirs(VENTAS_FOLDER)
     logger.info(f"Directorio para evidencias de ventas creado: {VENTAS_FOLDER}")
 
-async def evidencias_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def evidencia_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """
-    Comando /evidencias para seleccionar el tipo de operación
+    Comando /evidencia para seleccionar el tipo de operación
     """
     user_id = update.effective_user.id
     username = update.effective_user.username or update.effective_user.first_name
-    logger.info(f"=== COMANDO /evidencias INICIADO por {username} (ID: {user_id}) ===")
+    logger.info(f"=== COMANDO /evidencia INICIADO por {username} (ID: {user_id}) ===")
     
     # Inicializar datos para este usuario
     datos_evidencia[user_id] = {
@@ -75,7 +75,7 @@ async def seleccionar_tipo(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     
     # Verificar si el usuario cancela
     if respuesta.lower() == "❌ cancelar":
-        await update.message.reply_text("Operación cancelada. Usa /evidencias para iniciar nuevamente.")
+        await update.message.reply_text("Operación cancelada. Usa /evidencia para iniciar nuevamente.")
         return ConversationHandler.END
     
     # Determinar el tipo de operación
@@ -160,14 +160,14 @@ async def seleccionar_operacion(update: Update, context: ContextTypes.DEFAULT_TY
     
     # Verificar si el usuario cancela
     if respuesta.lower() == "❌ cancelar":
-        await update.message.reply_text("Operación cancelada. Usa /evidencias para iniciar nuevamente.")
+        await update.message.reply_text("Operación cancelada. Usa /evidencia para iniciar nuevamente.")
         return ConversationHandler.END
     
     # Extraer el ID de la operación (que está al final de la línea después de la última coma)
     partes = respuesta.split(',')
     if len(partes) < 3:
         await update.message.reply_text(
-            "❌ Formato de selección inválido. Por favor, usa /evidencias para intentar nuevamente.",
+            "❌ Formato de selección inválido. Por favor, usa /evidencia para intentar nuevamente.",
             parse_mode="Markdown"
         )
         return ConversationHandler.END
@@ -378,7 +378,7 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             if DRIVE_ENABLED and documento.get("drive_view_link"):
                 mensaje += f"\n\nPuedes ver el documento en Drive:\n{documento['drive_view_link']}"
             
-            mensaje += "\n\nUsa /evidencias para registrar otra evidencia."
+            mensaje += "\n\nUsa /evidencia para registrar otra evidencia."
             
             await update.message.reply_text(
                 mensaje,
@@ -426,7 +426,7 @@ async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     
     await update.message.reply_text(
         "❌ Operación cancelada.\n\n"
-        "Usa /evidencias para iniciar de nuevo cuando quieras.",
+        "Usa /evidencia para iniciar de nuevo cuando quieras.",
         reply_markup=ReplyKeyboardRemove()
     )
     
@@ -436,7 +436,7 @@ def register_evidencias_handlers(application):
     """Registra los handlers para el módulo de evidencias"""
     # Crear un handler de conversación para el flujo completo de evidencias
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("evidencias", evidencias_command)],
+        entry_points=[CommandHandler("evidencia", evidencia_command)],
         states={
             SELECCIONAR_TIPO: [MessageHandler(filters.TEXT & ~filters.COMMAND, seleccionar_tipo)],
             SELECCIONAR_OPERACION: [MessageHandler(filters.TEXT & ~filters.COMMAND, seleccionar_operacion)],
