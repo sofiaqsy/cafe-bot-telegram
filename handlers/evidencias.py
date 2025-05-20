@@ -212,11 +212,10 @@ async def subir_documento(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
     
     # Mostrar la imagen y solicitar confirmación
+    # MODIFICADO: Evitamos usar parse_mode="Markdown" para evitar errores de formato
     await update.message.reply_photo(
         photo=file_id,
-        caption=f"📝 *RESUMEN*\n\n{mensaje_confirmacion}\n\n"
-                f"¿Confirmar la carga de este documento?",
-        parse_mode="Markdown",
+        caption=f"📝 RESUMEN\n\n{mensaje_confirmacion}\n\n¿Confirmar la carga de este documento?",
         reply_markup=reply_markup
     )
     
