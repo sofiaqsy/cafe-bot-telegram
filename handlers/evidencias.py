@@ -83,11 +83,13 @@ async def seleccionar_tipo(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         tipo_operacion = "COMPRA"
         operacion_plural = "compras"
         datos_evidencia[user_id]["tipo_operacion"] = tipo_operacion
+        datos_evidencia[user_id]["folder_name"] = "compras"  # Guardar el nombre de la carpeta
         logger.info(f"Usuario {user_id} seleccionó tipo de operación: {tipo_operacion}")
     elif "ventas" in respuesta.lower():
         tipo_operacion = "VENTA"
         operacion_plural = "ventas"
         datos_evidencia[user_id]["tipo_operacion"] = tipo_operacion
+        datos_evidencia[user_id]["folder_name"] = "ventas"  # Guardar el nombre de la carpeta
         logger.info(f"Usuario {user_id} seleccionó tipo de operación: {tipo_operacion}")
     else:
         await update.message.reply_text(
@@ -222,23 +224,25 @@ async def subir_documento(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     op_id = datos_evidencia[user_id]["operacion_id"]
     nombre_archivo = f"{tipo_op}_{op_id}_{uuid.uuid4().hex[:8]}.jpg"
     
+    # Guardar el nombre del archivo
+    datos_evidencia[user_id]["nombre_archivo"] = nombre_archivo
+    
     # Determinar la carpeta local según el tipo de operación
-    local_folder = COMPRAS_FOLDER if tipo_op.upper() == "COMPRA" else VENTAS_FOLDER
+    if tipo_op.upper() == "COMPRA":
+        local_folder = COMPRAS_FOLDER
+        folder_id = DRIVE_EVIDENCIAS_COMPRAS_ID if DRIVE_ENABLED else None
+        logger.info(f"Evidencia de COMPRA - Se guardará en la carpeta: {COMPRAS_FOLDER}")
+    else:  # VENTA
+        local_folder = VENTAS_FOLDER
+        folder_id = DRIVE_EVIDENCIAS_VENTAS_ID if DRIVE_ENABLED else None
+        logger.info(f"Evidencia de VENTA - Se guardará en la carpeta: {VENTAS_FOLDER}")
     
     # Determinar si usar Google Drive o almacenamiento local
     drive_file_info = None
-    if DRIVE_ENABLED:
+    if DRIVE_ENABLED and folder_id:
         try:
             # Descargar el archivo a memoria
             file_bytes = await file.download_as_bytearray()
-            
-            # Determinar la carpeta de Google Drive donde guardar el archivo según tipo de operación
-            if tipo_op.upper() == "COMPRA":
-                folder_id = DRIVE_EVIDENCIAS_COMPRAS_ID
-                logger.info(f"Guardando evidencia de COMPRA en carpeta ID: {folder_id}")
-            else:  # VENTA
-                folder_id = DRIVE_EVIDENCIAS_VENTAS_ID
-                logger.info(f"Guardando evidencia de VENTA en carpeta ID: {folder_id}")
             
             # Subir el archivo a Drive
             drive_file_info = upload_file_to_drive(file_bytes, nombre_archivo, "image/jpeg", folder_id)
@@ -271,6 +275,10 @@ async def subir_documento(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     mensaje_confirmacion = f"Tipo de operación: {datos_evidencia[user_id]['tipo_operacion']}\n" \
                          f"ID de operación: {op_id}\n" \
                          f"Archivo guardado como: {nombre_archivo}"
+    
+    # Añadir información de la carpeta
+    folder_name = datos_evidencia[user_id]["folder_name"]
+    mensaje_confirmacion += f"\nCarpeta: {folder_name}"
     
     # Añadir enlace de Drive si está disponible
     if DRIVE_ENABLED and drive_file_info and "drive_view_link" in datos_evidencia[user_id]:
@@ -335,10 +343,10 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         # Es un archivo en Drive, mantener la cadena completa para referencia
         pass
     else:
-        # Es un archivo local, extraer solo el nombre pero mantener la información de la carpeta
-        tipo_op = documento["tipo_operacion"].lower()
-        nombre_archivo = os.path.basename(documento["ruta_archivo"])
-        documento["ruta_archivo"] = f"{tipo_op}/{nombre_archivo}"
+        # Es un archivo local, construir la ruta correcta con la carpeta apropiada
+        folder_name = documento["folder_name"]  # Extraída en seleccionar_tipo
+        nombre_archivo = documento["nombre_archivo"]  # Extraído en subir_documento
+        documento["ruta_archivo"] = f"{folder_name}/{nombre_archivo}"
     
     # Asegurar que los campos de Drive estén presentes
     if "drive_file_id" not in documento:
@@ -372,7 +380,8 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             # Preparar mensaje de éxito
             mensaje = "✅ ¡Documento registrado exitosamente!\n\n" \
                     f"ID del documento: {documento['id']}\n" \
-                    f"Asociado a: {documento['tipo_operacion']} - {documento['operacion_id']}"
+                    f"Asociado a: {documento['tipo_operacion']} - {documento['operacion_id']}\n" \
+                    f"Guardado en carpeta: {documento['folder_name']}"
             
             # Añadir enlace de Drive si está disponible
             if DRIVE_ENABLED and documento.get("drive_view_link"):
