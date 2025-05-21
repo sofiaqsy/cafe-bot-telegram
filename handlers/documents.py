@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import CommandHandler, ConversationHandler, MessageHandler, filters, ContextTypes
-from utils.sheets import append_data as append_sheets, generate_unique_id
+from utils.sheets import append_data as append_sheets, generate_unique_id, get_all_data
 from utils.helpers import get_now_peru, format_date_for_sheets
 from utils.drive import upload_file_to_drive, get_file_link
 from config import UPLOADS_FOLDER, DRIVE_ENABLED, DRIVE_EVIDENCIAS_COMPRAS_ID, DRIVE_EVIDENCIAS_VENTAS_ID
@@ -180,7 +180,29 @@ async def subir_documento(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     # Crear un nombre único para el archivo
     tipo_op = datos_documento[user_id]["tipo_operacion"].lower()
     op_id = datos_documento[user_id]["operacion_id"]
-    nombre_archivo = f"{tipo_op}_{op_id}_{uuid.uuid4().hex[:8]}.jpg"
+    
+    # Obtener datos adicionales como monto y proveedor para compras
+    monto = ""
+    proveedor = ""
+    
+    if tipo_op.upper() == "COMPRA":
+        try:
+            # Buscar los datos de la compra para obtener el monto y proveedor
+            compras = get_all_data('compras')
+            for compra in compras:
+                if compra.get('id') == op_id:
+                    monto = compra.get('preciototal', '')
+                    proveedor = compra.get('proveedor', '').replace(' ', '_')  # Reemplazar espacios con guiones bajos
+                    break
+        except Exception as e:
+            logger.error(f"Error al obtener datos de compra para ID {op_id}: {e}")
+    
+    # Generar nombre de archivo con formato mejorado
+    if tipo_op.upper() == "COMPRA" and monto and proveedor:
+        nombre_archivo = f"{tipo_op}_{op_id}_{proveedor}_{monto}.jpg"
+    else:
+        # Mantener el formato anterior para otros casos o cuando falten datos
+        nombre_archivo = f"{tipo_op}_{op_id}_{uuid.uuid4().hex[:8]}.jpg"
     
     # Determinar si usar Google Drive o almacenamiento local
     drive_file_info = None
