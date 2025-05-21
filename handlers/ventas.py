@@ -4,7 +4,7 @@ from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import CommandHandler, ConversationHandler, MessageHandler, filters, ContextTypes
 from config import VENTAS_FILE
 from utils.db import append_data
-from utils.helpers import safe_float
+from utils.helpers import safe_float, get_now_peru, format_date_for_sheets
 from utils.sheets import get_almacen_cantidad, FASES_CAFE, update_almacen, HEADERS
 
 # Configurar logging
@@ -247,9 +247,12 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         # Preparar datos para guardar
         venta = datos_venta[user_id].copy()
         
-        # Añadir fecha y hora actuales
-        ahora = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        venta["fecha"] = ahora
+        # Obtener fecha y hora actuales en zona horaria de Perú
+        now_peru = get_now_peru()
+        fecha_peruana = now_peru.strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Aplicar formato para evitar conversión automática en Sheets
+        venta["fecha"] = format_date_for_sheets(fecha_peruana)
         
         # Añadir notas si no existe
         if "notas" not in venta:
