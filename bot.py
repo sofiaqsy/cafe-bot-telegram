@@ -23,22 +23,87 @@ from utils.sheets import initialize_sheets
 # Log inicial
 logger.info("=== INICIANDO BOT DE CAFE - MODO EMERGENCIA ===")
 
+# Inicializar variables para los handlers
+register_compras_handlers = None
+register_proceso_handlers = None
+register_gastos_handlers = None
+register_ventas_handlers = None
+register_reportes_handlers = None
+register_pedidos_handlers = None
+register_adelantos_handlers = None
+register_compra_adelanto_handlers = None
+register_almacen_handlers = None
+register_evidencias_handlers = None
+register_documento_emergency_handlers = None
+register_diagnostico_handlers = None
+
 # Intentar importar handlers con captura de errores
 try:
     logger.info("Importando handlers...")
     
     # Importar handlers
     from handlers.start import start_command, help_command
-    from handlers.compras import register_compras_handlers
-    from handlers.proceso import register_proceso_handlers
-    from handlers.gastos import register_gastos_handlers
-    from handlers.ventas import register_ventas_handlers
-    from handlers.reportes import register_reportes_handlers
-    from handlers.pedidos import register_pedidos_handlers
-    from handlers.adelantos import register_adelantos_handlers
-    from handlers.compra_adelanto import register_compra_adelanto_handlers
-    from handlers.almacen import register_almacen_handlers
-    from handlers.evidencias import register_evidencias_handlers
+    
+    try:
+        from handlers.compras import register_compras_handlers
+        logger.info("Handler de compras importado correctamente")
+    except Exception as e:
+        logger.error(f"Error al importar handler de compras: {e}")
+    
+    try:
+        from handlers.proceso import register_proceso_handlers
+        logger.info("Handler de proceso importado correctamente")
+    except Exception as e:
+        logger.error(f"Error al importar handler de proceso: {e}")
+    
+    try:
+        from handlers.gastos import register_gastos_handlers
+        logger.info("Handler de gastos importado correctamente")
+    except Exception as e:
+        logger.error(f"Error al importar handler de gastos: {e}")
+    
+    try:
+        from handlers.ventas import register_ventas_handlers
+        logger.info("Handler de ventas importado correctamente")
+    except Exception as e:
+        logger.error(f"Error al importar handler de ventas: {e}")
+    
+    try:
+        from handlers.reportes import register_reportes_handlers
+        logger.info("Handler de reportes importado correctamente")
+    except Exception as e:
+        logger.error(f"Error al importar handler de reportes: {e}")
+    
+    try:
+        from handlers.pedidos import register_pedidos_handlers
+        logger.info("Handler de pedidos importado correctamente")
+    except Exception as e:
+        logger.error(f"Error al importar handler de pedidos: {e}")
+    
+    try:
+        from handlers.adelantos import register_adelantos_handlers
+        logger.info("Handler de adelantos importado correctamente")
+    except Exception as e:
+        logger.error(f"Error al importar handler de adelantos: {e}")
+    
+    try:
+        from handlers.compra_adelanto import register_compra_adelanto_handlers
+        logger.info("Handler de compra_adelanto importado correctamente")
+    except Exception as e:
+        logger.error(f"Error al importar handler de compra_adelanto: {e}")
+    
+    try:
+        from handlers.almacen import register_almacen_handlers
+        logger.info("Handler de almacen importado correctamente")
+    except Exception as e:
+        logger.error(f"Error al importar handler de almacen: {e}")
+    
+    try:
+        from handlers.evidencias import register_evidencias_handlers
+        logger.info("Handler de evidencias importado correctamente")
+    except Exception as e:
+        logger.error(f"Error al importar handler de evidencias: {e}")
+        logger.error(traceback.format_exc())
     
     # NUEVO: Importar el módulo de emergencia para documentos
     try:
@@ -48,7 +113,6 @@ try:
     except Exception as e:
         logger.error(f"ERROR importando módulo de emergencia para documentos: {e}")
         logger.error(traceback.format_exc())
-        register_documento_emergency_handlers = None
     
     # Import del módulo de diagnóstico
     try:
@@ -58,7 +122,6 @@ try:
     except Exception as e:
         logger.error(f"ERROR importando módulo diagnostico: {e}")
         logger.error(traceback.format_exc())
-        register_diagnostico_handlers = None
     
     logger.info("Todos los handlers importados correctamente")
     
@@ -204,19 +267,30 @@ def main():
     handlers_registrados = 0
     handlers_fallidos = 0
     
-    # Lista de funciones de registro de handlers
-    handler_functions = [
-        ("compras", register_compras_handlers),
-        ("proceso", register_proceso_handlers),
-        ("gastos", register_gastos_handlers),
-        ("ventas", register_ventas_handlers),
-        ("reportes", register_reportes_handlers),
-        ("pedidos", register_pedidos_handlers),
-        ("adelantos", register_adelantos_handlers),
-        ("compra_adelanto", register_compra_adelanto_handlers),
-        ("almacen", register_almacen_handlers),
-        ("evidencias", register_evidencias_handlers)
-    ]
+    # Lista de funciones de registro de handlers disponibles
+    handler_functions = []
+    
+    # Añadir solo handlers que se han importado correctamente
+    if register_compras_handlers:
+        handler_functions.append(("compras", register_compras_handlers))
+    if register_proceso_handlers:
+        handler_functions.append(("proceso", register_proceso_handlers))
+    if register_gastos_handlers:
+        handler_functions.append(("gastos", register_gastos_handlers))
+    if register_ventas_handlers:
+        handler_functions.append(("ventas", register_ventas_handlers))
+    if register_reportes_handlers:
+        handler_functions.append(("reportes", register_reportes_handlers))
+    if register_pedidos_handlers:
+        handler_functions.append(("pedidos", register_pedidos_handlers))
+    if register_adelantos_handlers:
+        handler_functions.append(("adelantos", register_adelantos_handlers))
+    if register_compra_adelanto_handlers:
+        handler_functions.append(("compra_adelanto", register_compra_adelanto_handlers))
+    if register_almacen_handlers:
+        handler_functions.append(("almacen", register_almacen_handlers))
+    if register_evidencias_handlers:
+        handler_functions.append(("evidencias", register_evidencias_handlers))
     
     # Registrar cada handler con manejo de excepciones individual
     for name, handler_func in handler_functions:
@@ -282,7 +356,7 @@ def main():
             logger.error(traceback.format_exc())
             handlers_fallidos += 1
     else:
-        logger.error("No se pudo registrar el handler de diagnóstico: Módulo no disponible")
+        logger.warning("No se pudo registrar el handler de diagnóstico: Módulo no disponible")
         handlers_fallidos += 1
     
     # Registrar comando de drive_status
@@ -335,6 +409,29 @@ def main():
     except Exception as e:
         logger.error(f"Error al registrar comando de test directo: {e}")
         logger.error(traceback.format_exc())
+    
+    # Registrar comando de evidencia mínimo si el handler normal falló
+    if "evidencias" not in [name for name, _ in handler_functions]:
+        try:
+            logger.info("Implementando handler mínimo para /evidencia como último recurso...")
+            
+            async def evidencia_minimo(update, context):
+                await update.message.reply_text(
+                    "⚠️ El sistema de evidencias está en mantenimiento.\n\n"
+                    "Por favor, envía tu evidencia de pago como una foto normal, "
+                    "e incluye en la descripción:\n"
+                    "- Tipo: COMPRA o VENTA\n"
+                    "- ID de la operación\n\n"
+                    "Un administrador procesará tu evidencia manualmente."
+                )
+            
+            application.add_handler(CommandHandler("evidencia", evidencia_minimo))
+            logger.info("Handler mínimo para /evidencia implementado correctamente")
+            handlers_registrados += 1
+        except Exception as e:
+            logger.error(f"Error al implementar handler mínimo para /evidencia: {e}")
+            logger.error(traceback.format_exc())
+            handlers_fallidos += 1
     
     # Resumen de registro de handlers
     logger.info(f"Resumen de registro de handlers: {handlers_registrados} éxitos, {handlers_fallidos} fallos")

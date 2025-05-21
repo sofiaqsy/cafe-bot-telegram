@@ -11,7 +11,7 @@ from telegram.ext import CommandHandler, MessageHandler, filters, ContextTypes, 
 from utils.sheets import get_all_data, append_data as append_sheets, generate_unique_id, get_filtered_data
 from utils.helpers import get_now_peru, format_date_for_sheets
 from utils.drive import upload_file_to_drive, setup_drive_folders
-from config import UPLOADS_FOLDER, DRIVE_ENABLED, DRIVE_EVIDENCIAS_COMPRAS_ID, DRIVE_EVIDENCIAS_VENTAS_ID
+from config import UPLOADS_FOLDER, DRIVE_ENABLED, DRIVE_EVIDENCIAS_COMPRAS_ID, DRIVE_EVIDENCIAS_VENTAS_ID, DRIVE_EVIDENCIAS_ROOT_ID
 
 # Configurar logging
 logger = logging.getLogger(__name__)
@@ -279,23 +279,26 @@ async def subir_documento(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         folder_id = DRIVE_EVIDENCIAS_VENTAS_ID if DRIVE_ENABLED else None
         logger.info(f"Evidencia de VENTA - Se guardará en la carpeta: {VENTAS_FOLDER}")
     
-    # Determinar si usar Google Drive o almacenamiento local
+    # Siempre guardar una copia local primero
+    local_path = os.path.join(local_folder, nombre_archivo)
+    await file.download_to_drive(local_path)
+    logger.info(f"Archivo guardado localmente en: {local_path}")
+    datos_evidencia[user_id]["ruta_archivo"] = os.path.join(datos_evidencia[user_id]["folder_name"], nombre_archivo)
+    
+    # Determinar si usar Google Drive además del almacenamiento local
     drive_file_info = None
     if DRIVE_ENABLED and folder_id:
         try:
-            # Descargar el archivo a memoria
+            # Descargar el archivo a memoria para subir a Drive
             file_bytes = await file.download_as_bytearray()
             
             # Verificar que el folder_id es válido
             if not folder_id or folder_id.strip() == "":
                 logger.error(f"ID de carpeta de Drive inválido: '{folder_id}'. Verificar configuración.")
                 await update.message.reply_text(
-                    "⚠️ Error en la configuración de Google Drive. Se usará almacenamiento local.",
+                    "⚠️ Error en la configuración de Google Drive. Se usará solo almacenamiento local.",
                     parse_mode="Markdown"
                 )
-                # Fallback a almacenamiento local
-                ruta_completa = os.path.join(local_folder, nombre_archivo)
-                await file.download_to_drive(ruta_completa)
             else:
                 # Subir el archivo a Drive
                 logger.info(f"Iniciando subida a Drive en carpeta: {folder_id}")
@@ -305,39 +308,13 @@ async def subir_documento(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     # Guardar la información de Drive
                     datos_evidencia[user_id]["drive_file_id"] = drive_file_info.get("id")
                     datos_evidencia[user_id]["drive_view_link"] = drive_file_info.get("webViewLink")
-                    logger.info(f"Archivo subido a Drive: ID={drive_file_info.get('id')}, Enlace={drive_file_info.get('webViewLink')}")
-                    
-                    # Guardar la ruta con formato especial para identificar que está en Drive
-                    ruta_completa = f"GoogleDrive:{drive_file_info.get('id')}:{nombre_archivo}"
-                    datos_evidencia[user_id]["ruta_archivo"] = ruta_completa
-                    
-                    # También guardar localmente como respaldo
-                    try:
-                        local_path = os.path.join(local_folder, nombre_archivo)
-                        await file.download_to_drive(local_path)
-                        logger.info(f"Copia de respaldo guardada localmente en: {local_path}")
-                    except Exception as e:
-                        logger.warning(f"No se pudo guardar copia local de respaldo: {e}")
+                    logger.info(f"Archivo también subido a Drive: ID={drive_file_info.get('id')}, Enlace={drive_file_info.get('webViewLink')}")
                 else:
-                    logger.error("Error al subir archivo a Drive, usando almacenamiento local como respaldo")
-                    # Fallback a almacenamiento local
-                    ruta_completa = os.path.join(local_folder, nombre_archivo)
-                    await file.download_to_drive(ruta_completa)
-                    datos_evidencia[user_id]["ruta_archivo"] = ruta_completa
+                    logger.error("Error al subir archivo a Drive, usando solo almacenamiento local")
         except Exception as e:
             logger.error(f"Error al subir a Drive: {e}")
             logger.error(f"Detalles del error: {str(e)}")
-            # Fallback a almacenamiento local
-            ruta_completa = os.path.join(local_folder, nombre_archivo)
-            await file.download_to_drive(ruta_completa)
-            datos_evidencia[user_id]["ruta_archivo"] = ruta_completa
-    else:
-        # Almacenamiento local específico para el tipo de operación
-        ruta_completa = os.path.join(local_folder, nombre_archivo)
-        await file.download_to_drive(ruta_completa)
-        datos_evidencia[user_id]["ruta_archivo"] = ruta_completa
-    
-    logger.info(f"Archivo guardado en: {ruta_completa}")
+            # Ya tenemos el archivo guardado localmente, así que continuamos
     
     # Preparar mensaje de confirmación
     mensaje_confirmacion = f"Tipo de operación: {datos_evidencia[user_id]['tipo_operacion']}\n" \
@@ -406,16 +383,6 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     
     # Añadir notas vacías (para mantener estructura)
     documento["notas"] = ""
-    
-    # Procesar la ruta del archivo
-    if "GoogleDrive:" in documento["ruta_archivo"]:
-        # Es un archivo en Drive, mantener la cadena completa para referencia
-        pass
-    else:
-        # Es un archivo local, construir la ruta correcta con la carpeta apropiada
-        folder_name = documento["folder_name"]  # Extraída en seleccionar_tipo
-        nombre_archivo = documento["nombre_archivo"]  # Extraído en subir_documento
-        documento["ruta_archivo"] = f"{folder_name}/{nombre_archivo}"
     
     # Asegurar que los campos de Drive estén presentes
     if "drive_file_id" not in documento:
@@ -513,18 +480,24 @@ async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 def register_evidencias_handlers(application):
     """Registra los handlers para el módulo de evidencias"""
-    # Crear un handler de conversación para el flujo completo de evidencias
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("evidencia", evidencia_command)],
-        states={
-            SELECCIONAR_TIPO: [MessageHandler(filters.TEXT & ~filters.COMMAND, seleccionar_tipo)],
-            SELECCIONAR_OPERACION: [MessageHandler(filters.TEXT & ~filters.COMMAND, seleccionar_operacion)],
-            SUBIR_DOCUMENTO: [MessageHandler(filters.PHOTO, subir_documento)],
-            CONFIRMAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirmar)],
-        },
-        fallbacks=[CommandHandler("cancelar", cancelar)],
-    )
-    
-    # Agregar el manejador al dispatcher
-    application.add_handler(conv_handler)
-    logger.info("Handler de evidencias registrado")
+    try:
+        # Crear un handler de conversación para el flujo completo de evidencias
+        conv_handler = ConversationHandler(
+            entry_points=[CommandHandler("evidencia", evidencia_command)],
+            states={
+                SELECCIONAR_TIPO: [MessageHandler(filters.TEXT & ~filters.COMMAND, seleccionar_tipo)],
+                SELECCIONAR_OPERACION: [MessageHandler(filters.TEXT & ~filters.COMMAND, seleccionar_operacion)],
+                SUBIR_DOCUMENTO: [MessageHandler(filters.PHOTO, subir_documento)],
+                CONFIRMAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirmar)],
+            },
+            fallbacks=[CommandHandler("cancelar", cancelar)],
+        )
+        
+        # Agregar el manejador al dispatcher
+        application.add_handler(conv_handler)
+        logger.info("Handler de evidencias registrado")
+        return True
+    except Exception as e:
+        logger.error(f"Error al registrar handler de evidencias: {e}")
+        logger.error(traceback.format_exc())
+        return False
