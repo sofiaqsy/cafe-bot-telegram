@@ -8,12 +8,11 @@ from telegram.ext import (
     ConversationHandler,
     CallbackQueryHandler
 )
-from datetime import datetime
 import traceback
 
 # Importar módulos para Google Sheets
 from utils.db import append_data, get_all_data
-from utils.helpers import format_currency, get_now_peru
+from utils.helpers import format_currency, get_now_peru, format_date_for_sheets
 from utils.sheets import update_cell
 
 # Estados para la conversación
@@ -24,11 +23,6 @@ logger = logging.getLogger(__name__)
 
 # Headers para la hoja de adelantos
 ADELANTOS_HEADERS = ["fecha", "hora", "proveedor", "monto", "saldo_restante", "notas", "registrado_por"]
-
-# Función para obtener fecha y hora actuales
-def get_now():
-    now = datetime.now()
-    return now.strftime("%Y-%m-%d"), now.strftime("%H:%M:%S")
 
 # Funciones para el manejo de adelantos
 async def adelanto_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -122,12 +116,17 @@ async def confirmar_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     respuesta = update.message.text.lower()
     
     if respuesta in ['sí', 'si', 's', 'yes', 'y']:
-        # Guardar el adelanto
-        fecha, hora = get_now()
+        # Obtener fecha y hora de Perú
+        now_peru = get_now_peru()
+        fecha_peruana = now_peru.strftime("%Y-%m-%d")
+        hora_peruana = now_peru.strftime("%H:%M:%S")
+        
+        # Aplicar formato para evitar conversión automática en Sheets
+        fecha_formateada = format_date_for_sheets(fecha_peruana)
         
         data = {
-            "fecha": fecha,
-            "hora": hora,
+            "fecha": fecha_formateada,
+            "hora": hora_peruana,
             "proveedor": context.user_data['proveedor'],
             "monto": context.user_data['monto'],
             "saldo_restante": context.user_data['saldo_restante'],
