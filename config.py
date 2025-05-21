@@ -1,4 +1,5 @@
 import os
+import logging
 from dotenv import load_dotenv
 import pathlib
 
@@ -47,3 +48,26 @@ def check_sheets_config():
 
 # Inicializar Google Sheets cuando se importa este módulo
 sheets_configured = check_sheets_config()
+
+# Configurar logging para este módulo
+logger = logging.getLogger(__name__)
+
+# Registro de configuración para diagnóstico
+logger.info("=== CONFIGURACIÓN CARGADA ===")
+logger.info(f"DRIVE_ENABLED: {DRIVE_ENABLED}")
+logger.info(f"DRIVE_EVIDENCIAS_ROOT_ID: {DRIVE_EVIDENCIAS_ROOT_ID[:10] + '...' if DRIVE_EVIDENCIAS_ROOT_ID else 'No configurado'}")
+logger.info(f"DRIVE_EVIDENCIAS_COMPRAS_ID: {DRIVE_EVIDENCIAS_COMPRAS_ID[:10] + '...' if DRIVE_EVIDENCIAS_COMPRAS_ID else 'No configurado'}")
+logger.info(f"DRIVE_EVIDENCIAS_VENTAS_ID: {DRIVE_EVIDENCIAS_VENTAS_ID[:10] + '...' if DRIVE_EVIDENCIAS_VENTAS_ID else 'No configurado'}")
+logger.info(f"SPREADSHEET_ID: {SPREADSHEET_ID[:10] + '...' if SPREADSHEET_ID else 'No configurado'}")
+logger.info(f"GOOGLE_CREDENTIALS: {'Configurado' if GOOGLE_CREDENTIALS else 'No configurado'}")
+logger.info(f"UPLOADS_FOLDER: {UPLOADS_FOLDER}")
+logger.info("=== FIN DE CONFIGURACIÓN ===")
+
+# Función para actualizar las variables de entorno en ejecución
+# (útil cuando se configuran automáticamente las carpetas de Drive)
+def update_env_var(name, value):
+    """Actualiza una variable de entorno en tiempo de ejecución"""
+    os.environ[name] = value
+    globals()[name] = value
+    logger.info(f"Variable de entorno actualizada: {name}={value[:10] + '...' if value and len(value) > 10 else value}")
+    return True

@@ -1,130 +1,107 @@
 # Bot de Telegram para Gestión de Café
 
-Un bot de Telegram completo para gestionar operaciones relacionadas con un negocio de café, desde la compra de café en cereza hasta la venta final, incluyendo procesamiento y control de gastos.
+Bot de Telegram para la gestión completa de un negocio de café, desde la compra hasta la venta.
 
-![Café Bot](https://img.shields.io/badge/Bot-Telegram-0088cc)
-![Python](https://img.shields.io/badge/Python-3.9%2B-blue)
-![Licencia](https://img.shields.io/badge/Licencia-MIT-green)
+## Características
 
-## 🚀 Características
+- **Gestión de Compras**: Registra y organiza compras de café.
+- **Procesamiento**: Seguimiento del procesamiento de café.
+- **Ventas**: Registro y gestión de ventas.
+- **Gestión de Costos**: Registro de gastos asociados a la operación.
+- **Evidencias**: Subida de evidencias fotográficas de compras y ventas, con integración a Google Drive.
+- **Pedidos**: Gestión de pedidos y estado de entrega.
+- **Reportes**: Generación de reportes de operación.
+- **Adelantos**: Manejo de adelantos de pago.
+- **Control de Almacén**: Seguimiento de inventario.
 
-- ☕ **Gestión de Compras**: Registro detallado de proveedores, cantidad, precio y calidad
-- 🔄 **Procesamiento de Café**: Control del flujo desde cereza hasta producto final
-- 💰 **Control de Gastos**: Registro categorizado de gastos operativos
-- 💼 **Gestión de Ventas**: Registro de clientes, precios y cálculo de utilidades
-- 📊 **Reportes Avanzados**: Diarios, semanales y mensuales
-- 📦 **Control de Inventario**: Seguimiento del café disponible por estado
-- 📱 **Interfaz de Telegram**: Accesible desde cualquier dispositivo
+## Configuración
 
-## 📋 Requisitos
+### Requisitos
 
 - Python 3.9 o superior
-- Cuenta de Telegram
-- Token de bot (obtenido a través de [@BotFather](https://t.me/botfather))
-- Bibliotecas de Python (ver `requirements.txt`)
+- Una cuenta de Telegram
+- Token de bot de Telegram (obtenido a través de [BotFather](https://t.me/botfather))
+- Cuenta de Google y credenciales para Google Sheets y Google Drive
 
-## 🛠️ Instalación
+### Variables de Entorno
 
-1. **Clonar el repositorio**:
-```bash
-git clone https://github.com/sofiaqsy/cafe-bot-telegram.git
-cd cafe-bot-telegram
-```
-
-2. **Crear un entorno virtual**:
-```bash
-python -m venv venv
-source venv/bin/activate  # En Windows: venv\Scripts\activate
-```
-
-3. **Instalar dependencias**:
-```bash
-pip install -r requirements.txt
-```
-
-4. **Configurar el token**:
-   - Copia `.env.example` a `.env`
-   - Edita `.env` y añade tu token de bot
-
-5. **Ejecutar el bot**:
-```bash
-python bot.py
-```
-
-## 🤖 Uso
-
-1. **Inicia una conversación** con tu bot en Telegram
-2. Usa el comando `/start` para comenzar
-3. Sigue las instrucciones para cada operación:
-   - `/compra` - Registrar compra de café
-   - `/proceso` - Registrar procesamiento
-   - `/gasto` - Registrar gastos
-   - `/venta` - Registrar venta
-   - `/reporte` - Ver reportes
-
-## 📁 Estructura del Proyecto
+Crea un archivo `.env` en el directorio raíz con las siguientes variables:
 
 ```
-cafe_bot/
-├── bot.py                 # Archivo principal
-├── config.py              # Configuraciones
-├── handlers/              # Manejadores de comandos
-│   ├── compras.py
-│   ├── proceso.py
-│   ├── gastos.py
-│   ├── ventas.py
-│   └── reportes.py
-├── utils/                 # Utilidades
-│   ├── db.py              # Manejo de CSV
-│   ├── helpers.py         # Funciones auxiliares
-│   └── validators.py      # Validadores
-└── data/                  # Datos almacenados
-    ├── compras.csv
-    ├── proceso.csv
-    ├── gastos.csv
-    └── ventas.csv
+TELEGRAM_BOT_TOKEN=tu_token_de_bot
+SPREADSHEET_ID=id_de_tu_hoja_de_google_sheets
+GOOGLE_CREDENTIALS=contenido_del_json_de_credenciales_o_ruta_al_archivo
+DRIVE_ENABLED=true
 ```
 
-## 🔄 Flujo de Trabajo
+### Instalación
 
-1. **Compra** → 2. **Procesamiento** → 3. **Venta**
-   (Con registro de gastos en cualquier momento)
+1. Clona el repositorio:
+   ```bash
+   git clone https://github.com/sofiaqsy/cafe-bot-telegram.git
+   cd cafe-bot-telegram
+   ```
 
-## 📊 Reportes Disponibles
+2. Instala las dependencias:
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-- **General**: Histórico completo
-- **Diario**: Operaciones del día
-- **Semanal**: Últimos 7 días 
-- **Mensual**: Últimos 30 días
+3. Ejecuta el bot:
+   ```bash
+   python bot.py
+   ```
 
-## 🛡️ Control de Inventario
+## Despliegue en Heroku
 
-El sistema mantiene un control detallado del café:
-- **Pendiente**: Café disponible para procesar
-- **Procesado parcialmente**: Parte del lote procesado
-- **Procesado completamente**: Lote agotado
+Este proyecto incluye la configuración necesaria para desplegarlo en Heroku. Para obtener instrucciones detalladas, consulta [HEROKU_DEPLOY.md](HEROKU_DEPLOY.md).
 
-## 📃 Documentación
+## Comandos del Bot
 
-Consulta la carpeta `/docs` para documentación completa del proyecto.
+- `/start` - Inicia el bot y muestra información básica
+- `/help` o `/ayuda` - Muestra la lista de comandos disponibles
+- `/compra` - Registra una nueva compra de café
+- `/venta` - Registra una nueva venta
+- `/proceso` - Registra procesamiento de café
+- `/gastos` - Registra gastos operativos
+- `/evidencia` - Sube evidencias fotográficas de compras o ventas
+- `/pedido` - Gestiona pedidos
+- `/reporte` - Genera reportes de operación
+- `/almacen` - Gestiona inventario
+- `/adelanto` - Registra adelantos de pago
+- `/drive_status` - Verifica el estado de la integración con Google Drive
+- `/test_bot` - Comprueba que el bot está funcionando correctamente
 
-## 🤝 Contribuir
+## Estructura del Proyecto
 
-Las contribuciones son bienvenidas. Si quieres mejorar este proyecto:
+- `bot.py` - Punto de entrada principal del bot
+- `config.py` - Configuración del bot
+- `handlers/` - Manejadores de comandos del bot
+  - `start.py` - Manejador de los comandos `/start` y `/help`
+  - `compras.py` - Manejador del comando `/compra`
+  - `ventas.py` - Manejador del comando `/venta`
+  - `evidencias.py` - Manejador del comando `/evidencia`
+  - (y otros manejadores de comandos)
+- `utils/` - Funciones de utilidad
+  - `sheets.py` - Funciones para interactuar con Google Sheets
+  - `drive.py` - Funciones para interactuar con Google Drive
+  - `helpers.py` - Funciones auxiliares generales
+- `uploads/` - Directorio para almacenar archivos subidos (no incluido en el repositorio)
+
+## Diagnóstico y Solución de Problemas
+
+Si encuentras problemas con la integración de Google Drive, puedes usar el comando `/drive_status` para obtener información sobre la configuración actual. También puedes verificar los logs para obtener más detalles sobre posibles errores.
+
+## Licencia
+
+Este proyecto está licenciado bajo la licencia MIT. Ver el archivo LICENSE para más detalles.
+
+## Contribuciones
+
+Las contribuciones son bienvenidas. Por favor, sigue estos pasos:
+
 1. Haz un fork del repositorio
-2. Crea una rama para tu función: `git checkout -b nueva-funcion`
-3. Realiza tus cambios y haz commit: `git commit -m 'Añadir nueva función'`
-4. Envía tus cambios: `git push origin nueva-funcion`
+2. Crea una rama para tu característica (`git checkout -b feature/amazing-feature`)
+3. Haz commit de tus cambios (`git commit -m 'Add some amazing feature'`)
+4. Empuja tu rama (`git push origin feature/amazing-feature`)
 5. Abre un Pull Request
-
-## 📝 Licencia
-
-Este proyecto está bajo la Licencia MIT. Consulta el archivo `LICENSE` para más detalles.
-
-## 🙋 Soporte
-
-Si tienes preguntas o problemas, abre un issue en este repositorio.
-
----
-
-Desarrollado con ☕ y 💙
