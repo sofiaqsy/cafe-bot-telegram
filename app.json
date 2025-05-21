@@ -1,0 +1,52 @@
+{
+  "name": "Cafe Bot Telegram",
+  "description": "Bot de Telegram para gestión completa de operaciones de un negocio de café",
+  "repository": "https://github.com/sofiaqsy/cafe-bot-telegram",
+  "logo": "https://raw.githubusercontent.com/sofiaqsy/cafe-bot-telegram/main/logo.png",
+  "keywords": ["python", "telegram", "bot", "cafe", "google-drive", "google-sheets"],
+  "env": {
+    "TELEGRAM_BOT_TOKEN": {
+      "description": "Token del bot de Telegram (obtenido de BotFather)",
+      "required": true
+    },
+    "SPREADSHEET_ID": {
+      "description": "ID de la hoja de Google Sheets para almacenar datos",
+      "required": true
+    },
+    "DRIVE_ENABLED": {
+      "description": "Habilitar la integración con Google Drive (true/false)",
+      "value": "true",
+      "required": true
+    },
+    "GOOGLE_CREDENTIALS": {
+      "description": "Credenciales de servicio de Google (JSON completo)",
+      "required": true
+    },
+    "DRIVE_EVIDENCIAS_ROOT_ID": {
+      "description": "ID de la carpeta raíz en Google Drive para evidencias",
+      "required": false
+    },
+    "DRIVE_EVIDENCIAS_COMPRAS_ID": {
+      "description": "ID de la carpeta para evidencias de compras en Google Drive",
+      "required": false
+    },
+    "DRIVE_EVIDENCIAS_VENTAS_ID": {
+      "description": "ID de la carpeta para evidencias de ventas en Google Drive",
+      "required": false
+    }
+  },
+  "buildpacks": [
+    {
+      "url": "heroku/python"
+    }
+  ],
+  "formation": {
+    "worker": {
+      "quantity": 1,
+      "size": "eco"
+    }
+  },
+  "scripts": {
+    "postdeploy": "bash init_dirs.sh"
+  }
+}
