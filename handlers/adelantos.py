@@ -12,8 +12,10 @@ import traceback
 
 # Importar módulos para Google Sheets
 from utils.db import append_data, get_all_data
-from utils.helpers import format_currency, get_now_peru, format_date_for_sheets
+from utils.helpers import get_now_peru, format_date_for_sheets
 from utils.sheets import update_cell
+# Importar nuevo módulo de formateo numérico
+from utils.formatters import formatear_numero, formatear_precio, procesar_entrada_numerica
 
 # Estados para la conversación
 PROVEEDOR, MONTO, NOTAS, CONFIRMAR = range(4)
@@ -58,22 +60,24 @@ async def proveedor_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             saldo_total = sum(float(adelanto.get('saldo_restante', 0)) for adelanto in adelantos_proveedor)
             await update.message.reply_text(
                 f"ℹ️ El proveedor {context.user_data['proveedor']} ya tiene adelantos vigentes "
-                f"por un total de {format_currency(saldo_total)}.\n\n"
+                f"por un total de {formatear_precio(saldo_total)}.\n\n"
                 "Este nuevo adelanto se sumará al saldo existente."
             )
     except Exception as e:
         logger.error(f"Error al verificar adelantos del proveedor: {e}")
     
     await update.message.reply_text(
-        "💸 ¿Cuál es el monto del adelanto? (en S/)"
+        "💸 ¿Cuál es el monto del adelanto? (en S/)\n"
+        "Puedes usar punto o coma como separador decimal."
     )
     return MONTO
 
 async def monto_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Recibir monto del adelanto"""
     try:
-        monto_text = update.message.text.replace(',', '.').strip()
-        monto = float(monto_text)
+        # Usar la nueva función para procesar entrada numérica
+        monto_text = update.message.text.strip()
+        monto = procesar_entrada_numerica(monto_text)
         
         if monto <= 0:
             await update.message.reply_text("⚠️ El monto debe ser mayor a cero. Intenta de nuevo:")
@@ -87,9 +91,9 @@ async def monto_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             "(Envía '-' si no deseas agregar notas)"
         )
         return NOTAS
-    except ValueError:
+    except ValueError as e:
         await update.message.reply_text(
-            "⚠️ El valor ingresado no es válido. Por favor, ingresa solo números:"
+            f"⚠️ {str(e)}. Por favor, ingresa un número válido:"
         )
         return MONTO
 
@@ -100,12 +104,12 @@ async def notas_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     else:
         context.user_data['notas'] = update.message.text.strip()
     
-    # Mostrar resumen para confirmar
+    # Mostrar resumen para confirmar con formato estandarizado
     await update.message.reply_text(
         f"📋 RESUMEN DEL ADELANTO\n\n"
         f"Proveedor: {context.user_data['proveedor']}\n"
-        f"Monto: {format_currency(context.user_data['monto'])}\n"
-        f"Saldo restante: {format_currency(context.user_data['saldo_restante'])}\n"
+        f"Monto: {formatear_precio(context.user_data['monto'])}\n"
+        f"Saldo restante: {formatear_precio(context.user_data['saldo_restante'])}\n"
         f"Notas: {context.user_data['notas'] or 'N/A'}\n\n"
         f"¿Confirmas este adelanto? (Sí/No)"
     )
@@ -140,7 +144,7 @@ async def confirmar_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             
             await update.message.reply_text(
                 f"✅ Adelanto registrado correctamente\n\n"
-                f"Se ha registrado un adelanto de {format_currency(context.user_data['monto'])} "
+                f"Se ha registrado un adelanto de {formatear_precio(context.user_data['monto'])} "
                 f"para el proveedor {context.user_data['proveedor']}.\n\n"
                 f"Este monto se descontará automáticamente de futuras compras a este proveedor.\n\n"
                 f"Usa /compra_adelanto para registrar una compra con este adelanto."
@@ -235,13 +239,13 @@ async def lista_adelantos_command(update: Update, context: ContextTypes.DEFAULT_
         
         for proveedor, datos in proveedores.items():
             keyboard.append([InlineKeyboardButton(
-                f"{proveedor} - {format_currency(datos['total_saldo'])}", 
+                f"{proveedor} - {formatear_precio(datos['total_saldo'])}", 
                 callback_data=f"proveedor_{proveedor}"
             )])
             
             mensaje += f"👨‍🌾 Proveedor: {proveedor}\n"
-            mensaje += f"💵 Total adelantado: {format_currency(datos['total_monto'])}\n"
-            mensaje += f"💰 Saldo disponible: {format_currency(datos['total_saldo'])}\n"
+            mensaje += f"💵 Total adelantado: {formatear_precio(datos['total_monto'])}\n"
+            mensaje += f"💰 Saldo disponible: {formatear_precio(datos['total_saldo'])}\n"
             mensaje += "\n"
         
         # Añadir instrucciones para usar adelantos
@@ -329,10 +333,10 @@ async def proveedor_adelantos_callback(update: Update, context: ContextTypes.DEF
         total_monto = sum(float(adelanto.get('monto', 0)) for adelanto in adelantos_proveedor)
         total_saldo = sum(float(adelanto.get('saldo_restante', 0)) for adelanto in adelantos_proveedor)
         
-        # Crear mensaje simplificado
+        # Crear mensaje simplificado con formato de número estandarizado
         mensaje = f"📋 ADELANTOS DE {proveedor.upper()}\n\n"
-        mensaje += f"💵 Total adelantado: {format_currency(total_monto)}\n"
-        mensaje += f"💰 Saldo disponible: {format_currency(total_saldo)}\n\n"
+        mensaje += f"💵 Total adelantado: {formatear_precio(total_monto)}\n"
+        mensaje += f"💰 Saldo disponible: {formatear_precio(total_saldo)}\n\n"
         
         # Botones para navegar y acciones
         keyboard = []
