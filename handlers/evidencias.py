@@ -423,17 +423,55 @@ async def subir_documento(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     # Obtener el archivo
     file = await context.bot.get_file(file_id)
     
-    # Crear un nombre único para el archivo incluyendo el monto
+    # Crear un nombre único para el archivo incluyendo el monto y la información relevante según el tipo de operación
     tipo_op = datos_evidencia[user_id]["tipo_operacion"].lower()
     op_id = datos_evidencia[user_id]["operacion_id"]
     monto = datos_evidencia[user_id]["monto"]
     
+    # Obtener información adicional según el tipo de operación
+    operacion_sheet = datos_evidencia[user_id]["folder_name"]  # compras, ventas, adelantos, gastos
+    operacion_data = get_filtered_data(operacion_sheet, {"id": op_id})
+    
+    # Información adicional para el nombre del archivo
+    info_adicional = ""
+    
     # Para gastos múltiples, usar un identificador único en lugar de todos los IDs
     if tipo_op.upper() == "GASTO" and "+" in op_id:
         gasto_count = len(op_id.split("+"))
-        nombre_archivo = f"{tipo_op}_multiple_{gasto_count}_gastos_S{monto}_{uuid.uuid4().hex[:8]}.jpg"
+        
+        # Intentar obtener el concepto del primer gasto
+        primero_id = op_id.split("+")[0]
+        gasto_data = get_filtered_data("gastos", {"id": primero_id})
+        if gasto_data and len(gasto_data) > 0:
+            concepto = gasto_data[0].get('concepto', '').replace(' ', '_')[:20]
+            info_adicional = f"concepto-{concepto}"
+        
+        nombre_archivo = f"{tipo_op}_multiple_{gasto_count}_gastos_{info_adicional}_S{monto}_{uuid.uuid4().hex[:8]}.jpg"
     else:
-        nombre_archivo = f"{tipo_op}_{op_id}_S{monto}_{uuid.uuid4().hex[:8]}.jpg"
+        # Obtener información específica según el tipo de operación
+        if operacion_data and len(operacion_data) > 0:
+            if tipo_op.upper() == "COMPRA":
+                # Para compras, incluir el nombre del proveedor
+                proveedor = operacion_data[0].get('proveedor', '').replace(' ', '_')[:20]
+                info_adicional = f"prov-{proveedor}"
+            elif tipo_op.upper() == "VENTA":
+                # Para ventas, incluir el nombre del cliente
+                cliente = operacion_data[0].get('cliente', '').replace(' ', '_')[:20]
+                info_adicional = f"cli-{cliente}"
+            elif tipo_op.upper() == "GASTO":
+                # Para gastos individuales, incluir el concepto
+                concepto = operacion_data[0].get('concepto', '').replace(' ', '_')[:20]
+                info_adicional = f"concepto-{concepto}"
+            elif tipo_op.upper() == "ADELANTO":
+                # Para adelantos, incluir el nombre del proveedor
+                proveedor = operacion_data[0].get('proveedor', '').replace(' ', '_')[:20]
+                info_adicional = f"prov-{proveedor}"
+        
+        # Añadir información adicional al nombre del archivo
+        if info_adicional:
+            nombre_archivo = f"{tipo_op}_{op_id}_{info_adicional}_S{monto}_{uuid.uuid4().hex[:8]}.jpg"
+        else:
+            nombre_archivo = f"{tipo_op}_{op_id}_S{monto}_{uuid.uuid4().hex[:8]}.jpg"
     
     # Guardar el nombre del archivo
     datos_evidencia[user_id]["nombre_archivo"] = nombre_archivo
