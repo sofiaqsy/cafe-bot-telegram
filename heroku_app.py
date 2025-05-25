@@ -57,6 +57,17 @@ except Exception as e:
     logger.error(traceback.format_exc())
     evidencias_importado = False
 
+# NUEVO: Importación para el handler de listado de evidencias
+try:
+    logger.info("Intentando importar el módulo evidencias_list...")
+    from handlers.evidencias_list import register_evidencias_list_handlers
+    logger.info("Módulo evidencias_list importado correctamente")
+    evidencias_list_importado = True
+except Exception as e:
+    logger.error(f"Error al importar el módulo evidencias_list: {e}")
+    logger.error(traceback.format_exc())
+    evidencias_list_importado = False
+
 # AÑADIDO: Funciones simples de emergencia para el comando /documento
 async def documento_simple(update, context):
     """Función simple para manejar el comando /documento cuando el módulo principal falla"""
@@ -94,6 +105,26 @@ async def evidencia_simple(update, context):
         return await documento_simple(update, context)
     except Exception as e:
         logger.error(f"Error en evidencia_simple: {e}")
+        await update.message.reply_text(
+            "❌ Ha ocurrido un error al procesar tu solicitud. Por favor, contacta al administrador."
+        )
+
+# NUEVO: Función simple de emergencia para el comando /evidencias
+async def evidencias_simple(update, context):
+    """Función simple para manejar el comando /evidencias cuando el módulo principal falla"""
+    try:
+        user = update.effective_user
+        logger.info(f"Comando /evidencias ejecutado por {user.username or user.first_name} (ID: {user.id})")
+        
+        # Respuesta simple cuando no se puede usar el comando /evidencias
+        await update.message.reply_text(
+            "📋 *LISTADO DE EVIDENCIAS*\n\n"
+            "Lo siento, el sistema de listado de evidencias está en mantenimiento.\n\n"
+            "Por favor, contacta al administrador para obtener un listado de las evidencias registradas.",
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        logger.error(f"Error en evidencias_simple: {e}")
         await update.message.reply_text(
             "❌ Ha ocurrido un error al procesar tu solicitud. Por favor, contacta al administrador."
         )
@@ -242,6 +273,7 @@ def main():
     # AÑADIDO: Intentar registrar los handlers de documentos y evidencias
     documento_handler_registrado = False
     evidencia_handler_registrado = False
+    evidencias_list_handler_registrado = False
     
     # Intentar registrar el handler de documentos
     if documents_importado:
@@ -268,6 +300,19 @@ def main():
             logger.error(traceback.format_exc())
     else:
         logger.warning("No se importó el módulo evidencias, se usará el handler simple")
+        
+    # NUEVO: Intentar registrar el handler de listado de evidencias
+    if evidencias_list_importado:
+        try:
+            logger.info("Registrando handler de listado de evidencias...")
+            register_evidencias_list_handlers(application)
+            logger.info("Handler de listado de evidencias registrado correctamente")
+            evidencias_list_handler_registrado = True
+        except Exception as e:
+            logger.error(f"Error al registrar handler de listado de evidencias: {e}")
+            logger.error(traceback.format_exc())
+    else:
+        logger.warning("No se importó el módulo evidencias_list, se usará el handler simple")
     
     # Handlers simples de respaldo
     # Si el handler principal de documentos falla, usar la versión simple
@@ -291,6 +336,17 @@ def main():
         except Exception as e:
             logger.error(f"Error al registrar handler simple para evidencias: {e}")
             logger.error(traceback.format_exc())
+            
+    # NUEVO: Si el handler principal de listado de evidencias falla, usar la versión simple
+    if not evidencias_list_handler_registrado:
+        try:
+            logger.info("Registrando handler simple para listado de evidencias...")
+            application.add_handler(CommandHandler("evidencias", evidencias_simple))
+            logger.info("Handler simple para listado de evidencias registrado correctamente")
+            evidencias_list_handler_registrado = True
+        except Exception as e:
+            logger.error(f"Error al registrar handler simple para listado de evidencias: {e}")
+            logger.error(traceback.format_exc())
     
     # Registrar handler para procesar fotos (siempre como respaldo)
     try:
@@ -304,7 +360,8 @@ def main():
         await update.message.reply_text(
             "✅ El bot está funcionando correctamente.\n\n"
             f"Sistema de documentos: {'ACTIVO' if documento_handler_registrado else 'INACTIVO'}\n"
-            f"Sistema de evidencias: {'ACTIVO' if evidencia_handler_registrado else 'INACTIVO'}"
+            f"Sistema de evidencias: {'ACTIVO' if evidencia_handler_registrado else 'INACTIVO'}\n"
+            f"Listado de evidencias: {'ACTIVO' if evidencias_list_handler_registrado else 'INACTIVO'}"
         )
     
     application.add_handler(CommandHandler("test_bot", test_bot))
