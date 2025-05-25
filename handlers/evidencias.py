@@ -1,13 +1,13 @@
 """
 Manejador para el comando /evidencia.
-Este comando permite seleccionar una operación (compra o venta) y subir una evidencia.
+Este comando permite seleccionar una operación (compra, venta, adelanto o gasto) y subir una evidencia.
 """
 
 import logging
 import os
 import uuid
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
-from telegram.ext import CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
+from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes, ConversationHandler
 from utils.sheets import get_all_data, append_data as append_sheets, generate_unique_id, get_filtered_data
 from utils.helpers import get_now_peru, format_date_for_sheets
 from utils.drive import upload_file_to_drive, setup_drive_folders
@@ -17,7 +17,7 @@ from config import UPLOADS_FOLDER, DRIVE_ENABLED, DRIVE_EVIDENCIAS_COMPRAS_ID, D
 logger = logging.getLogger(__name__)
 
 # Estados para la conversación
-SELECCIONAR_TIPO, SELECCIONAR_OPERACION, SUBIR_DOCUMENTO, CONFIRMAR = range(4)
+SELECCIONAR_TIPO, SELECCIONAR_OPERACION, SELECCIONAR_GASTOS, SUBIR_DOCUMENTO, CONFIRMAR = range(5)
 
 # Datos temporales
 datos_evidencia = {}
@@ -33,6 +33,8 @@ if not os.path.exists(UPLOADS_FOLDER):
 # Asegurar que existen los directorios para cada tipo de operación
 COMPRAS_FOLDER = os.path.join(UPLOADS_FOLDER, "compras")
 VENTAS_FOLDER = os.path.join(UPLOADS_FOLDER, "ventas")
+ADELANTOS_FOLDER = os.path.join(UPLOADS_FOLDER, "adelantos")
+GASTOS_FOLDER = os.path.join(UPLOADS_FOLDER, "gastos")
 
 if not os.path.exists(COMPRAS_FOLDER):
     os.makedirs(COMPRAS_FOLDER)
@@ -41,6 +43,14 @@ if not os.path.exists(COMPRAS_FOLDER):
 if not os.path.exists(VENTAS_FOLDER):
     os.makedirs(VENTAS_FOLDER)
     logger.info(f"Directorio para evidencias de ventas creado: {VENTAS_FOLDER}")
+
+if not os.path.exists(ADELANTOS_FOLDER):
+    os.makedirs(ADELANTOS_FOLDER)
+    logger.info(f"Directorio para evidencias de adelantos creado: {ADELANTOS_FOLDER}")
+
+if not os.path.exists(GASTOS_FOLDER):
+    os.makedirs(GASTOS_FOLDER)
+    logger.info(f"Directorio para evidencias de gastos creado: {GASTOS_FOLDER}")
 
 # Verificar la configuración de Google Drive al cargar el módulo
 if DRIVE_ENABLED:
@@ -68,19 +78,22 @@ async def evidencia_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     
     # Inicializar datos para este usuario
     datos_evidencia[user_id] = {
-        "registrado_por": update.effective_user.username or update.effective_user.first_name
+        "registrado_por": update.effective_user.username or update.effective_user.first_name,
+        "gastos_seleccionados": []  # Lista para almacenar múltiples gastos seleccionados
     }
     
-    # Ofrecer opciones para compras o ventas
+    # Ofrecer opciones para los diferentes tipos de operaciones
     keyboard = [
         ["🛒 Compras"],
         ["💰 Ventas"],
+        ["💸 Adelantos"],
+        ["📊 Gastos"],
         ["❌ Cancelar"]
     ]
     reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
     
     mensaje = "📋 *SELECCIONA EL TIPO DE OPERACIÓN*\n\n"
-    mensaje += "Elige si quieres registrar una evidencia de compra o de venta."
+    mensaje += "Elige para qué tipo de operación quieres registrar evidencia."
     
     await update.message.reply_text(mensaje, parse_mode="Markdown", reply_markup=reply_markup)
     
@@ -110,9 +123,21 @@ async def seleccionar_tipo(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         datos_evidencia[user_id]["tipo_operacion"] = tipo_operacion
         datos_evidencia[user_id]["folder_name"] = "ventas"  # Guardar el nombre de la carpeta
         logger.info(f"Usuario {user_id} seleccionó tipo de operación: {tipo_operacion}")
+    elif "adelantos" in respuesta.lower():
+        tipo_operacion = "ADELANTO"
+        operacion_plural = "adelantos"
+        datos_evidencia[user_id]["tipo_operacion"] = tipo_operacion
+        datos_evidencia[user_id]["folder_name"] = "adelantos"  # Guardar el nombre de la carpeta
+        logger.info(f"Usuario {user_id} seleccionó tipo de operación: {tipo_operacion}")
+    elif "gastos" in respuesta.lower():
+        tipo_operacion = "GASTO"
+        operacion_plural = "gastos"
+        datos_evidencia[user_id]["tipo_operacion"] = tipo_operacion
+        datos_evidencia[user_id]["folder_name"] = "gastos"  # Guardar el nombre de la carpeta
+        logger.info(f"Usuario {user_id} seleccionó tipo de operación: {tipo_operacion}")
     else:
         await update.message.reply_text(
-            "❌ Opción no válida. Por favor, selecciona 'Compras' o 'Ventas'.",
+            "❌ Opción no válida. Por favor, selecciona una de las opciones disponibles.",
             parse_mode="Markdown"
         )
         return SELECCIONAR_TIPO
@@ -126,10 +151,55 @@ async def seleccionar_tipo(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             # Ordenar las operaciones por fecha (más recientes primero)
             operaciones_recientes = sorted(operaciones, key=lambda x: x.get('fecha', ''), reverse=True)
             
-            # Limitar a las últimas 10 operaciones para el teclado
+            # Limitar a las últimas operaciones para el teclado
             operaciones_recientes = operaciones_recientes[:MAX_OPERACIONES]
             
-            # Crear teclado con las operaciones limitadas
+            # Para gastos usamos un enfoque diferente: selección múltiple con teclado inline
+            if tipo_operacion == "GASTO":
+                # Guardar las operaciones en context.user_data para usarlas en el callback
+                context.user_data["gastos_disponibles"] = operaciones_recientes
+                
+                # Crear mensaje con la lista de gastos disponibles
+                mensaje = "📊 *SELECCIÓN DE GASTOS*\n\n"
+                mensaje += "Puedes seleccionar uno o varios gastos para una misma evidencia.\n\n"
+                mensaje += "Gastos disponibles:\n"
+                
+                # Crear teclado inline para selección múltiple
+                keyboard = []
+                for i, gasto in enumerate(operaciones_recientes):
+                    concepto = gasto.get('concepto', 'Sin descripción')
+                    monto = gasto.get('monto', '0')
+                    fecha = gasto.get('fecha', 'Fecha desconocida')
+                    gasto_id = gasto.get('id', f'gasto_{i}')
+                    
+                    # Mostrar información resumida del gasto
+                    mensaje += f"• {concepto} - S/ {monto} ({fecha})\n"
+                    
+                    # Añadir botón para seleccionar este gasto
+                    keyboard.append([
+                        InlineKeyboardButton(
+                            f"{concepto} - S/ {monto}",
+                            callback_data=f"select_gasto_{gasto_id}"
+                        )
+                    ])
+                
+                # Botones para finalizar selección o cancelar
+                keyboard.append([
+                    InlineKeyboardButton("✅ Finalizar selección", callback_data="gastos_finalizar"),
+                    InlineKeyboardButton("❌ Cancelar", callback_data="gastos_cancelar")
+                ])
+                
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                await update.message.reply_text(
+                    mensaje,
+                    parse_mode="Markdown",
+                    reply_markup=reply_markup
+                )
+                
+                return SELECCIONAR_GASTOS
+            
+            # Para el resto de operaciones, mostrar teclado normal
             keyboard = []
             for operacion in operaciones_recientes:
                 operacion_id = operacion.get('id', 'Sin ID')
@@ -139,14 +209,17 @@ async def seleccionar_tipo(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                     proveedor = operacion.get('proveedor', 'Proveedor desconocido')
                     tipo_cafe = operacion.get('tipo_cafe', 'Tipo desconocido')
                     total = operacion.get('preciototal', '0')
-                    # Botón solo con la información visible más importante (sin fecha ni ID)
                     boton_text = f"{proveedor} | S/ {total} | {tipo_cafe} | ID:{operacion_id}"
-                else:  # VENTA
+                elif tipo_operacion == "VENTA":
                     # Para ventas, también simplificar
                     cliente = operacion.get('cliente', 'Cliente desconocido')
                     producto = operacion.get('producto', 'Producto desconocido')
-                    # Botón simplificado
                     boton_text = f"{cliente} | {producto} | ID:{operacion_id}"
+                elif tipo_operacion == "ADELANTO":
+                    # Para adelantos, mostrar proveedor y monto
+                    proveedor = operacion.get('proveedor', 'Proveedor desconocido')
+                    monto = operacion.get('monto', '0')
+                    boton_text = f"{proveedor} | S/ {monto} | ID:{operacion_id}"
                 
                 keyboard.append([boton_text])
             
@@ -167,7 +240,7 @@ async def seleccionar_tipo(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             # Redirigir al estado de selección de operación
             return SELECCIONAR_OPERACION
         else:
-            comando_registro = "/compra" if tipo_operacion == "COMPRA" else "/venta"
+            comando_registro = f"/{operacion_plural[:-1]}"  # /compra, /venta, /adelanto, /gasto
             await update.message.reply_text(
                 f"No hay {operacion_plural} registradas. Usa {comando_registro} para registrar una nueva operación.",
                 parse_mode="Markdown"
@@ -180,6 +253,80 @@ async def seleccionar_tipo(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             parse_mode="Markdown"
         )
         return ConversationHandler.END
+
+async def handle_gasto_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Maneja la selección de gastos múltiples"""
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    callback_data = query.data
+    
+    # Si el usuario cancela
+    if callback_data == "gastos_cancelar":
+        await query.message.reply_text(
+            "Operación cancelada. Usa /evidencia para iniciar nuevamente.",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        return ConversationHandler.END
+    
+    # Si el usuario finaliza la selección
+    if callback_data == "gastos_finalizar":
+        # Verificar si hay al menos un gasto seleccionado
+        if not datos_evidencia[user_id]["gastos_seleccionados"]:
+            await query.message.reply_text(
+                "⚠️ Debes seleccionar al menos un gasto antes de finalizar.",
+                parse_mode="Markdown"
+            )
+            return SELECCIONAR_GASTOS
+        
+        # Construir mensaje de resumen
+        mensaje = "📊 *GASTOS SELECCIONADOS*\n\n"
+        
+        total_monto = 0
+        for gasto_id in datos_evidencia[user_id]["gastos_seleccionados"]:
+            # Buscar el gasto en la lista de gastos disponibles
+            for gasto in context.user_data.get("gastos_disponibles", []):
+                if gasto.get('id') == gasto_id:
+                    concepto = gasto.get('concepto', 'Sin descripción')
+                    monto = float(gasto.get('monto', 0))
+                    mensaje += f"• {concepto} - S/ {monto}\n"
+                    total_monto += monto
+        
+        mensaje += f"\nTotal: S/ {total_monto}\n\n"
+        mensaje += "Ahora, envía la imagen de la evidencia.\n"
+        mensaje += "La imagen debe ser clara y legible."
+        
+        # Almacenar el monto total para usarlo después
+        datos_evidencia[user_id]["monto"] = str(total_monto)
+        
+        # Convertir los IDs de gastos a una cadena única para usar como operacion_id
+        datos_evidencia[user_id]["operacion_id"] = "+".join(datos_evidencia[user_id]["gastos_seleccionados"])
+        
+        # Modo de almacenamiento
+        almacenamiento = "Google Drive" if DRIVE_ENABLED else "almacenamiento local"
+        mensaje += f"\n\nNota: La imagen se guardará en {almacenamiento}."
+        
+        await query.message.reply_text(mensaje, parse_mode="Markdown")
+        return SUBIR_DOCUMENTO
+    
+    # Si el usuario selecciona un gasto
+    if callback_data.startswith("select_gasto_"):
+        gasto_id = callback_data.replace("select_gasto_", "")
+        
+        # Alternar selección (añadir o quitar de la lista)
+        if gasto_id in datos_evidencia[user_id]["gastos_seleccionados"]:
+            datos_evidencia[user_id]["gastos_seleccionados"].remove(gasto_id)
+            await query.message.reply_text(f"Gasto con ID {gasto_id} eliminado de la selección.")
+        else:
+            datos_evidencia[user_id]["gastos_seleccionados"].append(gasto_id)
+            await query.message.reply_text(f"Gasto con ID {gasto_id} añadido a la selección.")
+        
+        # Mostrar selección actual
+        seleccionados = len(datos_evidencia[user_id]["gastos_seleccionados"])
+        await query.message.reply_text(f"Tienes {seleccionados} gastos seleccionados. Usa 'Finalizar selección' cuando termines.")
+        
+        return SELECCIONAR_GASTOS
 
 async def seleccionar_operacion(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Procesa la selección de la operación por el usuario"""
@@ -212,15 +359,19 @@ async def seleccionar_operacion(update: Update, context: ContextTypes.DEFAULT_TY
     datos_evidencia[user_id]["operacion_id"] = operacion_id
     
     # Guardar información adicional sobre la operación
-    operacion_sheet = "compras" if tipo_operacion == "COMPRA" else "ventas"
+    operacion_sheet = datos_evidencia[user_id]["folder_name"]  # compras, ventas, adelantos
     operacion_data = get_filtered_data(operacion_sheet, {"id": operacion_id})
     
     if operacion_data and len(operacion_data) > 0:
-        # Guardar el monto para usarlo en el nombre del archivo
+        # Guardar el monto para usarlo en el nombre del archivo según el tipo de operación
         if tipo_operacion == "COMPRA":
             monto = operacion_data[0].get('preciototal', '0')
-        else:  # VENTA
+        elif tipo_operacion == "VENTA":
             monto = operacion_data[0].get('total', '0')
+        elif tipo_operacion == "ADELANTO":
+            monto = operacion_data[0].get('monto', '0')
+        else:
+            monto = '0'
         
         # Limpiar el monto (quitar caracteres no numéricos excepto punto)
         monto_limpio = ''.join(c for c in str(monto) if c.isdigit() or c == '.')
@@ -276,26 +427,39 @@ async def subir_documento(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     tipo_op = datos_evidencia[user_id]["tipo_operacion"].lower()
     op_id = datos_evidencia[user_id]["operacion_id"]
     monto = datos_evidencia[user_id]["monto"]
-    nombre_archivo = f"{tipo_op}_{op_id}_S{monto}_{uuid.uuid4().hex[:8]}.jpg"
+    
+    # Para gastos múltiples, usar un identificador único en lugar de todos los IDs
+    if tipo_op.upper() == "GASTO" and "+" in op_id:
+        gasto_count = len(op_id.split("+"))
+        nombre_archivo = f"{tipo_op}_multiple_{gasto_count}_gastos_S{monto}_{uuid.uuid4().hex[:8]}.jpg"
+    else:
+        nombre_archivo = f"{tipo_op}_{op_id}_S{monto}_{uuid.uuid4().hex[:8]}.jpg"
     
     # Guardar el nombre del archivo
     datos_evidencia[user_id]["nombre_archivo"] = nombre_archivo
     
     # Determinar la carpeta local según el tipo de operación
-    if tipo_op.upper() == "COMPRA":
-        local_folder = COMPRAS_FOLDER
-        folder_id = DRIVE_EVIDENCIAS_COMPRAS_ID if DRIVE_ENABLED else None
-        logger.info(f"Evidencia de COMPRA - Se guardará en la carpeta: {COMPRAS_FOLDER}")
-    else:  # VENTA
-        local_folder = VENTAS_FOLDER
-        folder_id = DRIVE_EVIDENCIAS_VENTAS_ID if DRIVE_ENABLED else None
-        logger.info(f"Evidencia de VENTA - Se guardará en la carpeta: {VENTAS_FOLDER}")
+    folder_name = datos_evidencia[user_id]["folder_name"]
+    local_folder = os.path.join(UPLOADS_FOLDER, folder_name)
+    
+    # Para Google Drive, usar la carpeta de compras por defecto si no hay una específica
+    folder_id = None
+    if DRIVE_ENABLED:
+        if tipo_op.upper() == "COMPRA":
+            folder_id = DRIVE_EVIDENCIAS_COMPRAS_ID
+        elif tipo_op.upper() == "VENTA":
+            folder_id = DRIVE_EVIDENCIAS_VENTAS_ID
+        else:
+            # Para otros tipos, usar la carpeta de compras por defecto
+            folder_id = DRIVE_EVIDENCIAS_COMPRAS_ID
+    
+    logger.info(f"Evidencia de {tipo_op.upper()} - Se guardará en la carpeta: {local_folder}")
     
     # Siempre guardar una copia local primero
     local_path = os.path.join(local_folder, nombre_archivo)
     await file.download_to_drive(local_path)
     logger.info(f"Archivo guardado localmente en: {local_path}")
-    datos_evidencia[user_id]["ruta_archivo"] = os.path.join(datos_evidencia[user_id]["folder_name"], nombre_archivo)
+    datos_evidencia[user_id]["ruta_archivo"] = os.path.join(folder_name, nombre_archivo)
     
     # Determinar si usar Google Drive además del almacenamiento local
     drive_file_info = None
@@ -329,13 +493,25 @@ async def subir_documento(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             # Ya tenemos el archivo guardado localmente, así que continuamos
     
     # Preparar mensaje de confirmación
-    mensaje_confirmacion = f"Tipo de operación: {datos_evidencia[user_id]['tipo_operacion']}\n" \
-                         f"ID de operación: {op_id}\n" \
-                         f"Monto: S/ {monto}\n" \
-                         f"Archivo guardado como: {nombre_archivo}"
+    tipo_operacion = datos_evidencia[user_id]["tipo_operacion"]
+    
+    # Para gastos múltiples, mostrar todos los IDs seleccionados
+    if tipo_operacion == "GASTO" and "gastos_seleccionados" in datos_evidencia[user_id] and datos_evidencia[user_id]["gastos_seleccionados"]:
+        mensaje_confirmacion = f"Tipo de operación: {tipo_operacion}\n"
+        mensaje_confirmacion += "IDs de gastos seleccionados:\n"
+        
+        for gasto_id in datos_evidencia[user_id]["gastos_seleccionados"]:
+            mensaje_confirmacion += f"- {gasto_id}\n"
+        
+        mensaje_confirmacion += f"Monto total: S/ {monto}\n"
+        mensaje_confirmacion += f"Archivo guardado como: {nombre_archivo}"
+    else:
+        mensaje_confirmacion = f"Tipo de operación: {tipo_operacion}\n"
+        mensaje_confirmacion += f"ID de operación: {op_id}\n"
+        mensaje_confirmacion += f"Monto: S/ {monto}\n"
+        mensaje_confirmacion += f"Archivo guardado como: {nombre_archivo}"
     
     # Añadir información de la carpeta
-    folder_name = datos_evidencia[user_id]["folder_name"]
     mensaje_confirmacion += f"\nCarpeta: {folder_name}"
     
     # Añadir enlace de Drive si está disponible
@@ -402,6 +578,12 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if "drive_view_link" not in documento:
         documento["drive_view_link"] = ""
     
+    # Si es un documento para múltiples gastos, guardar la lista de IDs de gastos
+    if documento["tipo_operacion"] == "GASTO" and "gastos_seleccionados" in documento:
+        documento["gastos_ids"] = ",".join(documento["gastos_seleccionados"])
+    else:
+        documento["gastos_ids"] = ""
+    
     logger.info(f"Guardando documento en Google Sheets: {documento}")
     
     try:
@@ -416,6 +598,7 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             "drive_file_id": documento.get("drive_file_id", ""),
             "drive_view_link": documento.get("drive_view_link", ""),
             "registrado_por": documento.get("registrado_por", ""),
+            "gastos_ids": documento.get("gastos_ids", ""),
             "notas": documento.get("notas", "")
         }
         
@@ -426,11 +609,19 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             logger.info(f"Documento guardado exitosamente para usuario {user_id}")
             
             # Preparar mensaje de éxito
-            mensaje = "✅ ¡Documento registrado exitosamente!\n\n" \
-                    f"ID del documento: {documento['id']}\n" \
-                    f"Asociado a: {documento['tipo_operacion']} - {documento['operacion_id']}\n" \
-                    f"Monto: S/ {documento.get('monto', '0')}\n" \
-                    f"Guardado en carpeta: {documento['folder_name']}"
+            mensaje = "✅ ¡Documento registrado exitosamente!\n\n"
+            mensaje += f"ID del documento: {documento['id']}\n"
+            
+            # Adaptar mensaje según tipo de operación
+            if documento["tipo_operacion"] == "GASTO" and "gastos_seleccionados" in documento and documento["gastos_seleccionados"]:
+                mensaje += f"Tipo: {documento['tipo_operacion']}\n"
+                mensaje += f"Asociado a {len(documento['gastos_seleccionados'])} gastos\n"
+                mensaje += f"Monto total: S/ {documento.get('monto', '0')}\n"
+            else:
+                mensaje += f"Asociado a: {documento['tipo_operacion']} - {documento['operacion_id']}\n"
+                mensaje += f"Monto: S/ {documento.get('monto', '0')}\n"
+            
+            mensaje += f"Guardado en carpeta: {documento['folder_name']}"
             
             # Añadir enlace de Drive si está disponible
             if DRIVE_ENABLED and documento.get("drive_view_link"):
@@ -499,6 +690,7 @@ def register_evidencias_handlers(application):
             states={
                 SELECCIONAR_TIPO: [MessageHandler(filters.TEXT & ~filters.COMMAND, seleccionar_tipo)],
                 SELECCIONAR_OPERACION: [MessageHandler(filters.TEXT & ~filters.COMMAND, seleccionar_operacion)],
+                SELECCIONAR_GASTOS: [CallbackQueryHandler(handle_gasto_selection)],
                 SUBIR_DOCUMENTO: [MessageHandler(filters.PHOTO, subir_documento)],
                 CONFIRMAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirmar)],
             },
