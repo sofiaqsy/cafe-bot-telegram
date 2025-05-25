@@ -22,6 +22,9 @@ SELECCIONAR_TIPO, SELECCIONAR_OPERACION, SUBIR_DOCUMENTO, CONFIRMAR = range(4)
 # Datos temporales
 datos_evidencia = {}
 
+# Número máximo de operaciones a mostrar
+MAX_OPERACIONES = 10
+
 # Asegurar que existe el directorio de uploads
 if not os.path.exists(UPLOADS_FOLDER):
     os.makedirs(UPLOADS_FOLDER)
@@ -123,7 +126,10 @@ async def seleccionar_tipo(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             # Ordenar las operaciones por fecha (más recientes primero)
             operaciones_recientes = sorted(operaciones, key=lambda x: x.get('fecha', ''), reverse=True)
             
-            # Crear teclado con las operaciones - mostrar todas
+            # Limitar a las últimas 10 operaciones para el teclado
+            operaciones_recientes = operaciones_recientes[:MAX_OPERACIONES]
+            
+            # Crear teclado con las operaciones limitadas
             keyboard = []
             for operacion in operaciones_recientes:
                 operacion_id = operacion.get('id', 'Sin ID')
@@ -147,8 +153,14 @@ async def seleccionar_tipo(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             keyboard.append(["❌ Cancelar"])
             reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
             
+            total_operaciones = len(operaciones)
             mensaje = f"📋 *SELECCIONA UNA {tipo_operacion} PARA ADJUNTAR EVIDENCIA*\n\n"
-            mensaje += f"Mostrando {len(operaciones_recientes)} {operacion_plural} disponibles"
+            
+            # Indicar cuántas operaciones se están mostrando de un total
+            if total_operaciones > MAX_OPERACIONES:
+                mensaje += f"Mostrando las {MAX_OPERACIONES} {operacion_plural} más recientes de un total de {total_operaciones}"
+            else:
+                mensaje += f"Mostrando {total_operaciones} {operacion_plural} disponibles"
             
             await update.message.reply_text(mensaje, parse_mode="Markdown", reply_markup=reply_markup)
             
