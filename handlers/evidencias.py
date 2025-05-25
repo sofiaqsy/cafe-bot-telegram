@@ -6,6 +6,8 @@ Este comando permite seleccionar una operación (compra, venta, adelanto o gasto
 import logging
 import os
 import uuid
+import traceback
+from datetime import datetime
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes, ConversationHandler
 from utils.sheets import get_all_data, append_data as append_sheets, generate_unique_id, get_filtered_data
@@ -67,6 +69,30 @@ if DRIVE_ENABLED:
         logger.info("IDs de carpetas de Drive verificados correctamente")
 else:
     logger.info("Google Drive está deshabilitado. Se usará almacenamiento local.")
+
+def parse_fecha_sheets(fecha_str):
+    """
+    Convierte una fecha en formato de Google Sheets a un objeto datetime.
+    Maneja varios formatos posibles.
+    """
+    try:
+        # Limpiar el formato protegido de sheets si es necesario
+        if fecha_str.startswith("'"):
+            fecha_str = fecha_str[1:]
+        
+        # Intentar con diferentes formatos
+        for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"]:
+            try:
+                return datetime.strptime(fecha_str, fmt)
+            except ValueError:
+                continue
+                
+        # Si ninguno funciona, devolver una fecha muy antigua para que se ordene al final
+        logger.warning(f"No se pudo parsear la fecha: {fecha_str}")
+        return datetime(1900, 1, 1)
+    except Exception as e:
+        logger.error(f"Error al parsear fecha '{fecha_str}': {e}")
+        return datetime(1900, 1, 1)
 
 async def evidencia_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """
@@ -148,11 +174,35 @@ async def seleccionar_tipo(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         operaciones = get_all_data(operacion_plural)
         
         if operaciones:
+            # Registrar la cantidad total de operaciones para información
+            total_operaciones = len(operaciones)
+            logger.info(f"Total de {operacion_plural} encontradas: {total_operaciones}")
+            
             # Ordenar las operaciones por fecha (más recientes primero)
-            operaciones_recientes = sorted(operaciones, key=lambda x: x.get('fecha', ''), reverse=True)
+            # Mejora: Usar un parse de fecha más robusto para manejar diferentes formatos
+            try:
+                # Ordenar primero por fecha
+                operaciones_ordenadas = sorted(
+                    operaciones, 
+                    key=lambda x: parse_fecha_sheets(x.get('fecha', '1900-01-01')), 
+                    reverse=True
+                )
+                
+                # Log para verificar el ordenamiento
+                if operaciones_ordenadas and len(operaciones_ordenadas) > 0:
+                    logger.info(f"Primera operación ordenada: {operaciones_ordenadas[0].get('id', 'Sin ID')} - Fecha: {operaciones_ordenadas[0].get('fecha', 'Sin fecha')}")
+                    if len(operaciones_ordenadas) > 1:
+                        logger.info(f"Segunda operación ordenada: {operaciones_ordenadas[1].get('id', 'Sin ID')} - Fecha: {operaciones_ordenadas[1].get('fecha', 'Sin fecha')}")
+            except Exception as e:
+                logger.error(f"Error al ordenar operaciones por fecha: {e}")
+                logger.error(traceback.format_exc())
+                # Si hay error al ordenar, usar las operaciones sin ordenar
+                operaciones_ordenadas = operaciones
+                logger.info("Usando operaciones sin ordenar debido al error")
             
             # Limitar a las últimas operaciones para el teclado
-            operaciones_recientes = operaciones_recientes[:MAX_OPERACIONES]
+            operaciones_recientes = operaciones_ordenadas[:MAX_OPERACIONES]
+            logger.info(f"Mostrando {len(operaciones_recientes)} {operacion_plural} recientes de un total de {total_operaciones}")
             
             # Para gastos usamos un enfoque diferente: selección múltiple con teclado inline
             if tipo_operacion == "GASTO":
@@ -205,18 +255,18 @@ async def seleccionar_tipo(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 operacion_id = operacion.get('id', 'Sin ID')
                 
                 if tipo_operacion == "COMPRA":
-                    # FORMATO SIMPLIFICADO: solo mostrar proveedor, monto y tipo de café
+                    # Formato para compras
                     proveedor = operacion.get('proveedor', 'Proveedor desconocido')
                     tipo_cafe = operacion.get('tipo_cafe', 'Tipo desconocido')
                     total = operacion.get('preciototal', '0')
                     boton_text = f"{proveedor} | S/ {total} | {tipo_cafe} | ID:{operacion_id}"
                 elif tipo_operacion == "VENTA":
-                    # Para ventas, también simplificar
+                    # Para ventas
                     cliente = operacion.get('cliente', 'Cliente desconocido')
                     producto = operacion.get('producto', 'Producto desconocido')
                     boton_text = f"{cliente} | {producto} | ID:{operacion_id}"
                 elif tipo_operacion == "ADELANTO":
-                    # Para adelantos, mostrar proveedor y monto
+                    # Para adelantos
                     proveedor = operacion.get('proveedor', 'Proveedor desconocido')
                     monto = operacion.get('monto', '0')
                     boton_text = f"{proveedor} | S/ {monto} | ID:{operacion_id}"
@@ -226,14 +276,13 @@ async def seleccionar_tipo(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             keyboard.append(["❌ Cancelar"])
             reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
             
-            total_operaciones = len(operaciones)
             mensaje = f"📋 *SELECCIONA UNA {tipo_operacion} PARA ADJUNTAR EVIDENCIA*\n\n"
             
             # Indicar cuántas operaciones se están mostrando de un total
             if total_operaciones > MAX_OPERACIONES:
-                mensaje += f"Mostrando las {MAX_OPERACIONES} {operacion_plural} más recientes de un total de {total_operaciones}"
+                mensaje += f"Mostrando las {len(operaciones_recientes)} {operacion_plural} más recientes de un total de {total_operaciones}"
             else:
-                mensaje += f"Mostrando {total_operaciones} {operacion_plural} disponibles"
+                mensaje += f"Mostrando {len(operaciones_recientes)} {operacion_plural} disponibles"
             
             await update.message.reply_text(mensaje, parse_mode="Markdown", reply_markup=reply_markup)
             
@@ -248,8 +297,9 @@ async def seleccionar_tipo(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             return ConversationHandler.END
     except Exception as e:
         logger.error(f"Error al obtener {operacion_plural}: {e}")
+        logger.error(traceback.format_exc())
         await update.message.reply_text(
-            f"❌ Ocurrió un error al obtener las {operacion_plural}. Por favor, intenta nuevamente.",
+            f"❌ Ocurrió un error al obtener las {operacion_plural}. Por favor, intenta nuevamente.\n\nError: {str(e)}",
             parse_mode="Markdown"
         )
         return ConversationHandler.END
@@ -423,55 +473,17 @@ async def subir_documento(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     # Obtener el archivo
     file = await context.bot.get_file(file_id)
     
-    # Crear un nombre único para el archivo incluyendo el monto y la información relevante según el tipo de operación
+    # Crear un nombre único para el archivo incluyendo el monto
     tipo_op = datos_evidencia[user_id]["tipo_operacion"].lower()
     op_id = datos_evidencia[user_id]["operacion_id"]
     monto = datos_evidencia[user_id]["monto"]
     
-    # Obtener información adicional según el tipo de operación
-    operacion_sheet = datos_evidencia[user_id]["folder_name"]  # compras, ventas, adelantos, gastos
-    operacion_data = get_filtered_data(operacion_sheet, {"id": op_id})
-    
-    # Información adicional para el nombre del archivo
-    info_adicional = ""
-    
     # Para gastos múltiples, usar un identificador único en lugar de todos los IDs
     if tipo_op.upper() == "GASTO" and "+" in op_id:
         gasto_count = len(op_id.split("+"))
-        
-        # Intentar obtener el concepto del primer gasto
-        primero_id = op_id.split("+")[0]
-        gasto_data = get_filtered_data("gastos", {"id": primero_id})
-        if gasto_data and len(gasto_data) > 0:
-            concepto = gasto_data[0].get('concepto', '').replace(' ', '_')[:20]
-            info_adicional = f"concepto-{concepto}"
-        
-        nombre_archivo = f"{tipo_op}_multiple_{gasto_count}_gastos_{info_adicional}_S{monto}_{uuid.uuid4().hex[:8]}.jpg"
+        nombre_archivo = f"{tipo_op}_multiple_{gasto_count}_gastos_S{monto}_{uuid.uuid4().hex[:8]}.jpg"
     else:
-        # Obtener información específica según el tipo de operación
-        if operacion_data and len(operacion_data) > 0:
-            if tipo_op.upper() == "COMPRA":
-                # Para compras, incluir el nombre del proveedor
-                proveedor = operacion_data[0].get('proveedor', '').replace(' ', '_')[:20]
-                info_adicional = f"prov-{proveedor}"
-            elif tipo_op.upper() == "VENTA":
-                # Para ventas, incluir el nombre del cliente
-                cliente = operacion_data[0].get('cliente', '').replace(' ', '_')[:20]
-                info_adicional = f"cli-{cliente}"
-            elif tipo_op.upper() == "GASTO":
-                # Para gastos individuales, incluir el concepto
-                concepto = operacion_data[0].get('concepto', '').replace(' ', '_')[:20]
-                info_adicional = f"concepto-{concepto}"
-            elif tipo_op.upper() == "ADELANTO":
-                # Para adelantos, incluir el nombre del proveedor
-                proveedor = operacion_data[0].get('proveedor', '').replace(' ', '_')[:20]
-                info_adicional = f"prov-{proveedor}"
-        
-        # Añadir información adicional al nombre del archivo
-        if info_adicional:
-            nombre_archivo = f"{tipo_op}_{op_id}_{info_adicional}_S{monto}_{uuid.uuid4().hex[:8]}.jpg"
-        else:
-            nombre_archivo = f"{tipo_op}_{op_id}_S{monto}_{uuid.uuid4().hex[:8]}.jpg"
+        nombre_archivo = f"{tipo_op}_{op_id}_S{monto}_{uuid.uuid4().hex[:8]}.jpg"
     
     # Guardar el nombre del archivo
     datos_evidencia[user_id]["nombre_archivo"] = nombre_archivo
