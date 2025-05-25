@@ -6,6 +6,7 @@ Este comando permite seleccionar una operación (compra, venta, adelanto o gasto
 import logging
 import os
 import uuid
+import traceback
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes, ConversationHandler
 from utils.sheets import get_all_data, append_data as append_sheets, generate_unique_id, get_filtered_data
@@ -205,21 +206,24 @@ async def seleccionar_tipo(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 operacion_id = operacion.get('id', 'Sin ID')
                 
                 if tipo_operacion == "COMPRA":
-                    # FORMATO SIMPLIFICADO: solo mostrar proveedor, monto y tipo de café
+                    # Mejorar formato: fecha, proveedor, monto y tipo de café
                     proveedor = operacion.get('proveedor', 'Proveedor desconocido')
                     tipo_cafe = operacion.get('tipo_cafe', 'Tipo desconocido')
                     total = operacion.get('preciototal', '0')
-                    boton_text = f"{proveedor} | S/ {total} | {tipo_cafe} | ID:{operacion_id}"
+                    fecha = operacion.get('fecha', '').split(' ')[0]  # Solo mostrar fecha sin hora
+                    boton_text = f"{fecha} | {proveedor} | S/ {total} | ID:{operacion_id}"
                 elif tipo_operacion == "VENTA":
-                    # Para ventas, también simplificar
+                    # Para ventas, mejorar el formato también
                     cliente = operacion.get('cliente', 'Cliente desconocido')
-                    producto = operacion.get('producto', 'Producto desconocido')
-                    boton_text = f"{cliente} | {producto} | ID:{operacion_id}"
+                    total = operacion.get('total', '0')
+                    fecha = operacion.get('fecha', '').split(' ')[0]
+                    boton_text = f"{fecha} | {cliente} | S/ {total} | ID:{operacion_id}"
                 elif tipo_operacion == "ADELANTO":
-                    # Para adelantos, mostrar proveedor y monto
+                    # Para adelantos, mejorar también
                     proveedor = operacion.get('proveedor', 'Proveedor desconocido')
                     monto = operacion.get('monto', '0')
-                    boton_text = f"{proveedor} | S/ {monto} | ID:{operacion_id}"
+                    fecha = operacion.get('fecha', '').split(' ')[0]
+                    boton_text = f"{fecha} | {proveedor} | S/ {monto} | ID:{operacion_id}"
                 
                 keyboard.append([boton_text])
             
