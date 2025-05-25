@@ -34,6 +34,7 @@ register_adelantos_handlers = None
 register_compra_adelanto_handlers = None
 register_almacen_handlers = None
 register_evidencias_handlers = None
+register_evidencias_list_handlers = None
 register_documento_emergency_handlers = None
 register_diagnostico_handlers = None
 
@@ -103,6 +104,13 @@ try:
         logger.info("Handler de evidencias importado correctamente")
     except Exception as e:
         logger.error(f"Error al importar handler de evidencias: {e}")
+        logger.error(traceback.format_exc())
+        
+    try:
+        from handlers.evidencias_list import register_evidencias_list_handlers
+        logger.info("Handler de listado de evidencias importado correctamente")
+    except Exception as e:
+        logger.error(f"Error al importar handler de listado de evidencias: {e}")
         logger.error(traceback.format_exc())
     
     # NUEVO: Importar el módulo de emergencia para documentos
@@ -291,6 +299,8 @@ def main():
         handler_functions.append(("almacen", register_almacen_handlers))
     if register_evidencias_handlers:
         handler_functions.append(("evidencias", register_evidencias_handlers))
+    if register_evidencias_list_handlers:
+        handler_functions.append(("evidencias_list", register_evidencias_list_handlers))
     
     # Registrar cada handler con manejo de excepciones individual
     for name, handler_func in handler_functions:
