@@ -59,7 +59,7 @@ El bot utiliza múltiples hojas dentro del documento de Google Sheets para almac
 - **Adelantos**: Registro de adelantos a proveedores
 - **Pedidos**: Registro de pedidos de clientes
 - **Almacen**: Control de inventario
-- **Capitalización**: Registro de ingresos de capital
+- **capitalizacion**: Registro de ingresos de capital (sin tilde y en minúsculas)
 
 Si alguna de estas hojas no existe, el bot intentará crearla automáticamente la primera vez que se use la funcionalidad correspondiente.
 

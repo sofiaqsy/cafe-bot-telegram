@@ -245,7 +245,7 @@ async def confirmar_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         ]
         
         # Registrar en Google Sheets
-        append_sheets("Capitalización", row)
+        append_sheets("capitalizacion", row)
         
         # Mensaje de confirmación
         await update.message.reply_text(
