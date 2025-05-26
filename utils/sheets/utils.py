@@ -9,13 +9,13 @@ import datetime
 # Configurar logging
 logger = logging.getLogger(__name__)
 
-def generate_unique_id(length=6, prefix="CP-"):
+def generate_unique_id(prefix="CP-", length=6):
     """
     Genera un ID único alfanumérico
     
     Args:
-        length: Longitud del ID (default: 6)
         prefix: Prefijo para el ID (default: "CP-" para compras)
+        length: Longitud del ID (default: 6)
     
     Returns:
         str: ID único alfanumérico
@@ -38,7 +38,7 @@ def generate_almacen_id(length=6):
     Returns:
         str: ID único alfanumérico
     """
-    return generate_unique_id(length, "AL-")
+    return generate_unique_id("AL-", length)
 
 def format_date_for_sheets(date_str):
     """
