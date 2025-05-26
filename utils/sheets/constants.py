@@ -36,5 +36,6 @@ HEADERS = {
     "pedidos": ["fecha", "cliente", "tipo_cafe", "cantidad", "precio_kg", "total", "estado", "fecha_entrega", "notas", "registrado_por"],
     "adelantos": ["fecha", "hora", "proveedor", "monto", "saldo_restante", "notas", "registrado_por"],
     "almacen": ["id", "compra_id", "tipo_cafe_origen", "fecha", "cantidad", "fase_actual", "cantidad_actual", "notas", "fecha_actualizacion"],
-    "documentos": ["id", "fecha", "tipo_operacion", "operacion_id", "archivo_id", "ruta_archivo", "drive_file_id", "drive_view_link", "registrado_por", "notas"]
+    "documentos": ["id", "fecha", "tipo_operacion", "operacion_id", "archivo_id", "ruta_archivo", "drive_file_id", "drive_view_link", "registrado_por", "notas"],
+    "capitalizacion": ["id", "fecha", "monto", "origen", "destino", "concepto", "registrado_por", "notas"]
 }
