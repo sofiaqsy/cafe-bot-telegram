@@ -712,8 +712,8 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             drive_view_link = datos_evidencia[user_id].get("drive_view_link", "")
             descripcion = datos_evidencia[user_id].get("descripcion", "")
             
-            # Crear un ID único para la evidencia
-            evidencia_id = generate_unique_id("EV")
+            # Crear un ID único para la evidencia - CORREGIDO: Pasamos prefijo como primer parámetro
+            evidencia_id = generate_unique_id("EV-", 6)
             
             # Obtener fecha y hora actual en Perú
             fecha_registro = get_now_peru()
