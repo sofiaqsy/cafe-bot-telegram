@@ -731,12 +731,13 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                 "drive_file_id": drive_file_id,
                 "drive_view_link": drive_view_link,
                 "descripcion": descripcion,
-                "registrado_por": registrado_por
+                "registrado_por": registrado_por,
+                "notas": ""  # Campo notas vacío por defecto
             }
             
-            # Guardar en la hoja de evidencias
+            # Guardar en la hoja de documentos (antes era evidencias)
             logger.info(f"Guardando evidencia en sheets: {datos_evidencia_sheets}")
-            append_sheets("evidencias", datos_evidencia_sheets)
+            append_sheets("documentos", datos_evidencia_sheets)
             
             # Mensaje de éxito con enlace si está disponible
             mensaje_exito = f"✅ *EVIDENCIA REGISTRADA EXITOSAMENTE*\n\n"
