@@ -368,8 +368,8 @@ async def seleccionar_operacion(update: Update, context: ContextTypes.DEFAULT_TY
         logger.info(f"Buscando detalles para {tipo_operacion} con ID: {operacion_id}")
         
         try:
-            # Obtener datos filtrados por ID
-            operacion_detalles = get_filtered_data(operacion_plural, "id", operacion_id)
+            # Obtener datos filtrados por ID - CORREGIDO: Ahora pasamos un diccionario de filtros
+            operacion_detalles = get_filtered_data(operacion_plural, {"id": operacion_id})
             
             if not operacion_detalles or len(operacion_detalles) == 0:
                 logger.error(f"No se encontraron detalles para {tipo_operacion} con ID: {operacion_id}")
