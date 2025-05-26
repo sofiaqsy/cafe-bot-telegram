@@ -4,6 +4,7 @@ import uuid
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import CommandHandler, ContextTypes, ConversationHandler
 from utils.sheets import get_filtered_data
+from config import DRIVE_EVIDENCIAS_CAPITALIZACION_ID
 
 # Configurar logging
 logger = logging.getLogger(__name__)
