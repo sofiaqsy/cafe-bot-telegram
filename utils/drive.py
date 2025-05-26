@@ -21,13 +21,23 @@ SCOPES = ['https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.
 
 # IDs de las carpetas en Google Drive donde se guardarán las evidencias de pago
 # Estos valores deben ser configurados según tu estructura de Drive
-from config import DRIVE_EVIDENCIAS_ROOT_ID, DRIVE_EVIDENCIAS_COMPRAS_ID, DRIVE_EVIDENCIAS_VENTAS_ID
+from config import (
+    DRIVE_EVIDENCIAS_ROOT_ID, 
+    DRIVE_EVIDENCIAS_COMPRAS_ID, 
+    DRIVE_EVIDENCIAS_VENTAS_ID,
+    DRIVE_EVIDENCIAS_ADELANTOS_ID,
+    DRIVE_EVIDENCIAS_GASTOS_ID,
+    DRIVE_EVIDENCIAS_CAPITALIZACION_ID
+)
 
 # Log de configuración al importar el módulo
 logger.info("=== MÓDULO DRIVE.PY INICIALIZADO ===")
 logger.info(f"DRIVE_EVIDENCIAS_ROOT_ID: {DRIVE_EVIDENCIAS_ROOT_ID or 'No configurado'}")
 logger.info(f"DRIVE_EVIDENCIAS_COMPRAS_ID: {DRIVE_EVIDENCIAS_COMPRAS_ID or 'No configurado'}")
 logger.info(f"DRIVE_EVIDENCIAS_VENTAS_ID: {DRIVE_EVIDENCIAS_VENTAS_ID or 'No configurado'}")
+logger.info(f"DRIVE_EVIDENCIAS_ADELANTOS_ID: {DRIVE_EVIDENCIAS_ADELANTOS_ID or 'No configurado'}")
+logger.info(f"DRIVE_EVIDENCIAS_GASTOS_ID: {DRIVE_EVIDENCIAS_GASTOS_ID or 'No configurado'}")
+logger.info(f"DRIVE_EVIDENCIAS_CAPITALIZACION_ID: {DRIVE_EVIDENCIAS_CAPITALIZACION_ID or 'No configurado'}")
 
 def get_drive_service():
     """Inicializa y retorna el servicio de Google Drive"""
@@ -231,19 +241,38 @@ def setup_drive_folders():
         logger.info("Verificando subcarpeta para Ventas")
         ventas_id = create_folder_if_not_exists("Ventas", root_id)
         
-        if not compras_id or not ventas_id:
-            logger.error("No se pudieron crear las subcarpetas en Drive")
+        # Crear subcarpetas para adelantos, gastos y capitalización
+        logger.info("Verificando subcarpeta para Adelantos")
+        adelantos_id = create_folder_if_not_exists("Adelantos", root_id)
+        
+        logger.info("Verificando subcarpeta para Gastos")
+        gastos_id = create_folder_if_not_exists("Gastos", root_id)
+        
+        logger.info("Verificando subcarpeta para Capitalización")
+        capitalizacion_id = create_folder_if_not_exists("Capitalizacion", root_id)
+        
+        # Verificar que todas las carpetas se crearon correctamente
+        if not (compras_id and ventas_id and adelantos_id and gastos_id and capitalizacion_id):
+            logger.error("No se pudieron crear todas las subcarpetas en Drive")
             return False
         
         # Guardar los IDs de las carpetas en variables de entorno para uso futuro
-        os.environ["DRIVE_EVIDENCIAS_ROOT_ID"] = root_id
-        os.environ["DRIVE_EVIDENCIAS_COMPRAS_ID"] = compras_id
-        os.environ["DRIVE_EVIDENCIAS_VENTAS_ID"] = ventas_id
+        from config import update_env_var
+        
+        update_env_var("DRIVE_EVIDENCIAS_ROOT_ID", root_id)
+        update_env_var("DRIVE_EVIDENCIAS_COMPRAS_ID", compras_id)
+        update_env_var("DRIVE_EVIDENCIAS_VENTAS_ID", ventas_id)
+        update_env_var("DRIVE_EVIDENCIAS_ADELANTOS_ID", adelantos_id)
+        update_env_var("DRIVE_EVIDENCIAS_GASTOS_ID", gastos_id)
+        update_env_var("DRIVE_EVIDENCIAS_CAPITALIZACION_ID", capitalizacion_id)
         
         logger.info("=== ESTRUCTURA DE CARPETAS EN DRIVE CONFIGURADA CORRECTAMENTE ===")
         logger.info(f"Carpeta principal: {root_folder_name} (ID: {root_id})")
         logger.info(f"Subcarpeta Compras ID: {compras_id}")
         logger.info(f"Subcarpeta Ventas ID: {ventas_id}")
+        logger.info(f"Subcarpeta Adelantos ID: {adelantos_id}")
+        logger.info(f"Subcarpeta Gastos ID: {gastos_id}")
+        logger.info(f"Subcarpeta Capitalización ID: {capitalizacion_id}")
         return True
     
     except Exception as e:
