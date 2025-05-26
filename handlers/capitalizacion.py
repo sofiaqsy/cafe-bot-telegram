@@ -125,28 +125,31 @@ async def destino_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     # Guardar el destino
     datos_capitalizacion[user_id]["destino"] = text
     
-    await update.message.reply_text(
-        f"Destino registrado: {text}\n\n"
-        "Por favor, ingresa un concepto o descripción breve:",
-        reply_markup=ReplyKeyboardRemove()
-    )
+    # Generar ID único con prefijo CAP
+    datos_capitalizacion[user_id]["id"] = generate_unique_id(6, "CAP-")
     
-    return CONCEPTO
-
-async def concepto_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Procesa el concepto y solicita notas adicionales"""
-    user_id = update.effective_user.id
-    text = update.message.text
+    # Obtener fecha y hora actual
+    now = get_now_peru()
+    datos_capitalizacion[user_id]["fecha"] = now.strftime("%Y-%m-%d %H:%M:%S")
     
-    # Guardar el concepto
-    datos_capitalizacion[user_id]["concepto"] = text
+    # Asignar concepto por defecto y saltar al paso de notas
+    datos_capitalizacion[user_id]["concepto"] = "Ingreso de capital"
     
-    # Crear teclado con opciones rápidas
+    # Crear teclado con opciones rápidas para notas
     keyboard = [["Sin notas adicionales"]]
     markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
     
+    # Preparar resumen preliminar
+    resumen = (
+        f"Monto: S/ {datos_capitalizacion[user_id]['monto']:.2f}\n"
+        f"Origen: {datos_capitalizacion[user_id]['origen']}\n"
+        f"Destino: {datos_capitalizacion[user_id]['destino']}\n"
+        f"Concepto: {datos_capitalizacion[user_id]['concepto']}\n\n"
+    )
+    
     await update.message.reply_text(
-        f"Concepto registrado: {text}\n\n"
+        f"Destino registrado: {text}\n\n"
+        f"{resumen}"
         "Por favor, ingresa notas adicionales (opcional):",
         reply_markup=markup
     )
@@ -163,13 +166,6 @@ async def notas_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         datos_capitalizacion[user_id]["notas"] = ""
     else:
         datos_capitalizacion[user_id]["notas"] = text
-    
-    # Generar ID único con prefijo CAP
-    datos_capitalizacion[user_id]["id"] = generate_unique_id(6, "CAP-")
-    
-    # Obtener fecha y hora actual
-    now = get_now_peru()
-    datos_capitalizacion[user_id]["fecha"] = now.strftime("%Y-%m-%d %H:%M:%S")
     
     # Crear teclado para confirmar
     keyboard = [["✅ Confirmar", "❌ Cancelar"]]
@@ -232,27 +228,27 @@ async def confirmar_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     datos = datos_capitalizacion[user_id]
     
     try:
-        # Preparar datos para Google Sheets
-        row = [
-            datos["id"],
-            format_date_for_sheets(datos["fecha"]),
-            datos["monto"],
-            datos["origen"],
-            datos["destino"],
-            datos["concepto"],
-            datos["registrado_por"],
-            datos["notas"]
-        ]
+        # Preparar datos para Google Sheets en formato de diccionario
+        data_dict = {
+            "id": datos["id"],
+            "fecha": format_date_for_sheets(datos["fecha"]),
+            "monto": datos["monto"],
+            "origen": datos["origen"],
+            "destino": datos["destino"],
+            "concepto": datos["concepto"],
+            "registrado_por": datos["registrado_por"],
+            "notas": datos["notas"]
+        }
         
         # Registrar en Google Sheets
-        append_sheets("capitalizacion", row)
+        append_sheets("capitalizacion", data_dict)
         
         # Mensaje de confirmación
         await update.message.reply_text(
             f"✅ *Capitalización registrada exitosamente*\n\n"
             f"ID: `{datos['id']}`\n"
             f"Monto: S/ {datos['monto']:.2f}\n\n"
-            f"Ahora puedes usar `/evidencia {datos['id']}` para subir "
+            f"Ahora puedes usar /evidencia {datos['id']} para subir "
             f"un comprobante de esta operación.",
             reply_markup=ReplyKeyboardRemove(),
             parse_mode="Markdown"
@@ -298,7 +294,6 @@ def register_capitalizacion_handlers(application):
             MONTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, monto_step)],
             ORIGEN: [MessageHandler(filters.TEXT & ~filters.COMMAND, origen_step)],
             DESTINO: [MessageHandler(filters.TEXT & ~filters.COMMAND, destino_step)],
-            CONCEPTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, concepto_step)],
             NOTAS: [MessageHandler(filters.TEXT & ~filters.COMMAND, notas_step)],
             CONFIRMAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirmar_step)],
         },
