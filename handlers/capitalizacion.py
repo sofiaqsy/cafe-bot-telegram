@@ -164,8 +164,8 @@ async def notas_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     else:
         datos_capitalizacion[user_id]["notas"] = text
     
-    # Generar ID único
-    datos_capitalizacion[user_id]["id"] = generate_unique_id("CAP")
+    # Generar ID único con prefijo CAP
+    datos_capitalizacion[user_id]["id"] = generate_unique_id(6, "CAP-")
     
     # Obtener fecha y hora actual
     now = get_now_peru()
