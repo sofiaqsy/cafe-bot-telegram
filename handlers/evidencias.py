@@ -13,7 +13,16 @@ from telegram.ext import CommandHandler, MessageHandler, CallbackQueryHandler, f
 from utils.sheets import get_all_data, append_data as append_sheets, generate_unique_id, get_filtered_data
 from utils.helpers import get_now_peru, format_date_for_sheets
 from utils.drive import upload_file_to_drive, setup_drive_folders
-from config import UPLOADS_FOLDER, DRIVE_ENABLED, DRIVE_EVIDENCIAS_COMPRAS_ID, DRIVE_EVIDENCIAS_VENTAS_ID, DRIVE_EVIDENCIAS_ROOT_ID
+from config import (
+    UPLOADS_FOLDER, 
+    DRIVE_ENABLED, 
+    DRIVE_EVIDENCIAS_COMPRAS_ID, 
+    DRIVE_EVIDENCIAS_VENTAS_ID, 
+    DRIVE_EVIDENCIAS_ROOT_ID,
+    DRIVE_EVIDENCIAS_ADELANTOS_ID,
+    DRIVE_EVIDENCIAS_GASTOS_ID,
+    DRIVE_EVIDENCIAS_CAPITALIZACION_ID
+)
 
 # Configurar logging
 logger = logging.getLogger(__name__)
@@ -327,9 +336,156 @@ async def seleccionar_tipo(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         )
         return ConversationHandler.END
 
+# Aquí continúa el resto del archivo...
+
+# Función para obtener el folder_id adecuado según el tipo de operación
+def get_folder_id_for_operation(tipo_operacion):
+    """Devuelve el ID de carpeta de Drive apropiado según el tipo de operación"""
+    if tipo_operacion == "COMPRA":
+        return DRIVE_EVIDENCIAS_COMPRAS_ID
+    elif tipo_operacion == "VENTA":
+        return DRIVE_EVIDENCIAS_VENTAS_ID
+    elif tipo_operacion == "ADELANTO":
+        return DRIVE_EVIDENCIAS_ADELANTOS_ID
+    elif tipo_operacion == "GASTO":
+        return DRIVE_EVIDENCIAS_GASTOS_ID
+    elif tipo_operacion == "CAPITALIZACION":
+        return DRIVE_EVIDENCIAS_CAPITALIZACION_ID
+    else:
+        # Si no se reconoce el tipo, usar la carpeta raíz
+        return DRIVE_EVIDENCIAS_ROOT_ID
+
+async def subir_documento(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Procesa el documento cargado"""
+    user_id = update.effective_user.id
+    
+    # Verificar si el mensaje contiene una foto
+    if not update.message.photo:
+        await update.message.reply_text(
+            "⚠️ Por favor, envía una imagen de la evidencia.\n"
+            "Si deseas cancelar, usa el comando /cancelar."
+        )
+        return SUBIR_DOCUMENTO
+    
+    # Obtener la foto de mejor calidad (la última en la lista)
+    photo = update.message.photo[-1]
+    file_id = photo.file_id
+    
+    logger.info(f"Usuario {user_id} subió imagen con file_id: {file_id}")
+    
+    # Guardar información de la foto
+    datos_evidencia[user_id]["archivo_id"] = file_id
+    
+    # Obtener el archivo
+    file = await context.bot.get_file(file_id)
+    
+    # Crear un nombre único para el archivo incluyendo el monto
+    tipo_op = datos_evidencia[user_id]["tipo_operacion"].lower()
+    op_id = datos_evidencia[user_id]["operacion_id"]
+    monto = datos_evidencia[user_id]["monto"]
+    
+    # Para gastos múltiples, usar un identificador único en lugar de todos los IDs
+    if tipo_op.upper() == "GASTO" and "+" in op_id:
+        gasto_count = len(op_id.split("+"))
+        nombre_archivo = f"{tipo_op}_multiple_{gasto_count}_gastos_S{monto}_{uuid.uuid4().hex[:8]}.jpg"
+    else:
+        nombre_archivo = f"{tipo_op}_{op_id}_S{monto}_{uuid.uuid4().hex[:8]}.jpg"
+    
+    # Guardar el nombre del archivo
+    datos_evidencia[user_id]["nombre_archivo"] = nombre_archivo
+    
+    # Determinar la carpeta local según el tipo de operación
+    folder_name = datos_evidencia[user_id]["folder_name"]
+    local_folder = os.path.join(UPLOADS_FOLDER, folder_name)
+    
+    # Para Google Drive, usar la carpeta específica según el tipo de operación
+    folder_id = None
+    if DRIVE_ENABLED:
+        folder_id = get_folder_id_for_operation(tipo_op.upper())
+        if not folder_id:
+            logger.warning(f"No se encontró ID de carpeta para {tipo_op.upper()}, usando carpeta raíz")
+            folder_id = DRIVE_EVIDENCIAS_ROOT_ID
+    
+    logger.info(f"Evidencia de {tipo_op.upper()} - Se guardará en la carpeta: {local_folder}")
+    
+    # Siempre guardar una copia local primero
+    local_path = os.path.join(local_folder, nombre_archivo)
+    await file.download_to_drive(local_path)
+    logger.info(f"Archivo guardado localmente en: {local_path}")
+    datos_evidencia[user_id]["ruta_archivo"] = os.path.join(folder_name, nombre_archivo)
+    
+    # Determinar si usar Google Drive además del almacenamiento local
+    drive_file_info = None
+    if DRIVE_ENABLED and folder_id:
+        try:
+            # Descargar el archivo a memoria para subir a Drive
+            file_bytes = await file.download_as_bytearray()
+            
+            # Verificar que el folder_id es válido
+            if not folder_id or folder_id.strip() == "":
+                logger.error(f"ID de carpeta de Drive inválido: '{folder_id}'. Verificar configuración.")
+                await update.message.reply_text(
+                    "⚠️ Error en la configuración de Google Drive. Se usará solo almacenamiento local.",
+                    parse_mode="Markdown"
+                )
+            else:
+                # Subir el archivo a Drive
+                logger.info(f"Iniciando subida a Drive en carpeta: {folder_id}")
+                drive_file_info = upload_file_to_drive(file_bytes, nombre_archivo, "image/jpeg", folder_id)
+                
+                if drive_file_info and drive_file_info.get("id"):
+                    # Guardar la información de Drive
+                    datos_evidencia[user_id]["drive_file_id"] = drive_file_info.get("id")
+                    datos_evidencia[user_id]["drive_view_link"] = drive_file_info.get("webViewLink")
+                    logger.info(f"Archivo también subido a Drive: ID={drive_file_info.get('id')}, Enlace={drive_file_info.get('webViewLink')}")
+                else:
+                    logger.error("Error al subir archivo a Drive, usando solo almacenamiento local")
+        except Exception as e:
+            logger.error(f"Error al subir a Drive: {e}")
+            logger.error(f"Detalles del error: {str(e)}")
+            # Ya tenemos el archivo guardado localmente, así que continuamos
+    
+    # Preparar mensaje de confirmación
+    tipo_operacion = datos_evidencia[user_id]["tipo_operacion"]
+    
+    # Para gastos múltiples, mostrar todos los IDs seleccionados
+    if tipo_operacion == "GASTO" and "gastos_seleccionados" in datos_evidencia[user_id] and datos_evidencia[user_id]["gastos_seleccionados"]:
+        mensaje_confirmacion = f"Tipo de operación: {tipo_operacion}\n"
+        mensaje_confirmacion += "IDs de gastos seleccionados:\n"
+        
+        for gasto_id in datos_evidencia[user_id]["gastos_seleccionados"]:
+            mensaje_confirmacion += f"- {gasto_id}\n"
+        
+        mensaje_confirmacion += f"Monto total: S/ {monto}\n"
+        mensaje_confirmacion += f"Archivo guardado como: {nombre_archivo}"
+    else:
+        mensaje_confirmacion = f"Tipo de operación: {tipo_operacion}\n"
+        mensaje_confirmacion += f"ID de operación: {op_id}\n"
+        mensaje_confirmacion += f"Monto: S/ {monto}\n"
+        mensaje_confirmacion += f"Archivo guardado como: {nombre_archivo}"
+    
+    # Añadir información de la carpeta
+    mensaje_confirmacion += f"\nCarpeta: {folder_name}"
+    
+    # Añadir enlace de Drive si está disponible
+    if DRIVE_ENABLED and drive_file_info and drive_file_info.get("webViewLink"):
+        mensaje_confirmacion += f"\n\nEnlace en Drive: {drive_file_info.get('webViewLink')}"
+    
+    # Teclado para confirmación
+    keyboard = [["✅ Confirmar"], ["❌ Cancelar"]]
+    reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+    
+    # Mostrar la imagen y solicitar confirmación
+    await update.message.reply_photo(
+        photo=file_id,
+        caption=f"📝 RESUMEN\n\n{mensaje_confirmacion}\n\n¿Confirmar la carga de este documento?",
+        reply_markup=reply_markup
+    )
+    
+    return CONFIRMAR
+
 # El resto del archivo sigue igual...
 
-# Función para registrar los handlers
 def register_evidencias_handlers(application):
     """Registra los handlers para el módulo de evidencias"""
     try:
