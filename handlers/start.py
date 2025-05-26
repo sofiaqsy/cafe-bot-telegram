@@ -22,6 +22,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "*/adelanto* - Registrar adelanto a proveedor\n"
         "*/proceso* - Registrar procesamiento de café\n"
         "*/venta* - Registrar una venta\n"
+        "*/capitalizacion* - Registrar ingreso de capital\n"
         "*/reporte* - Ver reportes y estadísticas\n"
         "*/pedido* - Registrar pedido de cliente\n"
         "*/pedidos* - Ver pedidos pendientes\n"

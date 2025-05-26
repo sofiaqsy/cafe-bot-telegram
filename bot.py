@@ -37,6 +37,7 @@ register_evidencias_handlers = None
 register_evidencias_list_handlers = None
 register_documento_emergency_handlers = None
 register_diagnostico_handlers = None
+register_capitalizacion_handlers = None  # Nuevo handler para capitalización
 
 # Intentar importar handlers con captura de errores
 try:
@@ -111,6 +112,15 @@ try:
         logger.info("Handler de listado de evidencias importado correctamente")
     except Exception as e:
         logger.error(f"Error al importar handler de listado de evidencias: {e}")
+        logger.error(traceback.format_exc())
+    
+    # NUEVO: Importar el módulo de capitalización
+    try:
+        logger.info("Importando módulo de capitalización...")
+        from handlers.capitalizacion import register_capitalizacion_handlers
+        logger.info("Módulo de capitalización importado correctamente")
+    except Exception as e:
+        logger.error(f"ERROR importando módulo de capitalización: {e}")
         logger.error(traceback.format_exc())
     
     # NUEVO: Importar el módulo de emergencia para documentos
@@ -301,6 +311,8 @@ def main():
         handler_functions.append(("evidencias", register_evidencias_handlers))
     if register_evidencias_list_handlers:
         handler_functions.append(("evidencias_list", register_evidencias_list_handlers))
+    if register_capitalizacion_handlers:  # Nuevo handler para capitalización
+        handler_functions.append(("capitalizacion", register_capitalizacion_handlers))
     
     # Registrar cada handler con manejo de excepciones individual
     for name, handler_func in handler_functions:

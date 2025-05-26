@@ -48,7 +48,22 @@ heroku config:set DRIVE_ENABLED=true
 heroku config:set GOOGLE_CREDENTIALS='$(cat ruta/al/archivo-de-credenciales.json)'
 ```
 
-### 4. Desplegar en Heroku
+### 4. Preparar las hojas de Google Sheets
+
+El bot utiliza múltiples hojas dentro del documento de Google Sheets para almacenar diferentes tipos de datos. Asegúrate de que existan estas hojas:
+
+- **Compras**: Registro de compras de café
+- **Ventas**: Registro de ventas
+- **Proceso**: Registro de procesamiento de café
+- **Gastos**: Registro de gastos operativos
+- **Adelantos**: Registro de adelantos a proveedores
+- **Pedidos**: Registro de pedidos de clientes
+- **Almacen**: Control de inventario
+- **Capitalización**: Registro de ingresos de capital
+
+Si alguna de estas hojas no existe, el bot intentará crearla automáticamente la primera vez que se use la funcionalidad correspondiente.
+
+### 5. Desplegar en Heroku
 
 ```bash
 # Agregar el repositorio de Heroku como remoto
@@ -64,7 +79,7 @@ Alternativamente, puedes configurar GitHub para despliegue automático:
 3. Conecta con GitHub y selecciona el repositorio
 4. Habilita el despliegue automático desde la rama main
 
-### 5. Verificar la configuración de Google Drive
+### 6. Verificar la configuración de Google Drive
 
 Después de desplegar, ejecuta el script de verificación:
 
@@ -74,7 +89,7 @@ bash heroku_check_drive.sh
 
 Este script verificará si todas las variables de entorno necesarias están configuradas correctamente.
 
-### 6. Verificar que el bot está funcionando
+### 7. Verificar que el bot está funcionando
 
 Para verificar que el bot está funcionando correctamente:
 
