@@ -215,7 +215,7 @@ def update_almacen(fase, cantidad_cambio, operacion="sumar", notas="", compra_id
     Actualiza la cantidad disponible en el almacén para una fase específica.
     
     Args:
-        fase: Fase del café (CEREZO, MOTE, PERGAMINO, VERDE)
+        fase: Fase del café (CEREZO, MOTE, PERGAMINO, VERDE, TOSTADO)
         cantidad_cambio: Cantidad a sumar o restar
         operacion: "sumar" para añadir, "restar" para disminuir, "establecer" para fijar valor
         notas: Notas adicionales sobre la operación
@@ -230,14 +230,92 @@ def update_almacen(fase, cantidad_cambio, operacion="sumar", notas="", compra_id
     try:
         logger.info(f"Actualizando almacén - Fase: {fase}, Cambio: {cantidad_cambio} kg, Operación: {operacion}, Compra ID: {compra_id}")
         
-        # Si es TOSTADO y la operación es "restar", usar la función especializada
-        if fase.strip().upper() == "TOSTADO" and operacion == "restar":
-            return update_almacen_tostado(fase, cantidad_cambio, notas)
-        
         # Normalizar fase
         fase_normalizada = fase.strip().upper()
         
-        # Crear nuevo registro para esta operación de almacén
+        # Si la operación es "restar", actualizar registros existentes en lugar de crear uno nuevo con valor negativo
+        if operacion == "restar":
+            logger.info(f"Operación RESTAR en almacén para {fase_normalizada} - Cantidad: {cantidad_cambio} kg")
+            
+            # Obtener todos los registros con la fase actual y cantidad disponible
+            almacen_data = get_filtered_data('almacen', {'fase_actual': fase_normalizada})
+            
+            if not almacen_data:
+                logger.warning(f"No se encontraron registros de {fase_normalizada} en el almacén")
+                return False, ""
+            
+            # Filtrar los que tienen cantidad disponible
+            registros_con_disponible = []
+            for registro in almacen_data:
+                try:
+                    kg_disponibles = safe_float(registro.get('cantidad_actual', '0'))
+                    if kg_disponibles > 0:
+                        registros_con_disponible.append(registro)
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"Error al convertir cantidad_actual: {e}")
+            
+            if not registros_con_disponible:
+                logger.warning(f"No hay suficiente café {fase_normalizada} disponible en el almacén")
+                return False, ""
+            
+            # Ordenar los registros por fecha (primero los más antiguos)
+            registros_con_disponible.sort(key=lambda x: x.get('fecha', ''))
+            
+            # Cantidad restante por actualizar
+            cantidad_restante = float(cantidad_cambio)
+            resultados = []
+            registro_usado = None
+            
+            for registro in registros_con_disponible:
+                if cantidad_restante <= 0:
+                    break
+                    
+                try:
+                    kg_disponibles = safe_float(registro.get('cantidad_actual', '0'))
+                    
+                    # Determinar cuánto restar de este registro
+                    cantidad_a_restar = min(kg_disponibles, cantidad_restante)
+                    nueva_cantidad = kg_disponibles - cantidad_a_restar
+                    
+                    # Actualizar en la hoja
+                    row_index = registro.get('_row_index')
+                    now = get_current_datetime_str()
+                    
+                    # Actualizar la celda de cantidad_actual
+                    result1 = update_cell('almacen', row_index, 'cantidad_actual', str(nueva_cantidad))
+                    
+                    # Actualizar la fecha de actualización
+                    result2 = update_cell('almacen', row_index, 'fecha_actualizacion', now)
+                    
+                    # Actualizar las notas para incluir esta operación
+                    notas_actuales = registro.get('notas', '')
+                    nuevas_notas = f"{notas_actuales}; {now}: {notas}"
+                    result3 = update_cell('almacen', row_index, 'notas', nuevas_notas)
+                    
+                    resultados.extend([result1, result2, result3])
+                    
+                    logger.info(f"Actualizado registro {registro.get('id')}: restado {cantidad_a_restar} kg, nuevo valor: {nueva_cantidad} kg")
+                    
+                    # Guardar el registro usado para relación en ventas
+                    if registro_usado is None:
+                        registro_usado = registro
+                    
+                    # Actualizar cantidad restante
+                    cantidad_restante -= cantidad_a_restar
+                    
+                except Exception as e:
+                    logger.error(f"Error al actualizar registro {registro.get('id')}: {e}")
+            
+            # Verificar si se pudo restar toda la cantidad solicitada
+            if cantidad_restante > 0:
+                logger.warning(f"No se pudo restar toda la cantidad solicitada. Faltan {cantidad_restante} kg")
+                return False, ""
+            
+            # Verificar que todas las actualizaciones fueron exitosas
+            almacen_id = registro_usado.get('id', '') if registro_usado else ""
+            return all(resultados), almacen_id
+        
+        # Para operaciones "sumar" y "establecer", crear un nuevo registro
         now = get_current_datetime_str()
         
         nueva_entrada = {
@@ -245,9 +323,9 @@ def update_almacen(fase, cantidad_cambio, operacion="sumar", notas="", compra_id
             "compra_id": compra_id,
             "tipo_cafe_origen": fase_normalizada,
             "fecha": now,
-            "cantidad": cantidad_cambio if operacion in ["sumar", "establecer"] else -cantidad_cambio,
+            "cantidad": cantidad_cambio,
             "fase_actual": fase_normalizada,
-            "cantidad_actual": cantidad_cambio if operacion in ["sumar", "establecer"] else 0,
+            "cantidad_actual": cantidad_cambio,
             "notas": f"Operación: {operacion}. {notas}",
             "fecha_actualizacion": now
         }
@@ -257,15 +335,9 @@ def update_almacen(fase, cantidad_cambio, operacion="sumar", notas="", compra_id
         
         if resultado:
             logger.info(f"Nuevo registro de almacén creado correctamente: {nueva_entrada['id']}")
-            # Para las operaciones que no son de TOSTADO y restar, devolver un tuple (True, id)
-            if operacion == "restar":
-                return True, nueva_entrada["id"]
             return True
         else:
             logger.error(f"Error al crear nuevo registro de almacén")
-            # Para las operaciones que no son de TOSTADO y restar, devolver un tuple (False, "")
-            if operacion == "restar":
-                return False, ""
             return False
     except Exception as e:
         logger.error(f"Error al actualizar almacén: {e}")
