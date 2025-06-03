@@ -898,20 +898,35 @@ async def confirmar_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 datos["notas"] = ""
                 
                 # Si se utiliza adelanto, actualizar el saldo del adelanto
+                result_adelanto = False
+                mensaje_adelanto = ""
+                
                 if datos.get("monto_adelanto", 0) > 0 and datos.get("adelanto_id", ""):
                     try:
+                        # Importar directamente desde utils.sheets para asegurar que usamos la función correcta
                         from utils.sheets import update_cell
                         
                         # Calcular el nuevo saldo
                         nuevo_saldo = datos.get("adelanto_saldo", 0) - datos.get("monto_adelanto", 0)
                         
+                        # Log para debug
+                        debug_log(f"Actualizando adelanto ID: {datos['adelanto_id']} - Nuevo saldo: {nuevo_saldo}")
+                        
+                        # Formatear el nuevo saldo a dos decimales
+                        nuevo_saldo_formateado = round(nuevo_saldo, 2)
+                        
                         # Actualizar el saldo en la hoja de adelantos
-                        update_cell("adelantos", datos["adelanto_id"], "saldo_restante", nuevo_saldo)
-                        logger.info(f"Actualizado saldo de adelanto {datos['adelanto_id']} a {nuevo_saldo}")
+                        result_adelanto = update_cell("adelantos", datos["adelanto_id"], "saldo_restante", nuevo_saldo_formateado)
+                        logger.info(f"Actualizado saldo de adelanto {datos['adelanto_id']} a {nuevo_saldo_formateado}")
+                        
+                        if result_adelanto:
+                            mensaje_adelanto = f"✅ Saldo de adelanto actualizado correctamente a {formatear_precio(nuevo_saldo_formateado)}\n\n"
+                        else:
+                            mensaje_adelanto = "⚠️ No se pudo actualizar el saldo de adelanto\n\n"
                     except Exception as e:
                         logger.error(f"Error al actualizar saldo de adelanto: {e}")
                         logger.error(traceback.format_exc())
-                        # Continuar con el proceso aun si hay error
+                        mensaje_adelanto = "⚠️ Error al actualizar saldo de adelanto\n\n"
                 
                 # 1. Guardar en la hoja de compras regular primero
                 logger.info(f"Guardando la compra mixta en la hoja de compras regular")
@@ -966,6 +981,10 @@ async def confirmar_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     mensaje_exito += f"ID: {datos['id']}\n"
                     mensaje_exito += f"Proveedor: {datos['proveedor']}\n"
                     mensaje_exito += f"Total: {formatear_precio(datos['preciototal'])}\n\n"
+                    
+                    # Añadir información sobre saldo de adelanto si aplica
+                    if datos.get("monto_adelanto", 0) > 0:
+                        mensaje_exito += mensaje_adelanto
                     
                     # Añadir información sobre almacén
                     if result_almacen:
