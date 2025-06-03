@@ -32,6 +32,7 @@ register_reportes_handlers = None
 register_pedidos_handlers = None
 register_adelantos_handlers = None
 register_compra_adelanto_handlers = None
+register_compra_mixta_handlers = None  # Nuevo handler para compra mixta
 register_almacen_handlers = None
 register_evidencias_handlers = None
 register_evidencias_list_handlers = None
@@ -93,6 +94,15 @@ try:
         logger.info("Handler de compra_adelanto importado correctamente")
     except Exception as e:
         logger.error(f"Error al importar handler de compra_adelanto: {e}")
+    
+    # NUEVO: Importar el módulo de compra_mixta
+    try:
+        logger.info("Importando módulo de compra_mixta...")
+        from handlers.compra_mixta import register_compra_mixta_handlers
+        logger.info("Módulo de compra_mixta importado correctamente")
+    except Exception as e:
+        logger.error(f"ERROR importando módulo de compra_mixta: {e}")
+        logger.error(traceback.format_exc())
     
     try:
         from handlers.almacen import register_almacen_handlers
@@ -305,6 +315,8 @@ def main():
         handler_functions.append(("adelantos", register_adelantos_handlers))
     if register_compra_adelanto_handlers:
         handler_functions.append(("compra_adelanto", register_compra_adelanto_handlers))
+    if register_compra_mixta_handlers:  # Nuevo handler para compra mixta
+        handler_functions.append(("compra_mixta", register_compra_mixta_handlers))
     if register_almacen_handlers:
         handler_functions.append(("almacen", register_almacen_handlers))
     if register_evidencias_handlers:
