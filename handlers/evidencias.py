@@ -739,8 +739,9 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             logger.info(f"Guardando evidencia en sheets: {datos_evidencia_sheets}")
             append_sheets("documentos", datos_evidencia_sheets)
             
-            # Mensaje de éxito con enlace si está disponible
-            mensaje_exito = f"✅ *EVIDENCIA REGISTRADA EXITOSAMENTE*\n\n"
+            # SOLUCIÓN: Evitar problemas de formateo en Markdown
+            # Enviar mensaje sin formato para evitar errores de parseo
+            mensaje_exito = f"✅ EVIDENCIA REGISTRADA EXITOSAMENTE\n\n"
             mensaje_exito += f"ID de evidencia: {evidencia_id}\n"
             mensaje_exito += f"Tipo de operación: {tipo_operacion}\n"
             mensaje_exito += f"ID de operación: {operacion_id}\n"
@@ -748,12 +749,11 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             mensaje_exito += f"Fecha: {fecha_formato}\n"
             
             if drive_view_link:
-                mensaje_exito += f"\nPuedes ver la evidencia en Drive aquí: {drive_view_link}"
+                mensaje_exito += f"\nPuedes ver la evidencia en Drive: {drive_view_link}"
             
-            # Enviar mensaje de éxito
+            # Enviar mensaje de éxito sin formato para evitar errores
             await update.message.reply_text(
                 mensaje_exito,
-                parse_mode="Markdown",
                 reply_markup=ReplyKeyboardRemove()
             )
             
@@ -767,11 +767,11 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             logger.error(f"Error al guardar evidencia: {e}")
             logger.error(traceback.format_exc())
             
+            # Usar mensaje sin formato para evitar problemas
             await update.message.reply_text(
-                f"❌ Error al guardar la evidencia: {str(e)}\n\n"
+                f"❌ Error al guardar la evidencia.\n\n"
                 "La imagen se guardó pero no se pudo registrar en la base de datos. "
                 "Por favor, contacta al administrador.",
-                parse_mode="Markdown",
                 reply_markup=ReplyKeyboardRemove()
             )
             return ConversationHandler.END
