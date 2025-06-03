@@ -14,6 +14,8 @@ from utils.sheets.almacen import update_almacen
 
 # Configurar logging
 logger = logging.getLogger(__name__)
+# Asegurar que los logs sean visibles
+logger.setLevel(logging.DEBUG)
 
 # Estados para la conversación
 TIPO_CAFE, PROVEEDOR, CANTIDAD, PRECIO, METODO_PAGO, MONTO_EFECTIVO, MONTO_TRANSFERENCIA, SELECCIONAR_ADELANTO, CONFIRMAR = range(9)
@@ -41,6 +43,12 @@ COMPRAS_MIXTAS_HEADERS = [
     "adelanto_id", "registrado_por", "notas"
 ]
 
+def debug_log(message):
+    """Función especial para logs de depuración más visibles"""
+    logger.debug(f"### DEBUG ### {message}")
+    # Agregar también como INFO para asegurar que se vea
+    logger.info(f"### DEBUG ### {message}")
+
 # Función para obtener proveedores con adelantos
 def obtener_proveedores_con_adelantos():
     """
@@ -50,25 +58,40 @@ def obtener_proveedores_con_adelantos():
         set: Conjunto de nombres de proveedores con adelantos disponibles
     """
     try:
-        logger.info("Obteniendo lista de proveedores con adelantos disponibles")
+        debug_log("INICIANDO obtener_proveedores_con_adelantos")
+        # Obtener todos los adelantos, sin filtrar
         adelantos = get_all_data("adelantos")
+        debug_log(f"Obtenidos {len(adelantos)} registros de adelantos en total")
+        
+        # Imprimir los primeros registros para depuración
+        for i, adelanto in enumerate(adelantos[:3]):
+            debug_log(f"Adelanto #{i}: {adelanto.get('proveedor')} - Saldo: {adelanto.get('saldo_restante')}")
         
         # Obtener proveedores únicos con saldo > 0
         proveedores_con_adelanto = set()
         for adelanto in adelantos:
             try:
-                saldo = float(adelanto.get('saldo_restante', 0))
+                proveedor = adelanto.get('proveedor', '')
+                if not proveedor:
+                    continue
+                    
+                saldo_str = adelanto.get('saldo_restante', '0')
+                debug_log(f"Procesando adelanto para {proveedor} con saldo_restante={saldo_str}")
+                
+                saldo = float(saldo_str) if saldo_str else 0
                 if saldo > 0:
-                    proveedor = adelanto.get('proveedor', '')
-                    if proveedor:
-                        proveedores_con_adelanto.add(proveedor)
-            except (ValueError, TypeError):
+                    proveedores_con_adelanto.add(proveedor)
+                    debug_log(f"Añadido proveedor {proveedor} con saldo {saldo}")
+            except (ValueError, TypeError) as e:
+                debug_log(f"Error procesando adelanto: {e} - Datos: {adelanto}")
                 continue
         
-        logger.info(f"Se encontraron {len(proveedores_con_adelanto)} proveedores con adelantos disponibles")
+        debug_log(f"Se encontraron {len(proveedores_con_adelanto)} proveedores con adelantos disponibles: {sorted(list(proveedores_con_adelanto))}")
         return proveedores_con_adelanto
     except Exception as e:
-        logger.error(f"Error al obtener proveedores con adelantos: {e}")
+        debug_log(f"ERROR CRÍTICO en obtener_proveedores_con_adelantos: {e}")
+        debug_log(traceback.format_exc())
+        # En caso de error, devolver conjunto vacío para no interrumpir el flujo
         return set()
 
 async def compra_mixta_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -85,6 +108,12 @@ async def compra_mixta_command(update: Update, context: ContextTypes.DEFAULT_TYP
         "monto_adelanto": 0,
         "adelanto_id": ""
     }
+    
+    # Pre-cargar la lista de proveedores con adelantos para tenerla ya disponible
+    # y evitar problemas de timing
+    proveedores_adelantos = obtener_proveedores_con_adelantos()
+    datos_compra_mixta[user_id]["proveedores_con_adelanto"] = proveedores_adelantos
+    debug_log(f"Pre-cargados {len(proveedores_adelantos)} proveedores con adelanto para el usuario {user_id}")
     
     # Crear teclado con las 3 opciones predefinidas para tipo de café
     keyboard = [[tipo] for tipo in TIPOS_CAFE]
@@ -125,7 +154,14 @@ async def tipo_cafe_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     datos_compra_mixta[user_id]["tipo_cafe"] = selected_tipo
     
     # Obtener lista de proveedores con adelantos disponibles
-    proveedores_con_adelanto = obtener_proveedores_con_adelantos()
+    # Primero verificar si ya tenemos la lista pre-cargada
+    proveedores_con_adelanto = datos_compra_mixta[user_id].get("proveedores_con_adelanto", None)
+    if proveedores_con_adelanto is None:
+        debug_log(f"Lista de proveedores no pre-cargada para usuario {user_id}, obteniendo ahora...")
+        proveedores_con_adelanto = obtener_proveedores_con_adelantos()
+        datos_compra_mixta[user_id]["proveedores_con_adelanto"] = proveedores_con_adelanto
+    
+    debug_log(f"Mostrando lista de {len(proveedores_con_adelanto)} proveedores al usuario {user_id}")
     
     if proveedores_con_adelanto:
         # Crear teclado con los proveedores que tienen adelantos
@@ -134,22 +170,20 @@ async def tipo_cafe_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         
         reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
         
-        # Guardar la lista de proveedores con adelantos para usarla después
-        datos_compra_mixta[user_id]["proveedores_con_adelanto"] = proveedores_con_adelanto
-        
         # Log de los proveedores encontrados
-        logger.info(f"Mostrando lista de proveedores con adelantos: {proveedores_con_adelanto}")
+        debug_log(f"Creado teclado con proveedores: {[k[0] for k in keyboard]}")
         
         await update.message.reply_text(
             f"☕ Tipo de café: {selected_tipo}\n\n"
-            "📋 Proveedores con adelantos disponibles:\n"
+            "📋 *PROVEEDORES CON ADELANTOS DISPONIBLES:*\n"
             "Selecciona un proveedor o escribe uno nuevo:",
+            parse_mode="Markdown",
             reply_markup=reply_markup
         )
         return PROVEEDOR
     else:
         # Si no hay proveedores con adelantos, continuar con flujo normal
-        logger.info("No se encontraron proveedores con adelantos disponibles")
+        debug_log("No se encontraron proveedores con adelantos disponibles, mostrando flujo normal")
         await update.message.reply_text(
             f"☕ Tipo de café: {selected_tipo}\n\n"
             "Ahora, ingresa el nombre del proveedor:",
@@ -164,7 +198,7 @@ async def proveedor_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     
     # Verificar si el usuario seleccionó "Otro proveedor"
     if proveedor_texto == "Otro proveedor":
-        logger.info(f"Usuario {user_id} seleccionó 'Otro proveedor'")
+        debug_log(f"Usuario {user_id} seleccionó 'Otro proveedor'")
         await update.message.reply_text(
             "Escribe el nombre del proveedor:",
             reply_markup=ReplyKeyboardRemove()
@@ -184,6 +218,7 @@ async def proveedor_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # Verificar si este proveedor tiene adelantos disponibles y guardarlo para más tarde
     try:
         adelantos = get_all_data("adelantos")
+        debug_log(f"Verificando adelantos para {proveedor_texto} - Encontrados {len(adelantos)} adelantos en total")
         
         # Filtrar adelantos del proveedor con saldo
         adelantos_proveedor = []
@@ -191,9 +226,12 @@ async def proveedor_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             if adelanto.get('proveedor') == proveedor_texto:
                 try:
                     saldo = float(adelanto.get('saldo_restante', 0))
+                    debug_log(f"Adelanto encontrado para {proveedor_texto} con saldo {saldo}")
                     if saldo > 0:
                         adelantos_proveedor.append(adelanto)
-                except (ValueError, TypeError):
+                        debug_log(f"Añadido adelanto con saldo {saldo} para {proveedor_texto}")
+                except (ValueError, TypeError) as e:
+                    debug_log(f"Error procesando saldo: {e}")
                     continue
         
         # Calcular saldo total y guardar adelantos
@@ -203,12 +241,15 @@ async def proveedor_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             datos_compra_mixta[user_id]["adelantos_disponibles"] = adelantos_proveedor
             datos_compra_mixta[user_id]["saldo_adelantos"] = saldo_total
             
+            debug_log(f"El proveedor {proveedor_texto} tiene {len(adelantos_proveedor)} adelantos con saldo total {saldo_total}")
+            
             await update.message.reply_text(
                 f"ℹ️ El proveedor {proveedor_texto} tiene adelantos vigentes "
                 f"por un total de {formatear_precio(saldo_total)}."
             )
         else:
             datos_compra_mixta[user_id]["tiene_adelantos"] = False
+            debug_log(f"El proveedor {proveedor_texto} no tiene adelantos con saldo")
             
             # Si el usuario seleccionó un proveedor de la lista pero no tiene adelantos
             # (Esto podría pasar si los saldos cambiaron entre la carga de la lista y la selección)
@@ -218,8 +259,8 @@ async def proveedor_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     f"⚠️ El proveedor {proveedor_texto} ya no tiene adelantos disponibles."
                 )
     except Exception as e:
-        logger.error(f"Error al verificar adelantos del proveedor: {e}")
-        logger.error(traceback.format_exc())
+        debug_log(f"Error al verificar adelantos del proveedor: {e}")
+        debug_log(traceback.format_exc())
         datos_compra_mixta[user_id]["tiene_adelantos"] = False
     
     await update.message.reply_text(
@@ -275,9 +316,11 @@ async def precio_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         
         # Solo mostrar opciones con adelanto si el proveedor tiene adelantos disponibles
         if datos_compra_mixta[user_id].get("tiene_adelantos", False):
+            debug_log(f"Mostrando todos los métodos de pago incluyendo adelantos para usuario {user_id}")
             metodos = METODOS_PAGO
         else:
             # Filtrar métodos que incluyen adelanto
+            debug_log(f"Filtrando métodos de pago sin adelantos para usuario {user_id}")
             metodos = [m for m in METODOS_PAGO if "ADELANTO" not in m]
         
         for metodo in metodos:
@@ -324,6 +367,7 @@ async def metodo_pago_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     
     # Guardar el método de pago
     datos_compra_mixta[user_id]["metodo_pago"] = metodo_pago
+    debug_log(f"Usuario {user_id} seleccionó método de pago: {metodo_pago}")
     
     # Determinar el siguiente paso según el método de pago
     if metodo_pago == "EFECTIVO":
