@@ -814,8 +814,8 @@ async def mostrar_resumen(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         # Obtener los datos de la compra
         datos = datos_compra_mixta[user_id]
         
-        # Crear resumen
-        resumen = "📋 *RESUMEN DE COMPRA MIXTA*\n\n"
+        # Crear resumen con los datos pero sin usar caracteres especiales o formateo Markdown
+        resumen = "📋 RESUMEN DE COMPRA MIXTA\n\n"
         resumen += f"☕ Tipo de café: {datos.get('tipo_cafe', '')}\n"
         resumen += f"👨‍🌾 Proveedor: {datos.get('proveedor', '')}\n"
         resumen += f"📦 Cantidad: {formatear_numero(datos.get('cantidad', 0))} kg\n"
@@ -850,7 +850,6 @@ async def mostrar_resumen(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         if update.message:
             await update.message.reply_text(
                 resumen + "\n¿Confirmas esta compra?",
-                parse_mode="Markdown",
                 reply_markup=reply_markup
             )
         else:
@@ -858,7 +857,6 @@ async def mostrar_resumen(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await context.bot.send_message(
                 chat_id=update.callback_query.message.chat_id,
                 text=resumen + "\n¿Confirmas esta compra?",
-                parse_mode="Markdown",
                 reply_markup=reply_markup
             )
         
@@ -963,8 +961,8 @@ async def confirmar_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 if result_compra:
                     logger.info(f"Compra mixta guardada exitosamente para usuario {user_id}")
                     
-                    # Mensaje de éxito
-                    mensaje_exito = "✅ *¡COMPRA MIXTA REGISTRADA EXITOSAMENTE!*\n\n"
+                    # Mensaje de éxito - sin usar Markdown para evitar errores de parseo
+                    mensaje_exito = "✅ ¡COMPRA MIXTA REGISTRADA EXITOSAMENTE!\n\n"
                     mensaje_exito += f"ID: {datos['id']}\n"
                     mensaje_exito += f"Proveedor: {datos['proveedor']}\n"
                     mensaje_exito += f"Total: {formatear_precio(datos['preciototal'])}\n\n"
@@ -985,7 +983,6 @@ async def confirmar_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     
                     await update.message.reply_text(
                         mensaje_exito,
-                        parse_mode="Markdown",
                         reply_markup=ReplyKeyboardRemove()
                     )
                 else:
