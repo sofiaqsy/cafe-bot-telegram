@@ -18,6 +18,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "🤖 *Comandos disponibles* 🤖\n\n"
         "*/compra* - Registrar una nueva compra de café\n"
         "*/compra_adelanto* - Compra con adelanto\n"
+        "*/compra_mixta* - Compra con pagos combinados\n"
         "*/gasto* - Registrar gastos\n"
         "*/adelanto* - Registrar adelanto a proveedor\n"
         "*/proceso* - Registrar procesamiento de café\n"
