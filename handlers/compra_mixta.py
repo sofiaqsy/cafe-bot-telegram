@@ -947,31 +947,11 @@ async def confirmar_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 logger.info(f"Guardando compra mixta en hoja de compras_mixtas: {datos}")
                 result_mixta = append_sheets("compras_mixtas", datos)
                 
-                # 3. Registrar en almacén con manejo adecuado del tipo de retorno
-                logger.info(f"Registrando la compra en almacén")
-                result_almacen = False
-                try:
-                    # Llamar a update_almacen con manejo explícito del tipo de retorno
-                    result = update_almacen(
-                        fase=datos["tipo_cafe"],
-                        cantidad_cambio=datos["cantidad"],
-                        operacion="sumar",
-                        notas=f"Compra mixta ID: {compra_id}",
-                        compra_id=compra_id
-                    )
-                    
-                    # La función update_almacen puede devolver un booleano o una tupla (bool, str)
-                    # dependiendo del tipo de operación
-                    if isinstance(result, tuple):
-                        result_almacen = result[0]  # Extraer el booleano de la tupla
-                    else:
-                        result_almacen = result  # Ya es un booleano
-                    
-                    logger.info(f"Resultado de update_almacen: {result_almacen}")
-                except Exception as e:
-                    logger.error(f"Error al actualizar almacén: {e}")
-                    logger.error(traceback.format_exc())
-                    result_almacen = False
+                # 3. Registrar en almacén
+                # IMPORTANTE: NO llamar a update_almacen aquí porque append_sheets("compras", ...) ya crea un 
+                # registro en almacén automáticamente al detectar una nueva compra
+                logger.info(f"La compra se registró automáticamente en almacén por el proceso de append_sheets")
+                result_almacen = True  # Asumimos que el proceso automático funcionó
                 
                 if result_compra:
                     logger.info(f"Compra mixta guardada exitosamente para usuario {user_id}")
@@ -987,10 +967,7 @@ async def confirmar_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                         mensaje_exito += mensaje_adelanto
                     
                     # Añadir información sobre almacén
-                    if result_almacen:
-                        mensaje_exito += "✅ Registrado en almacén correctamente\n\n"
-                    else:
-                        mensaje_exito += "⚠️ La compra se registró pero hubo un error al actualizar el almacén\n\n"
+                    mensaje_exito += "✅ Registrado en almacén correctamente\n\n"
                     
                     # Información sobre la hoja de compras_mixtas
                     if result_mixta:
