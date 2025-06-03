@@ -10,6 +10,7 @@ from telegram.ext import (
 from utils.sheets import append_data as append_sheets, generate_unique_id, get_all_data, get_filtered_data
 from utils.helpers import get_now_peru, safe_float, format_date_for_sheets, format_currency, calculate_total
 from utils.formatters import formatear_numero, formatear_precio, procesar_entrada_numerica
+from utils.sheets.almacen import update_almacen
 
 # Configurar logging
 logger = logging.getLogger(__name__)
@@ -578,11 +579,13 @@ async def confirmar_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             datos = datos_compra_mixta[user_id].copy()
             
             # Generar un ID único para esta compra
-            datos["id"] = generate_unique_id("CM-", 6)
+            compra_id = generate_unique_id("CM-", 6)
+            datos["id"] = compra_id
             
             # Añadir fecha actualizada con formato protegido para Google Sheets
             now = get_now_peru()
-            datos["fecha"] = format_date_for_sheets(now.strftime("%Y-%m-%d %H:%M"))
+            fecha_formateada = now.strftime("%Y-%m-%d %H:%M")
+            datos["fecha"] = format_date_for_sheets(fecha_formateada)
             
             # Añadir notas vacías (para mantener estructura)
             datos["notas"] = ""
@@ -602,20 +605,54 @@ async def confirmar_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     logger.error(f"Error al actualizar saldo de adelanto: {e}")
                     logger.error(traceback.format_exc())
             
-            # Guardar la compra en Google Sheets
+            # 1. Guardar la compra en la hoja de compras_mixtas
             logger.info(f"Guardando compra mixta en Google Sheets: {datos}")
+            result_mixta = append_sheets("compras_mixtas", datos)
             
-            result = append_sheets("compras_mixtas", datos)
+            # 2. Guardar también en la hoja de compras regular
+            logger.info(f"Guardando la compra mixta en la hoja de compras regular")
+            datos_compra_regular = {
+                "id": compra_id,
+                "fecha": datos["fecha"],
+                "tipo_cafe": datos["tipo_cafe"],
+                "proveedor": datos["proveedor"],
+                "cantidad": datos["cantidad"],
+                "precio": datos["precio"],
+                "preciototal": datos["preciototal"],
+                "registrado_por": datos["registrado_por"],
+                "notas": f"Compra mixta - Método de pago: {datos['metodo_pago']}"
+            }
+            result_compra = append_sheets("compras", datos_compra_regular)
             
-            if result:
+            # 3. Registrar en almacén
+            logger.info(f"Registrando la compra en almacén")
+            result_almacen = update_almacen(
+                fase=datos["tipo_cafe"],
+                cantidad_cambio=datos["cantidad"],
+                operacion="sumar",
+                notas=f"Compra mixta ID: {compra_id}",
+                compra_id=compra_id
+            )
+            
+            if result_mixta and result_compra:
                 logger.info(f"Compra mixta guardada exitosamente para usuario {user_id}")
                 
+                # Mensaje de éxito
+                mensaje_exito = "✅ *¡COMPRA MIXTA REGISTRADA EXITOSAMENTE!*\n\n"
+                mensaje_exito += f"ID: {datos['id']}\n"
+                mensaje_exito += f"Proveedor: {datos['proveedor']}\n"
+                mensaje_exito += f"Total: {formatear_precio(datos['preciototal'])}\n\n"
+                
+                # Añadir información sobre almacén
+                if result_almacen:
+                    mensaje_exito += "✅ Registrado en almacén correctamente\n\n"
+                else:
+                    mensaje_exito += "⚠️ La compra se registró pero hubo un error al actualizar el almacén\n\n"
+                
+                mensaje_exito += "Usa /compra_mixta para registrar otra compra."
+                
                 await update.message.reply_text(
-                    "✅ *¡COMPRA MIXTA REGISTRADA EXITOSAMENTE!*\n\n"
-                    f"ID: {datos['id']}\n"
-                    f"Proveedor: {datos['proveedor']}\n"
-                    f"Total: {formatear_precio(datos['preciototal'])}\n\n"
-                    "Usa /compra_mixta para registrar otra compra.",
+                    mensaje_exito,
                     parse_mode="Markdown",
                     reply_markup=ReplyKeyboardRemove()
                 )
