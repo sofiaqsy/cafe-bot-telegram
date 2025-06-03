@@ -94,28 +94,80 @@ async def tipo_cafe_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     logger.info(f"Usuario {user_id} seleccionó tipo de café: {selected_tipo}")
     datos_compra_mixta[user_id]["tipo_cafe"] = selected_tipo
     
-    # Solicitar el proveedor
-    await update.message.reply_text(
-        f"☕ Tipo de café: {selected_tipo}\n\n"
-        "Ahora, ingresa el nombre del proveedor:",
-        reply_markup=ReplyKeyboardRemove()
-    )
-    return PROVEEDOR
+    # Obtener lista de proveedores con adelantos disponibles
+    try:
+        adelantos = get_all_data("adelantos")
+        
+        # Obtener proveedores únicos con saldo > 0
+        proveedores_con_adelanto = set()
+        for adelanto in adelantos:
+            try:
+                saldo = float(adelanto.get('saldo_restante', 0))
+                if saldo > 0:
+                    proveedor = adelanto.get('proveedor', '')
+                    if proveedor:
+                        proveedores_con_adelanto.add(proveedor)
+            except (ValueError, TypeError):
+                continue
+        
+        if proveedores_con_adelanto:
+            # Crear teclado con los proveedores que tienen adelantos
+            keyboard = [[proveedor] for proveedor in sorted(list(proveedores_con_adelanto))]
+            keyboard.append(["Otro proveedor"])
+            
+            reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+            
+            await update.message.reply_text(
+                f"☕ Tipo de café: {selected_tipo}\n\n"
+                "📋 Proveedores con adelantos disponibles:\n"
+                "Selecciona un proveedor o ingresa uno nuevo:",
+                reply_markup=reply_markup
+            )
+            
+            # Guardar la lista de proveedores con adelantos para usarla después
+            datos_compra_mixta[user_id]["proveedores_con_adelanto"] = proveedores_con_adelanto
+            
+            return PROVEEDOR
+        else:
+            # Si no hay proveedores con adelantos, continuar con flujo normal
+            await update.message.reply_text(
+                f"☕ Tipo de café: {selected_tipo}\n\n"
+                "Ahora, ingresa el nombre del proveedor:",
+                reply_markup=ReplyKeyboardRemove()
+            )
+            return PROVEEDOR
+    except Exception as e:
+        logger.error(f"Error al obtener proveedores con adelantos: {e}")
+        # Continuar con flujo normal en caso de error
+        await update.message.reply_text(
+            f"☕ Tipo de café: {selected_tipo}\n\n"
+            "Ahora, ingresa el nombre del proveedor:",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        return PROVEEDOR
 
 async def proveedor_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Guardar el proveedor y solicitar la cantidad"""
     user_id = update.effective_user.id
-    proveedor_nombre = update.message.text.strip()
-    logger.info(f"Usuario {user_id} ingresó proveedor: {proveedor_nombre}")
+    proveedor_texto = update.message.text.strip()
+    
+    # Verificar si el usuario seleccionó "Otro proveedor"
+    if proveedor_texto == "Otro proveedor":
+        await update.message.reply_text(
+            "Escribe el nombre del proveedor:",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        return PROVEEDOR
     
     # Verificar que no esté vacío
-    if not proveedor_nombre:
+    if not proveedor_texto:
         await update.message.reply_text(
             "❌ Por favor, ingresa un nombre de proveedor válido."
         )
         return PROVEEDOR
     
-    datos_compra_mixta[user_id]["proveedor"] = proveedor_nombre
+    logger.info(f"Usuario {user_id} ingresó proveedor: {proveedor_texto}")
+    datos_compra_mixta[user_id]["proveedor"] = proveedor_texto
     
     # Verificar si este proveedor tiene adelantos disponibles y guardarlo para más tarde
     try:
@@ -124,7 +176,7 @@ async def proveedor_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         # Filtrar adelantos del proveedor con saldo
         adelantos_proveedor = []
         for adelanto in adelantos:
-            if adelanto.get('proveedor') == proveedor_nombre:
+            if adelanto.get('proveedor') == proveedor_texto:
                 try:
                     saldo = float(adelanto.get('saldo_restante', 0))
                     if saldo > 0:
@@ -140,17 +192,25 @@ async def proveedor_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             datos_compra_mixta[user_id]["saldo_adelantos"] = saldo_total
             
             await update.message.reply_text(
-                f"ℹ️ El proveedor {proveedor_nombre} tiene adelantos vigentes "
+                f"ℹ️ El proveedor {proveedor_texto} tiene adelantos vigentes "
                 f"por un total de {formatear_precio(saldo_total)}."
             )
         else:
             datos_compra_mixta[user_id]["tiene_adelantos"] = False
+            
+            # Si el usuario seleccionó un proveedor de la lista pero no tiene adelantos
+            # (Esto podría pasar si los saldos cambiaron entre la carga de la lista y la selección)
+            proveedores_con_adelanto = datos_compra_mixta[user_id].get("proveedores_con_adelanto", set())
+            if proveedor_texto in proveedores_con_adelanto:
+                await update.message.reply_text(
+                    f"⚠️ El proveedor {proveedor_texto} ya no tiene adelantos disponibles."
+                )
     except Exception as e:
         logger.error(f"Error al verificar adelantos del proveedor: {e}")
         datos_compra_mixta[user_id]["tiene_adelantos"] = False
     
     await update.message.reply_text(
-        f"👨‍🌾 Proveedor: {proveedor_nombre}\n\n"
+        f"👨‍🌾 Proveedor: {proveedor_texto}\n\n"
         "Ahora, ingresa la cantidad de café en kg:"
     )
     return CANTIDAD
