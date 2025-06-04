@@ -95,14 +95,26 @@ try:
     except Exception as e:
         logger.error(f"Error al importar handler de compra_adelanto: {e}")
     
-    # NUEVO: Importar el módulo de compra_mixta
+    # ACTUALIZADO: Importar el módulo de compra_mixta corregido
     try:
-        logger.info("Importando módulo de compra_mixta...")
+        logger.info("Importando módulo de compra_mixta corregido...")
+        # Cambiar de compra_mixta.py a compra_mixta_corrected.py
+        from handlers.compra_mixta_corrected import confirmar_step
         from handlers.compra_mixta import register_compra_mixta_handlers
-        logger.info("Módulo de compra_mixta importado correctamente")
+        # Reemplazar la función en el módulo original con la corregida
+        import handlers.compra_mixta
+        handlers.compra_mixta.confirmar_step = confirmar_step
+        logger.info("Módulo de compra_mixta corregido importado correctamente")
     except Exception as e:
-        logger.error(f"ERROR importando módulo de compra_mixta: {e}")
+        logger.error(f"ERROR importando módulo de compra_mixta corregido: {e}")
         logger.error(traceback.format_exc())
+        # Intentar importar el módulo original como respaldo
+        try:
+            from handlers.compra_mixta import register_compra_mixta_handlers
+            logger.info("Módulo de compra_mixta original importado como respaldo")
+        except Exception as e2:
+            logger.error(f"ERROR importando módulo de compra_mixta original: {e2}")
+            logger.error(traceback.format_exc())
     
     try:
         from handlers.almacen import register_almacen_handlers
