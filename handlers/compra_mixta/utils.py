@@ -1,5 +1,5 @@
 """
-Funciones de utilidad para el módulo de compra mixta
+Funciones utilitarias para el módulo de compra mixta.
 """
 import traceback
 from utils.sheets import get_all_data
