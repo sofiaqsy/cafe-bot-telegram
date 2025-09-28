@@ -172,7 +172,7 @@ async def pedidos_whatsapp_command(update: Update, context: ContextTypes.DEFAULT
     context.user_data.clear()
     
     keyboard = [
-        [InlineKeyboardButton("⏳ Ver pedidos pendientes", callback_data="pw_pendientes")],
+        [InlineKeyboardButton("📦 Ver pedidos activos", callback_data="pw_pendientes")],
         [InlineKeyboardButton("🔍 Buscar por ID", callback_data="pw_buscar_id")],
         [InlineKeyboardButton("📱 Buscar por teléfono", callback_data="pw_buscar_telefono")],
         [InlineKeyboardButton("🔄 Actualizar caché", callback_data="pw_refresh")],
@@ -197,7 +197,7 @@ async def pedidos_whatsapp_command(update: Update, context: ContextTypes.DEFAULT
 {cache_info}
 Selecciona una opción:
 
-• *Ver pendientes*: Pedidos sin verificar
+• *Ver activos*: Todos excepto entregados/cancelados
 • *Buscar por ID*: Buscar pedido específico
 • *Buscar por teléfono*: Pedidos de un cliente
 • *Actualizar caché*: Recargar datos
@@ -268,7 +268,7 @@ async def menu_principal_callback(update: Update, context: ContextTypes.DEFAULT_
         return await pedidos_whatsapp_command(update, context)
     
     elif opcion == "pendientes":
-        await query.edit_message_text("🔄 Cargando pedidos pendientes...")
+        await query.edit_message_text("🔄 Cargando pedidos activos...")
         
         # Obtener pedidos (usa caché si está disponible)
         pedidos = obtener_datos_pedidos()
@@ -288,22 +288,28 @@ async def menu_principal_callback(update: Update, context: ContextTypes.DEFAULT_
             )
             return MENU_PRINCIPAL
         
-        # Filtrar solo pendientes
-        pedidos_pendientes = []
-        for i, pedido in enumerate(pedidos[1:], start=2):  # Skip header
-            if len(pedido) > 14 and pedido[14] == "Pendiente verificación":
-                pedidos_pendientes.append((i, pedido))
+        # Filtrar pedidos ACTIVOS (excluir Entregado, Completado y Cancelado)
+        pedidos_activos = []
+        estados_excluidos = ["Entregado", "Completado", "Cancelado"]
         
-        if not pedidos_pendientes:
+        for i, pedido in enumerate(pedidos[1:], start=2):  # Skip header
+            if len(pedido) > 14:
+                estado = pedido[14]
+                # Incluir pedido si NO está en estados excluidos
+                if estado not in estados_excluidos:
+                    pedidos_activos.append((i, pedido))
+        
+        if not pedidos_activos:
             keyboard = [[InlineKeyboardButton("🔙 Volver", callback_data="pw_volver_menu")]]
             await query.edit_message_text(
-                "✅ No hay pedidos pendientes",
-                reply_markup=InlineKeyboardMarkup(keyboard)
+                "✅ No hay pedidos activos\n\n_Todos los pedidos están entregados, completados o cancelados_",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
             )
             return MENU_PRINCIPAL
         
-        # Mostrar lista de pendientes
-        await mostrar_lista_pedidos(query, pedidos_pendientes, "PEDIDOS PENDIENTES")
+        # Mostrar lista de pedidos activos
+        await mostrar_lista_pedidos(query, pedidos_activos, "PEDIDOS ACTIVOS")
         return VER_PEDIDO
     
     elif opcion == "buscar_id":
