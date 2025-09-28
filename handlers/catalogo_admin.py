@@ -31,21 +31,44 @@ async def catalogo_admin_command(update: Update, context: ContextTypes.DEFAULT_T
     # Limpiar contexto
     context.user_data.clear()
     
+    # Obtener catálogo actual para mostrarlo
+    productos = obtener_catalogo_productos()
+    
+    # Formatear mensaje con el catálogo
+    mensaje = "*ADMINISTRACIÓN DE CATÁLOGO*\n"
+    mensaje += "━━━━━━━━━━━━━━━━━━━━━\n\n"
+    
+    if productos:
+        mensaje += "*📦 PRODUCTOS ACTUALES:*\n\n"
+        
+        for p in productos[:10]:  # Máximo 10 productos
+            try:
+                nombre = p[1]
+                precio = p[2]
+                stock = p[6]
+                estado = p[8]
+                
+                if estado == 'ACTIVO':
+                    mensaje += f"• *{nombre}*\n"
+                    mensaje += f"  S/{precio}/kg | Stock: {stock}kg\n\n"
+            except:
+                continue
+        
+        if len(productos) > 10:
+            mensaje += f"_...y {len(productos)-10} productos más_\n\n"
+    else:
+        mensaje += "_No hay productos en el catálogo_\n\n"
+    
+    mensaje += "━━━━━━━━━━━━━━━━\n"
+    mensaje += "Selecciona una opción:"
+    
     keyboard = [
-        [InlineKeyboardButton("Ver catálogo actual", callback_data="cat_ver")],
-        [InlineKeyboardButton("Actualizar precio", callback_data="cat_precio")],
-        [InlineKeyboardButton("Actualizar stock", callback_data="cat_stock")],
-        [InlineKeyboardButton("Salir", callback_data="cat_salir")]
+        [InlineKeyboardButton("💰 Actualizar precio", callback_data="cat_precio")],
+        [InlineKeyboardButton("📦 Actualizar stock", callback_data="cat_stock")],
+        [InlineKeyboardButton("❌ Salir", callback_data="cat_salir")]
     ]
     
     reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    mensaje = """
-*ADMINISTRACIÓN DE CATÁLOGO*
-━━━━━━━━━━━━━━━━━━━━━
-
-Selecciona una opción:
-"""
     
     if update.message:
         await update.message.reply_text(
@@ -70,52 +93,11 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     opcion = query.data.replace("cat_", "")
     
     if opcion == "salir":
-        await query.edit_message_text("Administración de catálogo finalizada")
+        await query.edit_message_text("✅ Administración de catálogo finalizada")
         return ConversationHandler.END
     
     elif opcion == "volver":
         return await catalogo_admin_command(update, context)
-    
-    elif opcion == "ver":
-        await query.edit_message_text("Cargando catálogo...")
-        
-        productos = obtener_catalogo_productos()
-        
-        if not productos:
-            keyboard = [[InlineKeyboardButton("Volver", callback_data="cat_volver")]]
-            await query.edit_message_text(
-                "No hay productos en el catálogo",
-                reply_markup=InlineKeyboardMarkup(keyboard)
-            )
-            return MENU
-        
-        # Formatear lista de productos
-        mensaje = "*CATÁLOGO ACTUAL*\n━━━━━━━━━━━━━━━━━━\n\n"
-        
-        for p in productos[:15]:
-            try:
-                nombre = p[1]
-                precio = p[2]
-                stock = p[6]
-                estado = p[8]
-                
-                if estado == 'ACTIVO':
-                    mensaje += f"*{nombre}*\n"
-                    mensaje += f"Precio: S/{precio}/kg\n"
-                    mensaje += f"Stock: {stock} kg\n"
-                    mensaje += "─────────────\n"
-            except:
-                continue
-        
-        keyboard = [[InlineKeyboardButton("Volver", callback_data="cat_volver")]]
-        
-        await query.edit_message_text(
-            mensaje,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode='Markdown'
-        )
-        
-        return MENU
     
     elif opcion in ["precio", "stock"]:
         # Guardar la acción en el contexto
@@ -132,9 +114,9 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         
         # Crear título según la acción
         if opcion == "precio":
-            titulo = "*ACTUALIZAR PRECIO*\n━━━━━━━━━━━━━━━━\n\nSelecciona el producto:"
+            titulo = "*💰 ACTUALIZAR PRECIO*\n━━━━━━━━━━━━━━━━\n\nSelecciona el producto:"
         else:
-            titulo = "*ACTUALIZAR STOCK*\n━━━━━━━━━━━━━━━━\n\nSelecciona el producto:"
+            titulo = "*📦 ACTUALIZAR STOCK*\n━━━━━━━━━━━━━━━━\n\nSelecciona el producto:"
         
         # Crear botones con los productos
         keyboard = []
@@ -296,7 +278,7 @@ _Los cambios se reflejarán inmediatamente en WhatsApp_
 """
         
         keyboard = [
-            [InlineKeyboardButton("Ver catálogo", callback_data="cat_ver")],
+            [InlineKeyboardButton("Ver catálogo actualizado", callback_data="cat_volver")],
             [InlineKeyboardButton("Otra actualización", callback_data="cat_volver")],
             [InlineKeyboardButton("Salir", callback_data="cat_salir")]
         ]
