@@ -1,6 +1,6 @@
 """
-Módulo simplificado para gestionar pedidos de WhatsApp desde Telegram
-Versión corregida - Compatible con la arquitectura de sheets del proyecto
+Módulo optimizado para gestionar pedidos de WhatsApp desde Telegram
+Versión con caché y mejor manejo de estados
 """
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -13,9 +13,11 @@ from telegram.ext import (
     filters
 )
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 from config import SPREADSHEET_ID
+import time
+import asyncio  # Import faltante
 
 # Configurar zona horaria de Perú
 peru_tz = pytz.timezone('America/Lima')
@@ -25,6 +27,13 @@ MENU_PRINCIPAL, BUSCAR_INPUT, VER_PEDIDO, CAMBIAR_ESTADO = range(4)
 
 # Configuración de logging
 logger = logging.getLogger(__name__)
+
+# Cache para reducir llamadas a la API
+CACHE_PEDIDOS = {
+    'data': None,
+    'timestamp': None,
+    'ttl': 30  # segundos de vida del caché
+}
 
 # Estados disponibles para los pedidos
 ESTADOS_PEDIDO = [
@@ -48,14 +57,33 @@ EMOJI_ESTADOS = {
     "Cancelado": "❌"
 }
 
-def obtener_datos_pedidos():
-    """Obtiene los pedidos de Google Sheets de forma síncrona"""
+def obtener_datos_pedidos(force_refresh=False):
+    """
+    Obtiene los pedidos de Google Sheets con caché
+    
+    Args:
+        force_refresh: Si True, ignora el caché y obtiene datos frescos
+    """
+    global CACHE_PEDIDOS
+    
+    # Verificar si el caché es válido
+    ahora = time.time()
+    if not force_refresh and CACHE_PEDIDOS['data'] and CACHE_PEDIDOS['timestamp']:
+        edad_cache = ahora - CACHE_PEDIDOS['timestamp']
+        if edad_cache < CACHE_PEDIDOS['ttl']:
+            logger.info(f"Usando caché de pedidos ({edad_cache:.1f}s de antigüedad)")
+            return CACHE_PEDIDOS['data']
+    
     try:
+        logger.info("Obteniendo pedidos frescos de Google Sheets...")
         from utils.sheets import get_sheet_service
         service = get_sheet_service()
         
         if not service:
             logger.error("No se pudo obtener el servicio de Google Sheets")
+            if CACHE_PEDIDOS['data']:
+                logger.info("Usando caché anterior debido a error de servicio")
+                return CACHE_PEDIDOS['data']
             return None
             
         # Obtener datos de la hoja PedidosWhatsApp
@@ -65,77 +93,138 @@ def obtener_datos_pedidos():
         ).execute()
         
         values = result.get('values', [])
+        
+        # Actualizar caché
+        CACHE_PEDIDOS['data'] = values
+        CACHE_PEDIDOS['timestamp'] = ahora
+        
+        logger.info(f"Pedidos actualizados: {len(values)} filas")
         return values
         
     except Exception as e:
-        logger.error(f"Error obteniendo pedidos: {e}")
-        return None
+        if "RATE_LIMIT_EXCEEDED" in str(e):
+            logger.warning("⚠️ Límite de API excedido, usando caché si está disponible")
+            if CACHE_PEDIDOS['data']:
+                return CACHE_PEDIDOS['data']
+            else:
+                logger.error("No hay caché disponible")
+                return None
+        else:
+            logger.error(f"Error obteniendo pedidos: {e}")
+            if CACHE_PEDIDOS['data']:
+                logger.info("Usando caché anterior debido a error")
+                return CACHE_PEDIDOS['data']
+            return None
+
+def limpiar_cache():
+    """Limpia el caché de pedidos"""
+    global CACHE_PEDIDOS
+    CACHE_PEDIDOS['data'] = None
+    CACHE_PEDIDOS['timestamp'] = None
+    logger.info("Caché limpiado")
 
 def actualizar_estado_pedido(fila, columna, valor):
-    """Actualiza una celda en Google Sheets de forma síncrona"""
-    try:
-        from utils.sheets import get_sheet_service
-        service = get_sheet_service()
-        
-        if not service:
-            return False
-        
-        # Convertir columna número a letra
-        columna_letra = chr(64 + columna)  # 1=A, 2=B, etc.
-        rango = f'PedidosWhatsApp!{columna_letra}{fila}'
-        
-        body = {'values': [[valor]]}
-        
-        result = service.spreadsheets().values().update(
-            spreadsheetId=SPREADSHEET_ID,
-            range=rango,
-            valueInputOption='USER_ENTERED',
-            body=body
-        ).execute()
-        
-        return True
-        
-    except Exception as e:
-        logger.error(f"Error actualizando estado: {e}")
-        return False
+    """Actualiza una celda en Google Sheets con retry en caso de límite"""
+    max_reintentos = 3
+    espera = 2  # segundos
+    
+    for intento in range(max_reintentos):
+        try:
+            from utils.sheets import get_sheet_service
+            service = get_sheet_service()
+            
+            if not service:
+                return False
+            
+            # Convertir columna número a letra
+            columna_letra = chr(64 + columna)  # 1=A, 2=B, etc.
+            rango = f'PedidosWhatsApp!{columna_letra}{fila}'
+            
+            body = {'values': [[valor]]}
+            
+            result = service.spreadsheets().values().update(
+                spreadsheetId=SPREADSHEET_ID,
+                range=rango,
+                valueInputOption='USER_ENTERED',
+                body=body
+            ).execute()
+            
+            # Si la actualización fue exitosa, limpiar caché
+            limpiar_cache()
+            
+            return True
+            
+        except Exception as e:
+            if "RATE_LIMIT_EXCEEDED" in str(e) and intento < max_reintentos - 1:
+                logger.warning(f"Límite excedido, esperando {espera}s antes de reintentar...")
+                time.sleep(espera)
+                espera *= 2  # Backoff exponencial
+            else:
+                logger.error(f"Error actualizando estado: {e}")
+                return False
+    
+    return False
 
 async def pedidos_whatsapp_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Comando principal para gestionar pedidos de WhatsApp"""
+    
+    # Limpiar cualquier dato anterior del contexto
+    context.user_data.clear()
     
     keyboard = [
         [InlineKeyboardButton("⏳ Ver pedidos pendientes", callback_data="pw_pendientes")],
         [InlineKeyboardButton("🔍 Buscar por ID", callback_data="pw_buscar_id")],
         [InlineKeyboardButton("📱 Buscar por teléfono", callback_data="pw_buscar_telefono")],
-        [InlineKeyboardButton("❌ Cancelar", callback_data="pw_cancelar")]
+        [InlineKeyboardButton("🔄 Actualizar caché", callback_data="pw_refresh")],
+        [InlineKeyboardButton("❌ Salir", callback_data="pw_salir")]
     ]
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    mensaje = """
+    # Mostrar estado del caché
+    cache_info = ""
+    if CACHE_PEDIDOS['timestamp']:
+        edad = int(time.time() - CACHE_PEDIDOS['timestamp'])
+        if edad < 60:
+            cache_info = f"_📊 Caché: actualizado hace {edad}s_\n"
+        else:
+            cache_info = f"_📊 Caché: actualizado hace {edad//60}min_\n"
+    
+    mensaje = f"""
 🛒 *GESTIÓN DE PEDIDOS WHATSAPP*
 ━━━━━━━━━━━━━━━━━━━━━
 
+{cache_info}
 Selecciona una opción:
 
 • *Ver pendientes*: Pedidos sin verificar
 • *Buscar por ID*: Buscar pedido específico
 • *Buscar por teléfono*: Pedidos de un cliente
+• *Actualizar caché*: Recargar datos
 
 _Comando rápido: /pw_
 """
     
-    if update.message:
-        await update.message.reply_text(
-            mensaje,
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
-        )
-    else:
-        await update.callback_query.edit_message_text(
-            mensaje,
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
-        )
+    try:
+        if update.message:
+            await update.message.reply_text(
+                mensaje,
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+        elif update.callback_query:
+            await update.callback_query.edit_message_text(
+                mensaje,
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+    except Exception as e:
+        logger.error(f"Error en pedidos_whatsapp_command: {e}")
+        # Si hay error, intentar enviar nuevo mensaje
+        if update.message:
+            await update.message.reply_text(mensaje, reply_markup=reply_markup, parse_mode='Markdown')
+        elif update.callback_query:
+            await update.callback_query.message.reply_text(mensaje, reply_markup=reply_markup, parse_mode='Markdown')
     
     return MENU_PRINCIPAL
 
@@ -146,23 +235,62 @@ async def menu_principal_callback(update: Update, context: ContextTypes.DEFAULT_
     
     opcion = query.data.replace("pw_", "")
     
-    if opcion == "cancelar":
-        await query.edit_message_text("❌ Operación cancelada")
+    if opcion == "salir":
+        await query.edit_message_text("✅ Sesión finalizada\n\nUsa /pw para volver a empezar")
         return ConversationHandler.END
+    
+    elif opcion == "refresh":
+        await query.edit_message_text("🔄 Actualizando caché...")
+        limpiar_cache()
+        pedidos = obtener_datos_pedidos(force_refresh=True)
+        
+        if pedidos:
+            mensaje = f"✅ Caché actualizado\n\nTotal de filas: {len(pedidos)}\n"
+            if len(pedidos) > 1:
+                mensaje += f"Pedidos (sin header): {len(pedidos) - 1}"
+            else:
+                mensaje += "No hay pedidos registrados"
+                
+            # Botón para volver
+            keyboard = [[InlineKeyboardButton("🔙 Volver", callback_data="pw_volver_menu")]]
+            await query.edit_message_text(
+                mensaje,
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        else:
+            await query.edit_message_text("❌ Error al actualizar caché\n\nIntenta más tarde")
+            return ConversationHandler.END
+        
+        return MENU_PRINCIPAL
+    
+    elif opcion == "volver_menu":
+        # Volver al menú principal
+        return await pedidos_whatsapp_command(update, context)
     
     elif opcion == "pendientes":
         await query.edit_message_text("🔄 Cargando pedidos pendientes...")
         
-        # Obtener pedidos
+        # Obtener pedidos (usa caché si está disponible)
         pedidos = obtener_datos_pedidos()
         
-        if not pedidos or len(pedidos) <= 1:
-            await query.edit_message_text("📭 No hay pedidos registrados")
+        if not pedidos:
+            await query.edit_message_text(
+                "❌ Error al obtener pedidos\n\n"
+                "_Posible límite de API excedido. Intenta en unos segundos._"
+            )
             return ConversationHandler.END
+        
+        if len(pedidos) <= 1:
+            keyboard = [[InlineKeyboardButton("🔙 Volver", callback_data="pw_volver_menu")]]
+            await query.edit_message_text(
+                "📭 No hay pedidos registrados",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+            return MENU_PRINCIPAL
         
         # Filtrar solo pendientes
         pedidos_pendientes = []
-        for i, pedido in enumerate(pedidos[1:], start=2):  # Skip header, start from row 2
+        for i, pedido in enumerate(pedidos[1:], start=2):  # Skip header
             if len(pedido) > 14 and pedido[14] == "Pendiente verificación":
                 pedidos_pendientes.append((i, pedido))
         
@@ -207,8 +335,17 @@ async def buscar_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     
     await update.message.reply_text("🔄 Buscando...")
     
+    # Usar caché para búsqueda
     pedidos = obtener_datos_pedidos()
-    if not pedidos or len(pedidos) <= 1:
+    
+    if not pedidos:
+        await update.message.reply_text(
+            "❌ Error al obtener pedidos\n\n"
+            "_Posible límite de API excedido. Intenta en unos segundos._"
+        )
+        return ConversationHandler.END
+        
+    if len(pedidos) <= 1:
         await update.message.reply_text("📭 No hay pedidos registrados")
         return ConversationHandler.END
     
@@ -309,18 +446,24 @@ Total: *{len(pedidos)}* pedido(s)
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     # Enviar mensaje
-    if hasattr(query_or_update, 'edit_message_text'):
-        await query_or_update.edit_message_text(
-            mensaje,
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
-        )
-    else:
-        await query_or_update.message.reply_text(
-            mensaje,
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
-        )
+    try:
+        if hasattr(query_or_update, 'edit_message_text'):
+            await query_or_update.edit_message_text(
+                mensaje,
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+        else:
+            await query_or_update.message.reply_text(
+                mensaje,
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+    except Exception as e:
+        logger.error(f"Error mostrando lista: {e}")
+        # Si falla, intentar enviar nuevo mensaje
+        if hasattr(query_or_update, 'message'):
+            await query_or_update.message.reply_text(mensaje, reply_markup=reply_markup, parse_mode='Markdown')
 
 async def ver_detalle_pedido(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Muestra el detalle de un pedido específico"""
@@ -525,10 +668,10 @@ async def cambiar_estado_callback(update: Update, context: ContextTypes.DEFAULT_
 ✅ _El cliente recibirá notificación por WhatsApp_
 """
         
-        keyboard = [[
-            InlineKeyboardButton("📋 Ver más pedidos", callback_data="pw_pendientes"),
-            InlineKeyboardButton("🔙 Menú principal", callback_data="pw_volver_menu")
-        ]]
+        keyboard = [
+            [InlineKeyboardButton("📋 Ver más pedidos", callback_data="pw_pendientes")],
+            [InlineKeyboardButton("🔙 Menú principal", callback_data="pw_volver_menu")]
+        ]
         
         await query.edit_message_text(
             mensaje,
@@ -539,17 +682,30 @@ async def cambiar_estado_callback(update: Update, context: ContextTypes.DEFAULT_
         return MENU_PRINCIPAL
         
     else:
-        await query.edit_message_text("❌ Error al actualizar el estado")
-        return ConversationHandler.END
+        keyboard = [[InlineKeyboardButton("🔙 Intentar de nuevo", callback_data="pw_volver_menu")]]
+        await query.edit_message_text(
+            "❌ Error al actualizar el estado\n\nIntenta de nuevo en unos segundos",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        return MENU_PRINCIPAL
 
 async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancela la operación actual"""
-    await update.message.reply_text("❌ Operación cancelada")
+    context.user_data.clear()
+    await update.message.reply_text("❌ Operación cancelada\n\nUsa /pw para empezar de nuevo")
+    return ConversationHandler.END
+
+async def timeout_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Maneja timeout de la conversación"""
+    context.user_data.clear()
+    if update.callback_query:
+        await update.callback_query.answer("⏱️ Sesión expirada. Usa /pw para empezar de nuevo")
     return ConversationHandler.END
 
 def register_pedidos_whatsapp_handlers(application):
     """Registra los handlers del módulo de pedidos WhatsApp"""
     
+    # Configurar el ConversationHandler con timeout
     conv_handler = ConversationHandler(
         entry_points=[
             CommandHandler('pedidos_whatsapp', pedidos_whatsapp_command),
@@ -558,25 +714,35 @@ def register_pedidos_whatsapp_handlers(application):
         states={
             MENU_PRINCIPAL: [
                 CallbackQueryHandler(menu_principal_callback, pattern='^pw_'),
-                CallbackQueryHandler(pedidos_whatsapp_command, pattern='^pw_volver_menu$')
+                MessageHandler(filters.COMMAND, cancelar)
             ],
             BUSCAR_INPUT: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, buscar_input),
-                CallbackQueryHandler(pedidos_whatsapp_command, pattern='^pw_volver_menu$')
+                CallbackQueryHandler(menu_principal_callback, pattern='^pw_volver_menu$'),
+                MessageHandler(filters.COMMAND, cancelar)
             ],
             VER_PEDIDO: [
                 CallbackQueryHandler(ver_detalle_pedido, pattern='^ver_'),
-                CallbackQueryHandler(pedidos_whatsapp_command, pattern='^pw_volver_menu$')
+                CallbackQueryHandler(pedidos_whatsapp_command, pattern='^pw_volver_menu$'),
+                MessageHandler(filters.COMMAND, cancelar)
             ],
             CAMBIAR_ESTADO: [
                 CallbackQueryHandler(cambiar_estado_callback, pattern='^estado_'),
-                CallbackQueryHandler(pedidos_whatsapp_command, pattern='^pw_volver_menu$')
+                CallbackQueryHandler(pedidos_whatsapp_command, pattern='^pw_volver_menu$'),
+                MessageHandler(filters.COMMAND, cancelar)
+            ],
+            ConversationHandler.TIMEOUT: [
+                CallbackQueryHandler(timeout_handler),
+                MessageHandler(filters.ALL, timeout_handler)
             ]
         },
         fallbacks=[
-            CommandHandler('cancelar', cancelar)
-        ]
+            CommandHandler('cancelar', cancelar),
+            CommandHandler('pw', pedidos_whatsapp_command),
+            CommandHandler('pedidos_whatsapp', pedidos_whatsapp_command)
+        ],
+        conversation_timeout=300  # 5 minutos de timeout
     )
     
     application.add_handler(conv_handler)
-    logger.info("✅ Handlers de pedidos WhatsApp registrados correctamente")
+    logger.info("✅ Handlers de pedidos WhatsApp registrados correctamente con timeout de 5 minutos")
