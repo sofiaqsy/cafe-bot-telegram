@@ -1,6 +1,6 @@
 """
 Módulo optimizado para gestionar pedidos de WhatsApp desde Telegram
-Versión con caché y mejor manejo de estados
+Versión sin emojis innecesarios y botones mejorados
 """
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 import pytz
 from config import SPREADSHEET_ID
 import time
-import asyncio  # Import faltante
+import asyncio
 
 # Configurar zona horaria de Perú
 peru_tz = pytz.timezone('America/Lima')
@@ -37,27 +37,15 @@ CACHE_PEDIDOS = {
 
 # Estados disponibles para los pedidos (sin emojis)
 ESTADOS_PEDIDO = [
-"Pendiente verificación",
-"Pago confirmado",
-"En preparación",
-"En camino",
-"Listo para recoger",
-"Entregado",
-"Completado",
-"Cancelado"
+    "Pendiente verificación",
+    "Pago confirmado",
+    "En preparación",
+    "En camino",
+    "Listo para recoger",
+    "Entregado",
+    "Completado",
+    "Cancelado"
 ]
-
-# Emojis para mostrar según estado (solo para visualización)
-EMOJI_ESTADOS = {
-"Pendiente verificación": "⏳",
-"Pago confirmado": "✅",
-"En preparación": "☕",
-"En camino": "🚚",
-"Listo para recoger": "📦",
-"Entregado": "✔️",
-"Completado": "✔️",
-"Cancelado": "❌"
-}
 
 def obtener_datos_pedidos(force_refresh=False):
     """
@@ -105,7 +93,7 @@ def obtener_datos_pedidos(force_refresh=False):
         
     except Exception as e:
         if "RATE_LIMIT_EXCEEDED" in str(e):
-            logger.warning("⚠️ Límite de API excedido, usando caché si está disponible")
+            logger.warning("Límite de API excedido, usando caché si está disponible")
             if CACHE_PEDIDOS['data']:
                 return CACHE_PEDIDOS['data']
             else:
@@ -174,11 +162,11 @@ async def pedidos_whatsapp_command(update: Update, context: ContextTypes.DEFAULT
     context.user_data.clear()
     
     keyboard = [
-        [InlineKeyboardButton("📦 Ver pedidos activos", callback_data="pw_pendientes")],
-        [InlineKeyboardButton("🔍 Buscar por ID", callback_data="pw_buscar_id")],
-        [InlineKeyboardButton("📱 Buscar por teléfono", callback_data="pw_buscar_telefono")],
-        [InlineKeyboardButton("🔄 Actualizar caché", callback_data="pw_refresh")],
-        [InlineKeyboardButton("❌ Salir", callback_data="pw_salir")]
+        [InlineKeyboardButton("Ver pedidos activos", callback_data="pw_pendientes")],
+        [InlineKeyboardButton("Buscar por ID", callback_data="pw_buscar_id")],
+        [InlineKeyboardButton("Buscar por teléfono", callback_data="pw_buscar_telefono")],
+        [InlineKeyboardButton("Actualizar caché", callback_data="pw_refresh")],
+        [InlineKeyboardButton("Salir", callback_data="pw_salir")]
     ]
     
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -188,12 +176,12 @@ async def pedidos_whatsapp_command(update: Update, context: ContextTypes.DEFAULT
     if CACHE_PEDIDOS['timestamp']:
         edad = int(time.time() - CACHE_PEDIDOS['timestamp'])
         if edad < 60:
-            cache_info = f"_📊 Caché: actualizado hace {edad}s_\n"
+            cache_info = f"_Caché: actualizado hace {edad}s_\n"
         else:
-            cache_info = f"_📊 Caché: actualizado hace {edad//60}min_\n"
+            cache_info = f"_Caché: actualizado hace {edad//60}min_\n"
     
     mensaje = f"""
-🛒 *GESTIÓN DE PEDIDOS WHATSAPP*
+*📦 GESTIÓN DE PEDIDOS WHATSAPP*
 ━━━━━━━━━━━━━━━━━━━━━
 
 {cache_info}
@@ -238,29 +226,29 @@ async def menu_principal_callback(update: Update, context: ContextTypes.DEFAULT_
     opcion = query.data.replace("pw_", "")
     
     if opcion == "salir":
-        await query.edit_message_text("✅ Sesión finalizada\n\nUsa /pw para volver a empezar")
+        await query.edit_message_text("Sesión finalizada\n\nUsa /pw para volver a empezar")
         return ConversationHandler.END
     
     elif opcion == "refresh":
-        await query.edit_message_text("🔄 Actualizando caché...")
+        await query.edit_message_text("Actualizando caché...")
         limpiar_cache()
         pedidos = obtener_datos_pedidos(force_refresh=True)
         
         if pedidos:
-            mensaje = f"✅ Caché actualizado\n\nTotal de filas: {len(pedidos)}\n"
+            mensaje = f"Caché actualizado\n\nTotal de filas: {len(pedidos)}\n"
             if len(pedidos) > 1:
                 mensaje += f"Pedidos (sin header): {len(pedidos) - 1}"
             else:
                 mensaje += "No hay pedidos registrados"
                 
             # Botón para volver
-            keyboard = [[InlineKeyboardButton("🔙 Volver", callback_data="pw_volver_menu")]]
+            keyboard = [[InlineKeyboardButton("Volver", callback_data="pw_volver_menu")]]
             await query.edit_message_text(
                 mensaje,
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
         else:
-            await query.edit_message_text("❌ Error al actualizar caché\n\nIntenta más tarde")
+            await query.edit_message_text("Error al actualizar caché\n\nIntenta más tarde")
             return ConversationHandler.END
         
         return MENU_PRINCIPAL
@@ -270,22 +258,22 @@ async def menu_principal_callback(update: Update, context: ContextTypes.DEFAULT_
         return await pedidos_whatsapp_command(update, context)
     
     elif opcion == "pendientes":
-        await query.edit_message_text("🔄 Cargando pedidos activos...")
+        await query.edit_message_text("Cargando pedidos activos...")
         
         # Obtener pedidos (usa caché si está disponible)
         pedidos = obtener_datos_pedidos()
         
         if not pedidos:
             await query.edit_message_text(
-                "❌ Error al obtener pedidos\n\n"
+                "Error al obtener pedidos\n\n"
                 "_Posible límite de API excedido. Intenta en unos segundos._"
             )
             return ConversationHandler.END
         
         if len(pedidos) <= 1:
-            keyboard = [[InlineKeyboardButton("🔙 Volver", callback_data="pw_volver_menu")]]
+            keyboard = [[InlineKeyboardButton("Volver", callback_data="pw_volver_menu")]]
             await query.edit_message_text(
-                "📭 No hay pedidos registrados",
+                "No hay pedidos registrados",
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
             return MENU_PRINCIPAL
@@ -302,21 +290,21 @@ async def menu_principal_callback(update: Update, context: ContextTypes.DEFAULT_
                     pedidos_activos.append((i, pedido))
         
         if not pedidos_activos:
-            keyboard = [[InlineKeyboardButton("🔙 Volver", callback_data="pw_volver_menu")]]
+            keyboard = [[InlineKeyboardButton("Volver", callback_data="pw_volver_menu")]]
             await query.edit_message_text(
-                "✅ No hay pedidos activos\n\n_Todos los pedidos están entregados, completados o cancelados_",
+                "No hay pedidos activos\n\n_Todos los pedidos están entregados, completados o cancelados_",
                 reply_markup=InlineKeyboardMarkup(keyboard),
                 parse_mode='Markdown'
             )
             return MENU_PRINCIPAL
         
         # Mostrar lista de pedidos activos
-        await mostrar_lista_pedidos(query, pedidos_activos, "PEDIDOS ACTIVOS")
+        await mostrar_lista_pedidos(query, pedidos_activos, "📦 PEDIDOS ACTIVOS")
         return VER_PEDIDO
     
     elif opcion == "buscar_id":
         await query.edit_message_text(
-            "🔍 *BUSCAR POR ID*\n\n"
+            "*BUSCAR POR ID*\n\n"
             "Envía el ID del pedido\n"
             "Ejemplo: `CAF-123456`\n\n"
             "_Escribe /cancelar para salir_",
@@ -327,7 +315,7 @@ async def menu_principal_callback(update: Update, context: ContextTypes.DEFAULT_
     
     elif opcion == "buscar_telefono":
         await query.edit_message_text(
-            "📱 *BUSCAR POR TELÉFONO*\n\n"
+            "*BUSCAR POR TELÉFONO*\n\n"
             "Envía el número de teléfono\n"
             "Ejemplo: `936934501`\n\n"
             "_Escribe /cancelar para salir_",
@@ -341,20 +329,20 @@ async def buscar_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     texto = update.message.text.strip()
     tipo_busqueda = context.user_data.get('buscar_tipo')
     
-    await update.message.reply_text("🔄 Buscando...")
+    await update.message.reply_text("Buscando...")
     
     # Usar caché para búsqueda
     pedidos = obtener_datos_pedidos()
     
     if not pedidos:
         await update.message.reply_text(
-            "❌ Error al obtener pedidos\n\n"
+            "Error al obtener pedidos\n\n"
             "_Posible límite de API excedido. Intenta en unos segundos._"
         )
         return ConversationHandler.END
         
     if len(pedidos) <= 1:
-        await update.message.reply_text("📭 No hay pedidos registrados")
+        await update.message.reply_text("No hay pedidos registrados")
         return ConversationHandler.END
     
     pedidos_encontrados = []
@@ -383,9 +371,9 @@ async def buscar_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
                     pedidos_encontrados.append((i, pedido))
     
     if not pedidos_encontrados:
-        keyboard = [[InlineKeyboardButton("🔙 Volver al menú", callback_data="pw_volver_menu")]]
+        keyboard = [[InlineKeyboardButton("Volver al menú", callback_data="pw_volver_menu")]]
         await update.message.reply_text(
-            f"❌ No se encontraron pedidos\n\nBuscaste: *{texto}*\nTipo: {tipo_busqueda}",
+            f"No se encontraron pedidos\n\nBuscaste: *{texto}*\nTipo: {tipo_busqueda}",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode='Markdown'
         )
@@ -397,9 +385,9 @@ async def buscar_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     return VER_PEDIDO
 
 async def mostrar_lista_pedidos(query_or_update, pedidos, titulo):
-    """Muestra una lista de pedidos"""
+    """Muestra una lista de pedidos con botones mejorados"""
     mensaje = f"""
-📋 *{titulo}*
+*{titulo}*
 ━━━━━━━━━━━━━━━━━━━━━
 Total: *{len(pedidos)}* pedido(s)
 
@@ -416,25 +404,33 @@ Total: *{len(pedidos)}* pedido(s)
             cantidad = pedido[8] if len(pedido) > 8 else "0"
             total = pedido[12] if len(pedido) > 12 else "0"
             estado = pedido[14] if len(pedido) > 14 else "Sin estado"
-            emoji = EMOJI_ESTADOS.get(estado, "📋")
             
             # Truncar nombres largos
             if len(empresa) > 20:
-                empresa = empresa[:20] + "..."
+                empresa_corta = empresa[:20] + "..."
+            else:
+                empresa_corta = empresa
+                
             if len(producto) > 25:
                 producto = producto[:25] + "..."
             
-            mensaje += f"{emoji} `{id_pedido}`\n"
-            mensaje += f"📅 {fecha}\n"
-            mensaje += f"🏢 {empresa}\n"
-            mensaje += f"☕ {producto}\n"
-            mensaje += f"📦 {cantidad}kg | 💰 S/{total}\n"
+            mensaje += f"`{id_pedido}`\n"
+            mensaje += f"Fecha: {fecha}\n"
+            mensaje += f"Empresa: {empresa}\n"
+            mensaje += f"Producto: {producto}\n"
+            mensaje += f"Cantidad: {cantidad}kg | Total: S/{total}\n"
+            mensaje += f"Estado: *{estado}*\n"
             mensaje += f"━━━━━━━━━━━━━━━\n"
             
-            # Agregar botón para ver detalle
+            # Botón mejorado: mostrar empresa y cantidad en vez del ID
+            texto_boton = f"{empresa_corta} - {cantidad}kg"
+            # Limitar longitud del botón
+            if len(texto_boton) > 35:
+                texto_boton = texto_boton[:32] + "..."
+            
             keyboard.append([
                 InlineKeyboardButton(
-                    f"{emoji} {id_pedido}",
+                    texto_boton,
                     callback_data=f"ver_{fila}_{id_pedido}"
                 )
             ])
@@ -444,11 +440,11 @@ Total: *{len(pedidos)}* pedido(s)
             continue
     
     if len(pedidos) > 10:
-        mensaje += f"\n_⚠️ Mostrando 10 de {len(pedidos)} pedidos_"
+        mensaje += f"\n_Mostrando 10 de {len(pedidos)} pedidos_"
     
     # Agregar botón de volver
     keyboard.append([
-        InlineKeyboardButton("🔙 Volver al menú", callback_data="pw_volver_menu")
+        InlineKeyboardButton("Volver al menú", callback_data="pw_volver_menu")
     ])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -490,19 +486,19 @@ async def ver_detalle_pedido(update: Update, context: ContextTypes.DEFAULT_TYPE)
         fila = int(partes[1])
         id_pedido = partes[2]  # El resto es el ID
     except (ValueError, IndexError):
-        await query.edit_message_text("❌ Error al procesar el pedido")
+        await query.edit_message_text("Error al procesar el pedido")
         return VER_PEDIDO
     
     # Guardar en contexto
     context.user_data['fila_actual'] = fila
     context.user_data['id_pedido_actual'] = id_pedido
     
-    await query.edit_message_text("🔄 Cargando detalle...")
+    await query.edit_message_text("Cargando detalle...")
     
     # Obtener pedido actualizado
     pedidos = obtener_datos_pedidos()
     if not pedidos or len(pedidos) < fila:
-        await query.edit_message_text("❌ Error al obtener el pedido")
+        await query.edit_message_text("Error al obtener el pedido")
         return ConversationHandler.END
     
     pedido = pedidos[fila - 1]
@@ -518,10 +514,15 @@ async def ver_detalle_pedido(update: Update, context: ContextTypes.DEFAULT_TYPE)
     estados_disponibles = []
     for i, estado in enumerate(ESTADOS_PEDIDO):
         if estado != estado_actual:
-            emoji = EMOJI_ESTADOS.get(estado, "📋")
+            # Solo agregar emoji a Completado y Entregado
+            if estado in ["Entregado", "Completado"]:
+                texto_estado = f"✅ {estado}"
+            else:
+                texto_estado = estado
+                
             estados_disponibles.append(
                 InlineKeyboardButton(
-                    f"{emoji} {estado}",
+                    texto_estado,
                     callback_data=f"estado_{i}"
                 )
             )
@@ -533,9 +534,9 @@ async def ver_detalle_pedido(update: Update, context: ContextTypes.DEFAULT_TYPE)
         else:
             keyboard.append([estados_disponibles[i]])
     
-    # Botón de volver
+    # Botón de volver con emoji
     keyboard.append([
-        InlineKeyboardButton("🔙 Volver", callback_data="pw_volver_menu")
+        InlineKeyboardButton("↩️ Volver", callback_data="pw_volver_menu")
     ])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -549,7 +550,7 @@ async def ver_detalle_pedido(update: Update, context: ContextTypes.DEFAULT_TYPE)
     return CAMBIAR_ESTADO
 
 def formatear_detalle_pedido(pedido):
-    """Formatea el detalle de un pedido"""
+    """Formatea el detalle de un pedido sin emojis innecesarios"""
     try:
         # Extraer campos con valores por defecto
         id_pedido = pedido[0] if len(pedido) > 0 else "N/A"
@@ -570,31 +571,29 @@ def formatear_detalle_pedido(pedido):
         if whatsapp != "N/A":
             whatsapp = str(whatsapp).replace("'", "")
         
-        emoji_estado = EMOJI_ESTADOS.get(estado, "📋")
-        
         mensaje = f"""
-{emoji_estado} *DETALLE DEL PEDIDO*
+*DETALLE DEL PEDIDO*
 ━━━━━━━━━━━━━━━━━━━━━
 
-🆔 ID: `{id_pedido}`
-📅 Fecha: {fecha}
-🕐 Hora: {hora}
+ID: `{id_pedido}`
+Fecha: {fecha}
+Hora: {hora}
 
 *DATOS DEL CLIENTE*
-🏢 Empresa: {empresa}
-👤 Contacto: {contacto}
-📞 Teléfono: {telefono}
-📱 WhatsApp: {whatsapp}
-📍 Dirección: _{direccion}_
+Empresa: {empresa}
+Contacto: {contacto}
+Teléfono: {telefono}
+WhatsApp: {whatsapp}
+Dirección: _{direccion}_
 
 *INFORMACIÓN DEL PEDIDO*
-☕ Producto: *{producto}*
-📦 Cantidad: *{cantidad} kg*
-💰 Total: *S/ {total}*
-💳 Método: {metodo_pago}
+Producto: *{producto}*
+Cantidad: *{cantidad} kg*
+Total: *S/ {total}*
+Método: {metodo_pago}
 
 *ESTADO ACTUAL*
-{emoji_estado} *{estado}*
+*{estado}*
 
 ━━━━━━━━━━━━━━━━━━━━━
 _Selecciona nuevo estado:_
@@ -604,7 +603,7 @@ _Selecciona nuevo estado:_
         
     except Exception as e:
         logger.error(f"Error formateando detalle: {e}")
-        return f"❌ Error al formatear pedido"
+        return f"Error al formatear pedido"
 
 async def cambiar_estado_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cambia el estado de un pedido"""
@@ -622,7 +621,7 @@ async def cambiar_estado_callback(update: Update, context: ContextTypes.DEFAULT_
         estado_index = int(query.data.replace("estado_", ""))
         nuevo_estado = ESTADOS_PEDIDO[estado_index]
     except (ValueError, IndexError):
-        await query.edit_message_text("❌ Error: Estado no válido")
+        await query.edit_message_text("Error: Estado no válido")
         return CAMBIAR_ESTADO
     
     # Obtener datos guardados
@@ -630,10 +629,10 @@ async def cambiar_estado_callback(update: Update, context: ContextTypes.DEFAULT_
     id_pedido = context.user_data.get('id_pedido_actual')
     
     if not fila or not id_pedido:
-        await query.edit_message_text("❌ Error: No se pudo identificar el pedido")
+        await query.edit_message_text("Error: No se pudo identificar el pedido")
         return ConversationHandler.END
     
-    await query.edit_message_text(f"🔄 Actualizando estado a: {nuevo_estado}...")
+    await query.edit_message_text(f"Actualizando estado a: {nuevo_estado}...")
     
     # Actualizar estado (columna O = columna 15)
     exito = actualizar_estado_pedido(fila, 15, nuevo_estado)
@@ -662,23 +661,21 @@ async def cambiar_estado_callback(update: Update, context: ContextTypes.DEFAULT_
         # Actualizar observaciones (columna Q = columna 17)
         actualizar_estado_pedido(fila, 17, nueva_obs)
         
-        emoji = EMOJI_ESTADOS.get(nuevo_estado, "✅")
-        
         mensaje = f"""
-{emoji} *ESTADO ACTUALIZADO*
+*ESTADO ACTUALIZADO*
 ━━━━━━━━━━━━━━━━━━━━━
 
-📦 Pedido: `{id_pedido}`
-📌 Nuevo estado: *{nuevo_estado}*
-👤 Actualizado por: @{usuario}
-🕐 Hora: {timestamp}
+Pedido: `{id_pedido}`
+Nuevo estado: *{nuevo_estado}*
+Actualizado por: @{usuario}
+Hora: {timestamp}
 
-✅ _El cliente recibirá notificación por WhatsApp_
+_El cliente recibirá notificación por WhatsApp_
 """
         
         keyboard = [
-            [InlineKeyboardButton("📋 Ver más pedidos", callback_data="pw_pendientes")],
-            [InlineKeyboardButton("🔙 Menú principal", callback_data="pw_volver_menu")]
+            [InlineKeyboardButton("Ver más pedidos", callback_data="pw_pendientes")],
+            [InlineKeyboardButton("Menú principal", callback_data="pw_volver_menu")]
         ]
         
         await query.edit_message_text(
@@ -690,9 +687,9 @@ async def cambiar_estado_callback(update: Update, context: ContextTypes.DEFAULT_
         return MENU_PRINCIPAL
         
     else:
-        keyboard = [[InlineKeyboardButton("🔙 Intentar de nuevo", callback_data="pw_volver_menu")]]
+        keyboard = [[InlineKeyboardButton("Intentar de nuevo", callback_data="pw_volver_menu")]]
         await query.edit_message_text(
-            "❌ Error al actualizar el estado\n\nIntenta de nuevo en unos segundos",
+            "Error al actualizar el estado\n\nIntenta de nuevo en unos segundos",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         return MENU_PRINCIPAL
@@ -700,14 +697,14 @@ async def cambiar_estado_callback(update: Update, context: ContextTypes.DEFAULT_
 async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancela la operación actual"""
     context.user_data.clear()
-    await update.message.reply_text("❌ Operación cancelada\n\nUsa /pw para empezar de nuevo")
+    await update.message.reply_text("Operación cancelada\n\nUsa /pw para empezar de nuevo")
     return ConversationHandler.END
 
 async def timeout_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Maneja timeout de la conversación"""
     context.user_data.clear()
     if update.callback_query:
-        await update.callback_query.answer("⏱️ Sesión expirada. Usa /pw para empezar de nuevo")
+        await update.callback_query.answer("Sesión expirada. Usa /pw para empezar de nuevo")
     return ConversationHandler.END
 
 def register_pedidos_whatsapp_handlers(application):
@@ -753,4 +750,4 @@ def register_pedidos_whatsapp_handlers(application):
     )
     
     application.add_handler(conv_handler)
-    logger.info("✅ Handlers de pedidos WhatsApp registrados correctamente con timeout de 5 minutos")
+    logger.info("Handlers de pedidos WhatsApp registrados correctamente con timeout de 5 minutos")
