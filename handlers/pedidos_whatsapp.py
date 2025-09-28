@@ -35,26 +35,28 @@ CACHE_PEDIDOS = {
     'ttl': 30  # segundos de vida del caché
 }
 
-# Estados disponibles para los pedidos
+# Estados disponibles para los pedidos (sin emojis)
 ESTADOS_PEDIDO = [
-    "Pendiente verificación",
-    "Pago verificado ✅", 
-    "En preparación",
-    "En camino",
-    "Entregado",
-    "Completado",
-    "Cancelado"
+"Pendiente verificación",
+"Pago confirmado",
+"En preparación",
+"En camino",
+"Listo para recoger",
+"Entregado",
+"Completado",
+"Cancelado"
 ]
 
-# Emojis para estados
+# Emojis para mostrar según estado (solo para visualización)
 EMOJI_ESTADOS = {
-    "Pendiente verificación": "⏳",
-    "Pago verificado ✅": "✅",
-    "En preparación": "👨‍🍳",
-    "En camino": "🚚",
-    "Entregado": "📦",
-    "Completado": "✔️",
-    "Cancelado": "❌"
+"Pendiente verificación": "⏳",
+"Pago confirmado": "✅",
+"En preparación": "☕",
+"En camino": "🚚",
+"Listo para recoger": "📦",
+"Entregado": "✔️",
+"Completado": "✔️",
+"Cancelado": "❌"
 }
 
 def obtener_datos_pedidos(force_refresh=False):
