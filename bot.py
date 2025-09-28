@@ -270,14 +270,16 @@ def main():
     
     # Verificar la configuración de Google Sheets
     if sheets_configured:
-        logger.info("Inicializando Google Sheets...")
-        try:
-            initialize_sheets()
-            logger.info("Google Sheets inicializado correctamente")
-        except Exception as e:
-            logger.error(f"Error al inicializar Google Sheets: {e}")
-            logger.error(traceback.format_exc())
-            logger.warning("El bot continuará funcionando, pero los datos no se guardarán en Google Sheets")
+        logger.info("Google Sheets configurado, pero no se inicializará al arranque para evitar límite de API")
+        # COMENTADO PARA EVITAR LÍMITE DE API AL INICIO
+        # La inicialización se hará bajo demanda cuando sea necesaria
+        # try:
+        #     initialize_sheets()
+        #     logger.info("Google Sheets inicializado correctamente")
+        # except Exception as e:
+        #     logger.error(f"Error al inicializar Google Sheets: {e}")
+        #     logger.error(traceback.format_exc())
+        #     logger.warning("El bot continuará funcionando, pero los datos no se guardarán en Google Sheets")
     
     # Inicializar la configuración de Google Drive
     drive_ok = verificar_y_configurar_google_drive()
