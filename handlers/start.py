@@ -16,8 +16,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     """Manejador para el comando /help o /ayuda"""
     await update.message.reply_text(
         "🤖 *Comandos disponibles* 🤖\n\n"
-        "📦 *GESTIÓN DE PEDIDOS*\n"
+        "📦 *GESTIÓN DE PEDIDOS Y CATÁLOGO*\n"
         "*/pedidos_whatsapp* - Gestionar pedidos de WhatsApp\n"
+        "*/catalogo* - Administrar catálogo de productos\n"
         "*/pedido* - Registrar pedido de cliente\n"
         "*/pedidos* - Ver pedidos pendientes\n\n"
         "☕ *COMPRAS Y VENTAS*\n"
