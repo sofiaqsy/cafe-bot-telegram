@@ -30,6 +30,7 @@ register_gastos_handlers = None
 register_ventas_handlers = None
 register_reportes_handlers = None
 register_pedidos_handlers = None
+register_pedidos_whatsapp_handlers = None  # Handler para pedidos de WhatsApp
 register_adelantos_handlers = None
 register_compra_adelanto_handlers = None
 register_compra_mixta_handlers = None  # Variable para el handler de compra mixta
@@ -82,6 +83,12 @@ try:
         logger.info("Handler de pedidos importado correctamente")
     except Exception as e:
         logger.error(f"Error al importar handler de pedidos: {e}")
+    
+    try:
+        from handlers.pedidos_whatsapp import register_pedidos_whatsapp_handlers
+        logger.info("Handler de pedidos WhatsApp importado correctamente")
+    except Exception as e:
+        logger.error(f"Error al importar handler de pedidos WhatsApp: {e}")
     
     try:
         from handlers.adelantos import register_adelantos_handlers
@@ -320,6 +327,8 @@ def main():
         handler_functions.append(("reportes", register_reportes_handlers))
     if register_pedidos_handlers:
         handler_functions.append(("pedidos", register_pedidos_handlers))
+    if register_pedidos_whatsapp_handlers:
+        handler_functions.append(("pedidos_whatsapp", register_pedidos_whatsapp_handlers))
     if register_adelantos_handlers:
         handler_functions.append(("adelantos", register_adelantos_handlers))
     if register_compra_adelanto_handlers:
