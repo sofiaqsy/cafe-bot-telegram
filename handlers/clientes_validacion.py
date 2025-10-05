@@ -164,7 +164,7 @@ async def clientes_validacion_command(update: Update, context: ContextTypes.DEFA
     
     if not clientes:
         # Si no hay pendientes, mostrar el menú de filtros
-        mensaje = "*🔍 VALIDACIÓN DE CLIENTES*\n"
+        mensaje = "<b>🔍 VALIDACIÓN DE CLIENTES</b>\n"
         mensaje += "━━━━━━━━━━━━━━━━━━━━━\n\n"
         mensaje += "⚠️ No hay clientes pendientes de validación\n\n"
         mensaje += "Selecciona qué clientes deseas ver:"
@@ -183,19 +183,19 @@ async def clientes_validacion_command(update: Update, context: ContextTypes.DEFA
             await update.message.reply_text(
                 mensaje,
                 reply_markup=reply_markup,
-                parse_mode='Markdown'
+                parse_mode='HTML'
             )
         else:
             await update.callback_query.edit_message_text(
                 mensaje,
                 reply_markup=reply_markup,
-                parse_mode='Markdown'
+                parse_mode='HTML'
             )
         
         return MENU_PRINCIPAL
     
     # Si hay clientes pendientes, mostrarlos directamente
-    mensaje = "*🟡 CLIENTES PENDIENTES DE VALIDACIÓN*\n"
+    mensaje = "<b>🟡 CLIENTES PENDIENTES DE VALIDACIÓN</b>\n"
     mensaje += "━━━━━━━━━━━━━━━━━━━━━\n\n"
     mensaje += f"Se encontraron {len(clientes)} cliente(s) pendiente(s)\n\n"
     mensaje += "Selecciona un cliente para validar:"
@@ -227,13 +227,13 @@ async def clientes_validacion_command(update: Update, context: ContextTypes.DEFA
         await update.message.reply_text(
             mensaje,
             reply_markup=reply_markup,
-            parse_mode='Markdown'
+            parse_mode='HTML'
         )
     else:
         await update.callback_query.edit_message_text(
             mensaje,
             reply_markup=reply_markup,
-            parse_mode='Markdown'
+            parse_mode='HTML'
         )
     
     return VER_CLIENTE
@@ -256,12 +256,12 @@ async def filtrar_clientes_callback(update: Update, context: ContextTypes.DEFAUL
         await query.edit_message_text(
             f"No hay clientes en estado: {data}\n\n"
             "Usa /clientes para volver al menú",
-            parse_mode='Markdown'
+            parse_mode='HTML'
         )
         return ConversationHandler.END
     
     # Mostrar lista de clientes
-    mensaje = f"*{titulo}*\n"
+    mensaje = f"<b>{titulo}</b>\n"
     mensaje += "━━━━━━━━━━━━━━━━━━━━━\n\n"
     mensaje += f"Se encontraron {len(clientes)} cliente(s)\n\n"
     mensaje += "Selecciona un cliente para ver detalles:"
@@ -290,7 +290,7 @@ async def filtrar_clientes_callback(update: Update, context: ContextTypes.DEFAUL
     await query.edit_message_text(
         mensaje,
         reply_markup=reply_markup,
-        parse_mode='Markdown'
+        parse_mode='HTML'
     )
     
     return VER_CLIENTE
@@ -303,7 +303,7 @@ async def ver_cliente_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     # Manejar botón de ver otros estados
     if query.data == "cli_menu_filtros":
         # Mostrar menú de filtros
-        mensaje = "*🔍 VALIDACIÓN DE CLIENTES*\n"
+        mensaje = "<b>🔍 VALIDACIÓN DE CLIENTES</b>\n"
         mensaje += "━━━━━━━━━━━━━━━━━━━━━\n\n"
         mensaje += "Selecciona qué clientes deseas ver:"
         
@@ -321,7 +321,7 @@ async def ver_cliente_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         await query.edit_message_text(
             mensaje,
             reply_markup=reply_markup,
-            parse_mode='Markdown'
+            parse_mode='HTML'
         )
         
         return MENU_PRINCIPAL
@@ -351,39 +351,51 @@ async def ver_cliente_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     # Guardar cliente en contexto para poder actualizarlo
     context.user_data['cliente_actual'] = cliente
     
-    # Formatear mensaje con detalles del cliente
-    mensaje = f"*📋 DETALLE DEL CLIENTE*\n"
+    # Formatear mensaje con detalles del cliente - Usando HTML en lugar de Markdown
+    mensaje = "<b>📋 DETALLE DEL CLIENTE</b>\n"
     mensaje += "━━━━━━━━━━━━━━━━━━━━━\n\n"
     
-    mensaje += f"*ID:* `{cliente['id']}`\n"
-    mensaje += f"*Estado:* {ESTADOS_CLIENTE.get(cliente['estado'], cliente['estado'])}\n\n"
+    # Escapar caracteres especiales para HTML
+    def escape_html(text):
+        """Escapa caracteres especiales para HTML"""
+        if not text:
+            return text
+        text = str(text)
+        text = text.replace('&', '&amp;')
+        text = text.replace('<', '&lt;')
+        text = text.replace('>', '&gt;')
+        text = text.replace('"', '&quot;')
+        return text
     
-    mensaje += "*📞 DATOS DE CONTACTO:*\n"
-    mensaje += f"*Empresa:* {cliente['empresa'] or 'No especificada'}\n"
-    mensaje += f"*Contacto:* {cliente['contacto'] or 'No especificado'}\n"
-    mensaje += f"*WhatsApp:* {cliente['whatsapp'] or 'No especificado'}\n"
-    mensaje += f"*Teléfono:* {cliente['telefono'] or 'No especificado'}\n"
-    mensaje += f"*Email:* {cliente['email'] or 'No especificado'}\n\n"
+    mensaje += f"<b>ID:</b> <code>{escape_html(cliente['id'])}</code>\n"
+    mensaje += f"<b>Estado:</b> {ESTADOS_CLIENTE.get(cliente['estado'], cliente['estado'])}\n\n"
     
-    mensaje += "*📍 UBICACIÓN:*\n"
-    mensaje += f"*Dirección:* {cliente['direccion'] or 'No especificada'}\n"
-    mensaje += f"*Distrito:* {cliente['distrito'] or 'No especificado'}\n"
-    mensaje += f"*Ciudad:* {cliente['ciudad'] or 'Lima'}\n\n"
+    mensaje += "<b>📞 DATOS DE CONTACTO:</b>\n"
+    mensaje += f"<b>Empresa:</b> {escape_html(cliente['empresa'] or 'No especificada')}\n"
+    mensaje += f"<b>Contacto:</b> {escape_html(cliente['contacto'] or 'No especificado')}\n"
+    mensaje += f"<b>WhatsApp:</b> {escape_html(cliente['whatsapp'] or 'No especificado')}\n"
+    mensaje += f"<b>Teléfono:</b> {escape_html(cliente['telefono'] or 'No especificado')}\n"
+    mensaje += f"<b>Email:</b> {escape_html(cliente['email'] or 'No especificado')}\n\n"
     
-    mensaje += "*📊 HISTORIAL:*\n"
-    mensaje += f"*Fecha registro:* {cliente['fecha_registro'] or 'No especificada'}\n"
-    mensaje += f"*Última compra:* {cliente['ultima_compra'] or 'Nunca'}\n"
-    mensaje += f"*Total pedidos:* {cliente['total_pedidos']}\n"
-    mensaje += f"*Total comprado:* S/{cliente['total_comprado']}\n"
-    mensaje += f"*Total Kg:* {cliente['total_kg']} kg\n\n"
+    mensaje += "<b>📍 UBICACIÓN:</b>\n"
+    mensaje += f"<b>Dirección:</b> {escape_html(cliente['direccion'] or 'No especificada')}\n"
+    mensaje += f"<b>Distrito:</b> {escape_html(cliente['distrito'] or 'No especificado')}\n"
+    mensaje += f"<b>Ciudad:</b> {escape_html(cliente['ciudad'] or 'Lima')}\n\n"
+    
+    mensaje += "<b>📊 HISTORIAL:</b>\n"
+    mensaje += f"<b>Fecha registro:</b> {escape_html(cliente['fecha_registro'] or 'No especificada')}\n"
+    mensaje += f"<b>Última compra:</b> {escape_html(cliente['ultima_compra'] or 'Nunca')}\n"
+    mensaje += f"<b>Total pedidos:</b> {escape_html(str(cliente['total_pedidos']))}\n"
+    mensaje += f"<b>Total comprado:</b> S/{escape_html(str(cliente['total_comprado']))}\n"
+    mensaje += f"<b>Total Kg:</b> {escape_html(str(cliente['total_kg']))} kg\n\n"
     
     if cliente.get('notas'):
-        mensaje += f"*📝 Notas:* {cliente['notas']}\n\n"
+        mensaje += f"<b>📝 Notas:</b> {escape_html(cliente['notas'])}\n\n"
     
     # Si hay imagen de la cafetería
     if cliente.get('imagen_url'):
-        mensaje += f"*🏪 Imagen de la cafetería:*\n"
-        mensaje += f"[Ver imagen]({cliente['imagen_url']})\n\n"
+        mensaje += "<b>🏪 Imagen de la cafetería:</b>\n"
+        mensaje += f"<a href=\"{cliente['imagen_url']}\">Ver imagen</a>\n\n"
     
     mensaje += "━━━━━━━━━━━━━━━━━━━━━\n"
     mensaje += "¿Qué deseas hacer?"
@@ -415,7 +427,7 @@ async def ver_cliente_callback(update: Update, context: ContextTypes.DEFAULT_TYP
                 photo=cliente['imagen_url'],
                 caption=mensaje,
                 reply_markup=reply_markup,
-                parse_mode='Markdown'
+                parse_mode='HTML'
             )
             # Eliminar el mensaje anterior
             await query.message.delete()
@@ -425,7 +437,7 @@ async def ver_cliente_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             await query.edit_message_text(
                 mensaje,
                 reply_markup=reply_markup,
-                parse_mode='Markdown',
+                parse_mode='HTML',
                 disable_web_page_preview=False
             )
     else:
@@ -433,7 +445,7 @@ async def ver_cliente_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         await query.edit_message_text(
             mensaje,
             reply_markup=reply_markup,
-            parse_mode='Markdown'
+            parse_mode='HTML'
         )
     
     return CAMBIAR_ESTADO_CLIENTE
@@ -462,11 +474,12 @@ async def cambiar_estado_cliente_callback(update: Update, context: ContextTypes.
         
         # Actualizar estado en Google Sheets
         if actualizar_estado_cliente(cliente['id'], nuevo_estado):
-            mensaje = f"✅ *ESTADO ACTUALIZADO*\n\n"
-            mensaje += f"*Cliente:* {cliente['empresa'] or cliente['contacto']}\n"
-            mensaje += f"*ID:* `{cliente['id']}`\n"
-            mensaje += f"*Estado anterior:* {ESTADOS_CLIENTE.get(cliente['estado'], cliente['estado'])}\n"
-            mensaje += f"*Estado nuevo:* {ESTADOS_CLIENTE.get(nuevo_estado, nuevo_estado)}\n\n"
+            # Usar HTML para el mensaje de confirmación
+            mensaje = f"✅ <b>ESTADO ACTUALIZADO</b>\n\n"
+            mensaje += f"<b>Cliente:</b> {cliente['empresa'] or cliente['contacto']}\n"
+            mensaje += f"<b>ID:</b> <code>{cliente['id']}</code>\n"
+            mensaje += f"<b>Estado anterior:</b> {ESTADOS_CLIENTE.get(cliente['estado'], cliente['estado'])}\n"
+            mensaje += f"<b>Estado nuevo:</b> {ESTADOS_CLIENTE.get(nuevo_estado, nuevo_estado)}\n\n"
             mensaje += "━━━━━━━━━━━━━━━━━━━━━\n"
             
             keyboard = [
@@ -479,7 +492,7 @@ async def cambiar_estado_cliente_callback(update: Update, context: ContextTypes.
             await query.edit_message_text(
                 mensaje,
                 reply_markup=reply_markup,
-                parse_mode='Markdown'
+                parse_mode='HTML'
             )
         else:
             await query.edit_message_text("❌ Error actualizando el estado del cliente")
