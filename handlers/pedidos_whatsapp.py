@@ -1,6 +1,6 @@
 """
 Módulo optimizado para gestionar pedidos de WhatsApp desde Telegram
-Versión sin emojis innecesarios y botones mejorados
+Versión simplificada - Solo botón "Confirmar Pedido"
 """
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -34,18 +34,6 @@ CACHE_PEDIDOS = {
     'timestamp': None,
     'ttl': 30  # segundos de vida del caché
 }
-
-# Estados disponibles para los pedidos (sin emojis)
-ESTADOS_PEDIDO = [
-    "Pendiente verificación",
-    "Pago confirmado",
-    "En preparación",
-    "En camino",
-    "Listo para recoger",
-    "Entregado",
-    "Completado",
-    "Cancelado"
-]
 
 def obtener_datos_pedidos(force_refresh=False):
     """
@@ -124,11 +112,14 @@ def actualizar_estado_pedido(fila, columna, valor):
             service = get_sheet_service()
             
             if not service:
+                logger.error("No se pudo obtener el servicio de Google Sheets")
                 return False
             
             # Convertir columna número a letra
             columna_letra = chr(64 + columna)  # 1=A, 2=B, etc.
             rango = f'PedidosWhatsApp!{columna_letra}{fila}'
+            
+            logger.info(f"Actualizando celda {rango} con valor: {valor}")
             
             body = {'values': [[valor]]}
             
@@ -138,6 +129,8 @@ def actualizar_estado_pedido(fila, columna, valor):
                 valueInputOption='USER_ENTERED',
                 body=body
             ).execute()
+            
+            logger.info(f"Actualización exitosa: {result.get('updatedCells', 0)} celdas actualizadas")
             
             # Si la actualización fue exitosa, limpiar caché
             limpiar_cache()
@@ -150,8 +143,9 @@ def actualizar_estado_pedido(fila, columna, valor):
                 time.sleep(espera)
                 espera *= 2  # Backoff exponencial
             else:
-                logger.error(f"Error actualizando estado: {e}")
-                return False
+                logger.error(f"Error actualizando estado en intento {intento + 1}: {e}")
+                if intento == max_reintentos - 1:
+                    return False
     
     return False
 
@@ -280,7 +274,7 @@ async def menu_principal_callback(update: Update, context: ContextTypes.DEFAULT_
         
         # Filtrar pedidos ACTIVOS (excluir Entregado, Completado y Cancelado)
         pedidos_activos = []
-        estados_excluidos = ["Entregado", "Completado", "Cancelado"]
+        estados_excluidos = ["Entregado", "Completado", "Cancelado", "Pedido confirmado"]
         
         for i, pedido in enumerate(pedidos[1:], start=2):  # Skip header
             if len(pedido) > 14:
@@ -292,14 +286,14 @@ async def menu_principal_callback(update: Update, context: ContextTypes.DEFAULT_
         if not pedidos_activos:
             keyboard = [[InlineKeyboardButton("Volver", callback_data="pw_volver_menu")]]
             await query.edit_message_text(
-                "No hay pedidos activos\n\n_Todos los pedidos están entregados, completados o cancelados_",
+                "No hay pedidos pendientes de verificación\n\n_Todos los pedidos ya fueron procesados_",
                 reply_markup=InlineKeyboardMarkup(keyboard),
                 parse_mode='Markdown'
             )
             return MENU_PRINCIPAL
         
         # Mostrar lista de pedidos activos
-        await mostrar_lista_pedidos(query, pedidos_activos, "📦 PEDIDOS ACTIVOS")
+        await mostrar_lista_pedidos(query, pedidos_activos, "📦 PEDIDOS PENDIENTES")
         return VER_PEDIDO
     
     elif opcion == "buscar_id":
@@ -496,7 +490,7 @@ async def ver_detalle_pedido(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await query.edit_message_text("Cargando detalle...")
     
     # Obtener pedido actualizado
-    pedidos = obtener_datos_pedidos()
+    pedidos = obtener_datos_pedidos(force_refresh=True)  # Forzar refresh para tener datos actuales
     if not pedidos or len(pedidos) < fila:
         await query.edit_message_text("Error al obtener el pedido")
         return ConversationHandler.END
@@ -506,35 +500,30 @@ async def ver_detalle_pedido(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # Formatear detalle
     mensaje = formatear_detalle_pedido(pedido)
     
-    # Crear botones de estados
+    # Crear botones de estados - SOLO CONFIRMAR PEDIDO
     keyboard = []
     estado_actual = pedido[14] if len(pedido) > 14 else ""
     
-    # Organizar estados en filas de 2
-    estados_disponibles = []
-    for i, estado in enumerate(ESTADOS_PEDIDO):
-        if estado != estado_actual:
-            # Solo agregar emoji a Completado y Entregado
-            if estado in ["Entregado", "Completado"]:
-                texto_estado = f"✅ {estado}"
-            else:
-                texto_estado = estado
-                
-            estados_disponibles.append(
-                InlineKeyboardButton(
-                    texto_estado,
-                    callback_data=f"estado_{i}"
-                )
+    logger.info(f"Estado actual del pedido {id_pedido}: '{estado_actual}'")
+    
+    # Solo mostrar botón "Pedido confirmado" si el estado actual NO es ya "Pedido confirmado"
+    if estado_actual != "Pedido confirmado":
+        keyboard.append([
+            InlineKeyboardButton(
+                "✅ Confirmar Pedido",
+                callback_data="estado_confirmar"
             )
+        ])
+    else:
+        # Si ya está confirmado, mostrar mensaje informativo
+        keyboard.append([
+            InlineKeyboardButton(
+                "✓ Ya confirmado",
+                callback_data="noop"
+            )
+        ])
     
-    # Agrupar de a 2
-    for i in range(0, len(estados_disponibles), 2):
-        if i + 1 < len(estados_disponibles):
-            keyboard.append([estados_disponibles[i], estados_disponibles[i + 1]])
-        else:
-            keyboard.append([estados_disponibles[i]])
-    
-    # Botón de volver con emoji
+    # Botón de volver
     keyboard.append([
         InlineKeyboardButton("↩️ Volver", callback_data="pw_volver_menu")
     ])
@@ -596,7 +585,7 @@ Método: {metodo_pago}
 *{estado}*
 
 ━━━━━━━━━━━━━━━━━━━━━
-_Selecciona nuevo estado:_
+_Selecciona una acción:_
 """
         
         return mensaje
@@ -608,20 +597,28 @@ _Selecciona nuevo estado:_
 async def cambiar_estado_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cambia el estado de un pedido"""
     query = update.callback_query
-    await query.answer()
     
     if query.data == "pw_volver_menu":
+        await query.answer()
         return await pedidos_whatsapp_command(update, context)
     
-    if not query.data.startswith("estado_"):
+    # Ignorar el botón "Ya confirmado"
+    if query.data == "noop":
+        await query.answer("Este pedido ya fue confirmado", show_alert=True)
         return CAMBIAR_ESTADO
     
-    try:
-        # Obtener nuevo estado
-        estado_index = int(query.data.replace("estado_", ""))
-        nuevo_estado = ESTADOS_PEDIDO[estado_index]
-    except (ValueError, IndexError):
-        await query.edit_message_text("Error: Estado no válido")
+    if not query.data.startswith("estado_"):
+        await query.answer()
+        return CAMBIAR_ESTADO
+    
+    # Responder al callback inmediatamente
+    await query.answer("Procesando...")
+    
+    # Manejar el callback "estado_confirmar"
+    if query.data == "estado_confirmar":
+        nuevo_estado = "Pedido confirmado"
+    else:
+        await query.edit_message_text("Error: Opción no válida")
         return CAMBIAR_ESTADO
     
     # Obtener datos guardados
@@ -631,6 +628,8 @@ async def cambiar_estado_callback(update: Update, context: ContextTypes.DEFAULT_
     if not fila or not id_pedido:
         await query.edit_message_text("Error: No se pudo identificar el pedido")
         return ConversationHandler.END
+    
+    logger.info(f"Intentando actualizar pedido {id_pedido} en fila {fila} a estado '{nuevo_estado}'")
     
     await query.edit_message_text(f"Actualizando estado a: {nuevo_estado}...")
     
@@ -644,7 +643,7 @@ async def cambiar_estado_callback(update: Update, context: ContextTypes.DEFAULT_
         usuario = update.effective_user.username or update.effective_user.first_name
         
         # Obtener observaciones actuales
-        pedidos = obtener_datos_pedidos()
+        pedidos = obtener_datos_pedidos(force_refresh=True)
         obs_actuales = ""
         if pedidos and len(pedidos) >= fila and len(pedidos[fila - 1]) > 16:
             obs_actuales = pedidos[fila - 1][16] or ""
@@ -662,7 +661,7 @@ async def cambiar_estado_callback(update: Update, context: ContextTypes.DEFAULT_
         actualizar_estado_pedido(fila, 17, nueva_obs)
         
         mensaje = f"""
-*ESTADO ACTUALIZADO*
+*✅ ESTADO ACTUALIZADO*
 ━━━━━━━━━━━━━━━━━━━━━
 
 Pedido: `{id_pedido}`
@@ -689,7 +688,12 @@ _El cliente recibirá notificación por WhatsApp_
     else:
         keyboard = [[InlineKeyboardButton("Intentar de nuevo", callback_data="pw_volver_menu")]]
         await query.edit_message_text(
-            "Error al actualizar el estado\n\nIntenta de nuevo en unos segundos",
+            "❌ Error al actualizar el estado\n\n"
+            "Verifica:\n"
+            "• Conexión a Google Sheets\n"
+            "• Permisos de escritura\n"
+            "• Límite de API no excedido\n\n"
+            "Intenta de nuevo en unos segundos",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         return MENU_PRINCIPAL
@@ -733,6 +737,7 @@ def register_pedidos_whatsapp_handlers(application):
             ],
             CAMBIAR_ESTADO: [
                 CallbackQueryHandler(cambiar_estado_callback, pattern='^estado_'),
+                CallbackQueryHandler(cambiar_estado_callback, pattern='^noop$'),
                 CallbackQueryHandler(pedidos_whatsapp_command, pattern='^pw_volver_menu$'),
                 MessageHandler(filters.COMMAND, cancelar)
             ],
@@ -750,4 +755,4 @@ def register_pedidos_whatsapp_handlers(application):
     )
     
     application.add_handler(conv_handler)
-    logger.info("Handlers de pedidos WhatsApp registrados correctamente con timeout de 5 minutos")
+    logger.info("Handlers de pedidos WhatsApp registrados correctamente - Solo botón Confirmar Pedido")
