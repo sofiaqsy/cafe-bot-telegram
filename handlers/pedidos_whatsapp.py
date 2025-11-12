@@ -1,6 +1,6 @@
 """
 Módulo optimizado para gestionar pedidos de WhatsApp desde Telegram
-Versión simplificada - Solo botón "Confirmar Pedido"
+Versión con múltiples estados - Permite cambiar a diferentes estados del flujo
 """
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -27,6 +27,57 @@ MENU_PRINCIPAL, BUSCAR_INPUT, VER_PEDIDO, CAMBIAR_ESTADO = range(4)
 
 # Configuración de logging
 logger = logging.getLogger(__name__)
+
+# ESTADOS DISPONIBLES DEL PEDIDO
+ESTADOS_DISPONIBLES = {
+    'pendiente': {
+        'nombre': 'Pendiente',
+        'emoji': '⏳',
+        'descripcion': 'Pedido recibido, pendiente de confirmación'
+    },
+    'confirmar': {
+        'nombre': 'Pedido confirmado',
+        'emoji': '✅',
+        'descripcion': 'Pedido confirmado por el admin'
+    },
+    'preparacion': {
+        'nombre': 'En preparación',
+        'emoji': '📦',
+        'descripcion': 'Pedido en proceso de preparación'
+    },
+    'listo': {
+        'nombre': 'Listo para envío',
+        'emoji': '📮',
+        'descripcion': 'Pedido listo para ser enviado'
+    },
+    'enviado': {
+        'nombre': 'Enviado',
+        'emoji': '🚚',
+        'descripcion': 'Pedido en tránsito'
+    },
+    'entregado': {
+        'nombre': 'Entregado',
+        'emoji': '✓',
+        'descripcion': 'Pedido entregado al cliente'
+    },
+    'cancelado': {
+        'nombre': 'Cancelado',
+        'emoji': '❌',
+        'descripcion': 'Pedido cancelado'
+    }
+}
+
+# TRANSICIONES PERMITIDAS ENTRE ESTADOS
+# Define qué estados pueden seguir a cada estado actual
+TRANSICIONES_ESTADOS = {
+    'Pendiente': ['confirmar', 'cancelado'],
+    'Pedido confirmado': ['preparacion', 'cancelado'],
+    'En preparación': ['listo', 'cancelado'],
+    'Listo para envío': ['enviado', 'cancelado'],
+    'Enviado': ['entregado', 'cancelado'],
+    'Entregado': [],  # Estado final, no puede cambiar
+    'Cancelado': []   # Estado final, no puede cambiar
+}
 
 # Cache para reducir llamadas a la API
 CACHE_PEDIDOS = {
@@ -500,28 +551,50 @@ async def ver_detalle_pedido(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # Formatear detalle
     mensaje = formatear_detalle_pedido(pedido)
     
-    # Crear botones de estados - SOLO CONFIRMAR PEDIDO
+    # Crear botones de estados disponibles según transiciones permitidas
     keyboard = []
     estado_actual = pedido[14] if len(pedido) > 14 else ""
     
     logger.info(f"Estado actual del pedido {id_pedido}: '{estado_actual}'")
     
-    # Solo mostrar botón "Pedido confirmado" si el estado actual NO es ya "Pedido confirmado"
-    if estado_actual != "Pedido confirmado":
+    # Obtener estados permitidos desde el estado actual
+    estados_permitidos = TRANSICIONES_ESTADOS.get(estado_actual, [])
+    
+    if not estados_permitidos:
+        # Si no hay transiciones permitidas (estado final)
         keyboard.append([
             InlineKeyboardButton(
-                "✅ Confirmar Pedido",
-                callback_data="estado_confirmar"
-            )
-        ])
-    else:
-        # Si ya está confirmado, mostrar mensaje informativo
-        keyboard.append([
-            InlineKeyboardButton(
-                "✓ Ya confirmado",
+                "✓ Estado final alcanzado",
                 callback_data="noop"
             )
         ])
+    else:
+        # Mostrar solo los estados a los que puede transicionar
+        fila_botones = []
+        for estado_key in estados_permitidos:
+            if estado_key in ESTADOS_DISPONIBLES:
+                info = ESTADOS_DISPONIBLES[estado_key]
+                nombre_estado = info['nombre']
+                emoji = info['emoji']
+                
+                # Crear botón con emoji y nombre
+                texto_boton = f"{emoji} {nombre_estado}"
+                
+                fila_botones.append(
+                    InlineKeyboardButton(
+                        texto_boton,
+                        callback_data=f"estado_{estado_key}"
+                    )
+                )
+                
+                # Agregar fila cuando tengamos 2 botones (para mejor organización)
+                if len(fila_botones) == 2:
+                    keyboard.append(fila_botones)
+                    fila_botones = []
+        
+        # Agregar última fila si quedó algún botón
+        if fila_botones:
+            keyboard.append(fila_botones)
     
     # Botón de volver
     keyboard.append([
@@ -585,7 +658,7 @@ Método: {metodo_pago}
 *{estado}*
 
 ━━━━━━━━━━━━━━━━━━━━━
-_Selecciona una acción:_
+_Selecciona el nuevo estado:_
 """
         
         return mensaje
@@ -602,9 +675,9 @@ async def cambiar_estado_callback(update: Update, context: ContextTypes.DEFAULT_
         await query.answer()
         return await pedidos_whatsapp_command(update, context)
     
-    # Ignorar el botón "Ya confirmado"
+    # Ignorar el botón "Estado final alcanzado"
     if query.data == "noop":
-        await query.answer("Este pedido ya fue confirmado", show_alert=True)
+        await query.answer("Este pedido ya alcanzó el estado final", show_alert=True)
         return CAMBIAR_ESTADO
     
     if not query.data.startswith("estado_"):
@@ -614,12 +687,15 @@ async def cambiar_estado_callback(update: Update, context: ContextTypes.DEFAULT_
     # Responder al callback inmediatamente
     await query.answer("Procesando...")
     
-    # Manejar el callback "estado_confirmar"
-    if query.data == "estado_confirmar":
-        nuevo_estado = "Pedido confirmado"
-    else:
-        await query.edit_message_text("Error: Opción no válida")
+    # Obtener el estado seleccionado
+    estado_key = query.data.replace("estado_", "")
+    
+    if estado_key not in ESTADOS_DISPONIBLES:
+        await query.edit_message_text("Error: Estado no válido")
         return CAMBIAR_ESTADO
+    
+    nuevo_estado = ESTADOS_DISPONIBLES[estado_key]['nombre']
+    emoji_estado = ESTADOS_DISPONIBLES[estado_key]['emoji']
     
     # Obtener datos guardados
     fila = context.user_data.get('fila_actual')
@@ -631,7 +707,7 @@ async def cambiar_estado_callback(update: Update, context: ContextTypes.DEFAULT_
     
     logger.info(f"Intentando actualizar pedido {id_pedido} en fila {fila} a estado '{nuevo_estado}'")
     
-    await query.edit_message_text(f"Actualizando estado a: {nuevo_estado}...")
+    await query.edit_message_text(f"{emoji_estado} Actualizando estado a: {nuevo_estado}...")
     
     # Actualizar estado (columna O = columna 15)
     exito = actualizar_estado_pedido(fila, 15, nuevo_estado)
@@ -661,7 +737,7 @@ async def cambiar_estado_callback(update: Update, context: ContextTypes.DEFAULT_
         actualizar_estado_pedido(fila, 17, nueva_obs)
         
         mensaje = f"""
-*✅ ESTADO ACTUALIZADO*
+*{emoji_estado} ESTADO ACTUALIZADO*
 ━━━━━━━━━━━━━━━━━━━━━
 
 Pedido: `{id_pedido}`
@@ -755,4 +831,4 @@ def register_pedidos_whatsapp_handlers(application):
     )
     
     application.add_handler(conv_handler)
-    logger.info("Handlers de pedidos WhatsApp registrados correctamente - Solo botón Confirmar Pedido")
+    logger.info("Handlers de pedidos WhatsApp registrados correctamente - Múltiples estados con flujo inteligente")
