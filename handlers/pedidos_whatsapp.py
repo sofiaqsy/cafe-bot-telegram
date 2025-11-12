@@ -274,7 +274,7 @@ async def menu_principal_callback(update: Update, context: ContextTypes.DEFAULT_
         
         # Filtrar pedidos ACTIVOS (excluir Entregado, Completado y Cancelado)
         pedidos_activos = []
-        estados_excluidos = ["Entregado", "Completado", "Cancelado", "Pedido confirmado"]
+        estados_excluidos = ["Entregado", "Completado", "Cancelado"]
         
         for i, pedido in enumerate(pedidos[1:], start=2):  # Skip header
             if len(pedido) > 14:
