@@ -69,14 +69,15 @@ ESTADOS_DISPONIBLES = {
 
 # TRANSICIONES PERMITIDAS ENTRE ESTADOS
 # Define qué estados pueden seguir a cada estado actual
+# Si un estado NO está aquí o tiene lista vacía [], se permitirá cambiar a CUALQUIER estado (excepto el actual)
 TRANSICIONES_ESTADOS = {
     'Pendiente': ['confirmar', 'cancelado'],
+    'Pendiente verificación': [],  # Vacío = permite cambiar a cualquier estado
     'Pedido confirmado': ['preparacion', 'cancelado'],
     'En preparación': ['listo', 'cancelado'],
     'Listo para envío': ['enviado', 'cancelado'],
-    'Enviado': ['entregado', 'cancelado'],
-    'Entregado': [],  # Estado final, no puede cambiar
-    'Cancelado': []   # Estado final, no puede cambiar
+    'Enviado': ['entregado', 'cancelado']
+    # Nota: Entregado, Completado y Cancelado se consideran estados finales automáticamente
 }
 
 # Cache para reducir llamadas a la API
@@ -557,11 +558,11 @@ async def ver_detalle_pedido(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     logger.info(f"Estado actual del pedido {id_pedido}: '{estado_actual}'")
     
-    # Obtener estados permitidos desde el estado actual
-    estados_permitidos = TRANSICIONES_ESTADOS.get(estado_actual, [])
+    # Verificar si es un estado final explícito
+    estados_finales = ["Entregado", "Completado", "Cancelado"]
     
-    if not estados_permitidos:
-        # Si no hay transiciones permitidas (estado final)
+    if estado_actual in estados_finales:
+        # Estados finales - no se pueden cambiar
         keyboard.append([
             InlineKeyboardButton(
                 "✓ Estado final alcanzado",
@@ -569,13 +570,28 @@ async def ver_detalle_pedido(update: Update, context: ContextTypes.DEFAULT_TYPE)
             )
         ])
     else:
-        # Mostrar solo los estados a los que puede transicionar
+        # Para cualquier otro estado (incluyendo los no definidos):
+        # Si está en TRANSICIONES_ESTADOS y tiene transiciones definidas, usar esas
+        # Si NO está o tiene lista vacía, permitir cambiar a TODOS los estados
+        
+        if estado_actual in TRANSICIONES_ESTADOS and TRANSICIONES_ESTADOS[estado_actual]:
+            # Usar transiciones definidas
+            estados_permitidos = TRANSICIONES_ESTADOS[estado_actual]
+        else:
+            # Estado no definido o sin transiciones específicas -> permitir todos
+            estados_permitidos = list(ESTADOS_DISPONIBLES.keys())
+        
+        # Mostrar los estados permitidos
         fila_botones = []
         for estado_key in estados_permitidos:
             if estado_key in ESTADOS_DISPONIBLES:
                 info = ESTADOS_DISPONIBLES[estado_key]
                 nombre_estado = info['nombre']
                 emoji = info['emoji']
+                
+                # No mostrar el estado actual como opción
+                if estado_actual == nombre_estado:
+                    continue
                 
                 # Crear botón con emoji y nombre
                 texto_boton = f"{emoji} {nombre_estado}"
