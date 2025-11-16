@@ -431,45 +431,98 @@ async def buscar_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     return VER_PEDIDO
 
 async def mostrar_lista_pedidos(query_or_update, pedidos, titulo):
-    """Muestra una lista de pedidos con botones mejorados"""
+    """Muestra una lista de pedidos con botones mejorados - AGRUPADOS POR ID"""
+    
+    # 🎯 PASO 1: AGRUPAR PEDIDOS POR ID
+    pedidos_agrupados = {}
+    
+    for fila, pedido in pedidos:
+        try:
+            id_pedido = pedido[0] if len(pedido) > 0 else "Sin ID"
+            
+            if id_pedido not in pedidos_agrupados:
+                pedidos_agrupados[id_pedido] = {
+                    'fila': fila,  # Guardar la primera fila para el callback
+                    'id': id_pedido,
+                    'fecha': pedido[1] if len(pedido) > 1 else "-",
+                    'empresa': pedido[3] if len(pedido) > 3 else "-",
+                    'estado': pedido[14] if len(pedido) > 14 else "Sin estado",
+                    'productos': [],
+                    'total_general': 0
+                }
+            
+            # Agregar producto a la lista
+            producto = pedido[7] if len(pedido) > 7 else "-"
+            cantidad = pedido[8] if len(pedido) > 8 else "0"
+            total = float(pedido[12]) if len(pedido) > 12 and pedido[12] else 0
+            
+            pedidos_agrupados[id_pedido]['productos'].append({
+                'nombre': producto,
+                'cantidad': cantidad
+            })
+            pedidos_agrupados[id_pedido]['total_general'] += total
+            
+        except Exception as e:
+            logger.error(f"Error agrupando pedido: {e}")
+            continue
+    
+    # 🎯 PASO 2: CONSTRUIR MENSAJE
     mensaje = f"""
 *{titulo}*
 ━━━━━━━━━━━━━━━━━━━━━
-Total: *{len(pedidos)}* pedido(s)
+Total: *{len(pedidos_agrupados)}* pedido(s) único(s)
 
 """
     
     keyboard = []
+    contador = 0
     
-    for fila, pedido in pedidos[:10]:  # Máximo 10 pedidos
+    # Ordenar por fecha (más recientes primero)
+    pedidos_ordenados = sorted(
+        pedidos_agrupados.values(),
+        key=lambda x: x['fecha'],
+        reverse=True
+    )
+    
+    for pedido_agrupado in pedidos_ordenados[:10]:  # Máximo 10 pedidos
         try:
-            id_pedido = pedido[0] if len(pedido) > 0 else "Sin ID"
-            fecha = pedido[1] if len(pedido) > 1 else "-"
-            empresa = pedido[3] if len(pedido) > 3 else "-"
-            producto = pedido[7] if len(pedido) > 7 else "-"
-            cantidad = pedido[8] if len(pedido) > 8 else "0"
-            total = pedido[12] if len(pedido) > 12 else "0"
-            estado = pedido[14] if len(pedido) > 14 else "Sin estado"
+            contador += 1
+            id_pedido = pedido_agrupado['id']
+            fecha = pedido_agrupado['fecha']
+            empresa = pedido_agrupado['empresa']
+            estado = pedido_agrupado['estado']
+            productos = pedido_agrupado['productos']
+            total_general = pedido_agrupado['total_general']
+            fila = pedido_agrupado['fila']
             
-            # Truncar nombres largos
+            # Truncar nombre de empresa
             if len(empresa) > 20:
                 empresa_corta = empresa[:20] + "..."
             else:
                 empresa_corta = empresa
-                
-            if len(producto) > 25:
-                producto = producto[:25] + "..."
             
-            mensaje += f"`{id_pedido}`\n"
+            # Construir lista de productos
+            lista_productos = ", ".join([
+                p['nombre'][:15] + ("..." if len(p['nombre']) > 15 else "") 
+                for p in productos[:3]  # Máximo 3 productos en el resumen
+            ])
+            
+            if len(productos) > 3:
+                lista_productos += f" (+{len(productos) - 3} más)"
+            
+            # Mensaje del pedido
+            mensaje += f"`{id_pedido}` | {empresa_corta}\n"
+            mensaje += f"{lista_productos}\n"
+            mensaje += f"Estado: *{estado}* | Total: S/{total_general:.2f}\n"
             mensaje += f"Fecha: {fecha}\n"
-            mensaje += f"Empresa: {empresa}\n"
-            mensaje += f"Producto: {producto}\n"
-            mensaje += f"Cantidad: {cantidad}kg | Total: S/{total}\n"
-            mensaje += f"Estado: *{estado}*\n"
             mensaje += f"━━━━━━━━━━━━━━━\n"
             
-            # Botón mejorado: mostrar empresa y cantidad en vez del ID
-            texto_boton = f"{empresa_corta} - {cantidad}kg"
+            # Botón: mostrar empresa y cantidad de productos
+            if len(productos) == 1:
+                texto_boton = f"{empresa_corta} - {productos[0]['cantidad']}kg"
+            else:
+                texto_boton = f"{empresa_corta} ({len(productos)} productos)"
+            
             # Limitar longitud del botón
             if len(texto_boton) > 35:
                 texto_boton = texto_boton[:32] + "..."
@@ -482,11 +535,11 @@ Total: *{len(pedidos)}* pedido(s)
             ])
             
         except Exception as e:
-            logger.error(f"Error formateando pedido: {e}")
+            logger.error(f"Error formateando pedido agrupado: {e}")
             continue
     
-    if len(pedidos) > 10:
-        mensaje += f"\n_Mostrando 10 de {len(pedidos)} pedidos_"
+    if len(pedidos_agrupados) > 10:
+        mensaje += f"\n_Mostrando 10 de {len(pedidos_agrupados)} pedidos_"
     
     # Agregar botón de volver
     keyboard.append([
