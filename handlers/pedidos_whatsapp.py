@@ -778,32 +778,58 @@ async def cambiar_estado_callback(update: Update, context: ContextTypes.DEFAULT_
     
     await query.edit_message_text(f"{emoji_estado} Actualizando estado a: {nuevo_estado}...")
     
-    # Actualizar estado (columna O = columna 15)
-    exito = actualizar_estado_pedido(fila, 15, nuevo_estado)
+    # 🎯 BUSCAR TODAS LAS FILAS CON EL MISMO ID
+    pedidos = obtener_datos_pedidos(force_refresh=True)
+    if not pedidos:
+        await query.edit_message_text("Error al obtener pedidos")
+        return ConversationHandler.END
+    
+    filas_a_actualizar = []
+    for i, pedido in enumerate(pedidos[1:], start=2):  # Skip header
+        if len(pedido) > 0 and pedido[0] == id_pedido:
+            filas_a_actualizar.append(i)
+    
+    logger.info(f"Encontradas {len(filas_a_actualizar)} líneas con ID {id_pedido}: {filas_a_actualizar}")
+    
+    # Actualizar TODAS las líneas con el mismo ID
+    actualizaciones_exitosas = 0
+    for fila_pedido in filas_a_actualizar:
+        # Actualizar estado (columna O = columna 15)
+        if actualizar_estado_pedido(fila_pedido, 15, nuevo_estado):
+            actualizaciones_exitosas += 1
+            
+            # Actualizar observaciones con timestamp
+            ahora = datetime.now(peru_tz)
+            timestamp = ahora.strftime("%d/%m %H:%M")
+            usuario = update.effective_user.username or update.effective_user.first_name
+            
+            # Obtener observaciones actuales
+            obs_actuales = ""
+            if len(pedidos) >= fila_pedido and len(pedidos[fila_pedido - 1]) > 16:
+                obs_actuales = pedidos[fila_pedido - 1][16] or ""
+            
+            # Nueva observación
+            nueva_obs = f"[{timestamp}] {nuevo_estado} - @{usuario}"
+            if obs_actuales:
+                nueva_obs = f"{nueva_obs}\n{obs_actuales}"
+            
+            # Limitar longitud
+            if len(nueva_obs) > 500:
+                nueva_obs = nueva_obs[:497] + "..."
+            
+            # Actualizar observaciones (columna Q = columna 17)
+            actualizar_estado_pedido(fila_pedido, 17, nueva_obs)
+    
+    exito = actualizaciones_exitosas == len(filas_a_actualizar)
     
     if exito:
-        # Actualizar observaciones con timestamp
         ahora = datetime.now(peru_tz)
         timestamp = ahora.strftime("%d/%m %H:%M")
         usuario = update.effective_user.username or update.effective_user.first_name
         
-        # Obtener observaciones actuales
-        pedidos = obtener_datos_pedidos(force_refresh=True)
-        obs_actuales = ""
-        if pedidos and len(pedidos) >= fila and len(pedidos[fila - 1]) > 16:
-            obs_actuales = pedidos[fila - 1][16] or ""
-        
-        # Nueva observación
-        nueva_obs = f"[{timestamp}] {nuevo_estado} - @{usuario}"
-        if obs_actuales:
-            nueva_obs = f"{nueva_obs}\n{obs_actuales}"
-        
-        # Limitar longitud
-        if len(nueva_obs) > 500:
-            nueva_obs = nueva_obs[:497] + "..."
-        
-        # Actualizar observaciones (columna Q = columna 17)
-        actualizar_estado_pedido(fila, 17, nueva_obs)
+        # Mensaje con cantidad de líneas actualizadas
+        lineas_texto = "línea" if len(filas_a_actualizar) == 1 else "líneas"
+        productos_texto = "producto" if len(filas_a_actualizar) == 1 else "productos"
         
         mensaje = f"""
 *{emoji_estado} ESTADO ACTUALIZADO*
@@ -811,6 +837,8 @@ async def cambiar_estado_callback(update: Update, context: ContextTypes.DEFAULT_
 
 Pedido: `{id_pedido}`
 Nuevo estado: *{nuevo_estado}*
+{len(filas_a_actualizar)} {productos_texto} actualizados
+
 Actualizado por: @{usuario}
 Hora: {timestamp}
 
