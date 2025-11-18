@@ -29,6 +29,7 @@ register_proceso_handlers = None
 register_gastos_handlers = None
 register_ventas_handlers = None
 register_reportes_handlers = None
+register_reportes_detallados_handlers = None  # Añadido para reportes detallados
 register_pedidos_handlers = None
 register_pedidos_whatsapp_handlers = None  # Handler para pedidos de WhatsApp
 register_adelantos_handlers = None
@@ -81,6 +82,13 @@ try:
         logger.info("Handler de reportes importado correctamente")
     except Exception as e:
         logger.error(f"Error al importar handler de reportes: {e}")
+    
+    # Importar el nuevo handler de reportes detallados
+    try:
+        from handlers.reportes_detallados import register_reportes_detallados_handlers
+        logger.info("Handler de reportes detallados importado correctamente")
+    except Exception as e:
+        logger.error(f"Error al importar handler de reportes detallados: {e}")
     
     try:
         from handlers.pedidos import register_pedidos_handlers
@@ -349,6 +357,8 @@ def main():
         handler_functions.append(("ventas", register_ventas_handlers))
     if register_reportes_handlers:
         handler_functions.append(("reportes", register_reportes_handlers))
+    if register_reportes_detallados_handlers:
+        handler_functions.append(("reportes_detallados", register_reportes_detallados_handlers))
     if register_pedidos_handlers:
         handler_functions.append(("pedidos", register_pedidos_handlers))
     if register_pedidos_whatsapp_handlers:
