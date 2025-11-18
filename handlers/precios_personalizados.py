@@ -107,11 +107,20 @@ _No hay precios personalizados configurados_
                     'nombre': p[1],
                     'productos': []
                 }
+            # Asegurar que precio_normal y precio_vip sean números válidos
+            try:
+                precio_normal_val = float(p[4]) if len(p) > 4 and p[4] else 0
+                precio_vip_val = float(p[5]) if len(p) > 5 and p[5] else 0
+            except (ValueError, TypeError):
+                # Si no se puede convertir, usar 0
+                precio_normal_val = 0
+                precio_vip_val = 0
+            
             precios_por_cliente[telefono]['productos'].append({
                 'id': p[2],
                 'nombre': p[3],
-                'precio_normal': p[4],
-                'precio_vip': p[5]
+                'precio_normal': precio_normal_val,
+                'precio_vip': precio_vip_val
             })
         
         # Construir mensaje
@@ -126,10 +135,20 @@ _No hay precios personalizados configurados_
             
             mensaje += f"*{datos['nombre']}* ({telefono})\n"
             for prod in datos['productos'][:3]:  # Máximo 3 productos por cliente
-                descuento = float(prod['precio_normal']) - float(prod['precio_vip'])
-                porcentaje = (descuento / float(prod['precio_normal'])) * 100
-                mensaje += f"  • {prod['nombre']}: S/{prod['precio_vip']} "
-                mensaje += f"(-{porcentaje:.0f}%)\n"
+                try:
+                    precio_normal = prod['precio_normal']
+                    precio_vip = prod['precio_vip']
+                    
+                    if precio_normal > 0:
+                        descuento = precio_normal - precio_vip
+                        porcentaje = (descuento / precio_normal) * 100
+                        mensaje += f"  • {prod['nombre']}: S/{precio_vip} "
+                        mensaje += f"(-{porcentaje:.0f}%)\n"
+                    else:
+                        mensaje += f"  • {prod['nombre']}: S/{precio_vip}\n"
+                except (ValueError, TypeError, ZeroDivisionError):
+                    # Si hay error, solo mostrar el precio VIP
+                    mensaje += f"  • {prod['nombre']}: S/{prod['precio_vip']}\n"
             
             if len(datos['productos']) > 3:
                 mensaje += f"  _...y {len(datos['productos']) - 3} más_\n"
