@@ -19,6 +19,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "📦 *GESTIÓN DE PEDIDOS Y CATÁLOGO*\n"
         "*/pedidos_whatsapp* - Gestionar pedidos de WhatsApp\n"
         "*/catalogo* - Administrar catálogo de productos\n"
+        "*/precios_vip* - Gestionar precios personalizados VIP\n"
         "*/clientes* - Validar y gestionar clientes\n"
         "*/pedido* - Registrar pedido de cliente\n"
         "*/pedidos* - Ver pedidos pendientes\n\n"

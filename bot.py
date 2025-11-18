@@ -43,6 +43,7 @@ register_capitalizacion_handlers = None  # Nuevo handler para capitalización
 register_catalogo_admin_handlers = None  # Handler para administrar catálogo de WhatsApp
 register_clientes_handlers = None  # Handler para gestionar clientes
 register_clientes_validacion_handlers = None  # Handler para validación de clientes
+register_precios_personalizados_handlers = None  # Handler para precios personalizados
 
 # Intentar importar handlers con captura de errores
 try:
@@ -110,6 +111,12 @@ try:
         logger.info("Handler de validación de clientes importado correctamente")
     except Exception as e:
         logger.error(f"Error al importar handler de validación de clientes: {e}")
+    
+    try:
+        from handlers.precios_personalizados import register_precios_personalizados_handlers
+        logger.info("Handler de precios personalizados importado correctamente")
+    except Exception as e:
+        logger.error(f"Error al importar handler de precios personalizados: {e}")
     
     try:
         from handlers.compra_adelanto import register_compra_adelanto_handlers
@@ -364,6 +371,8 @@ def main():
         handler_functions.append(("catalogo_admin", register_catalogo_admin_handlers))
     if register_clientes_validacion_handlers:  # Handler para validación de clientes
         handler_functions.append(("clientes_validacion", register_clientes_validacion_handlers))
+    if register_precios_personalizados_handlers:  # Handler para precios personalizados
+        handler_functions.append(("precios_personalizados", register_precios_personalizados_handlers))
     
     # Registrar cada handler con manejo de excepciones individual
     for name, handler_func in handler_functions:
