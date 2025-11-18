@@ -401,7 +401,7 @@ _El cliente verá este precio en WhatsApp_
     return MENU
 
 def obtener_clientes_validados():
-    """Obtiene la lista de clientes validados"""
+    """Obtiene la lista de clientes desde la pestaña Clientes"""
     try:
         from utils.sheets import get_sheet_service
         service = get_sheet_service()
@@ -411,7 +411,7 @@ def obtener_clientes_validados():
         
         result = service.spreadsheets().values().get(
             spreadsheetId=SPREADSHEET_ID,
-            range='ClientesValidados!A:E'
+            range='Clientes!A:F'  # Leer desde la pestaña Clientes
         ).execute()
         
         values = result.get('values', [])
@@ -419,25 +419,31 @@ def obtener_clientes_validados():
         if len(values) <= 1:
             return []
         
-        # Retornar clientes activos
-        return [row for row in values[1:] if len(row) > 4 and row[4] == 'ACTIVO']
+        # Retornar todos los clientes (sin filtro de estado)
+        return [row for row in values[1:] if len(row) > 0]
         
     except Exception as e:
         logger.error(f"Error obteniendo clientes: {e}")
         return []
 
 def obtener_info_cliente(telefono):
-    """Obtiene información de un cliente"""
+    """Obtiene información de un cliente desde la pestaña Clientes"""
     try:
         clientes = obtener_clientes_validados()
         
         for c in clientes:
-            if c[0] == telefono:
+            # Buscar por ID_Cliente (columna A) o Teléfono (columna C)
+            id_cliente = c[0] if len(c) > 0 else ""
+            telefono_col = c[2] if len(c) > 2 else ""
+            
+            if id_cliente == telefono or telefono_col == telefono:
                 return {
-                    'telefono': c[0],
+                    'id_cliente': c[0] if len(c) > 0 else '',
                     'nombre': c[1] if len(c) > 1 else 'Sin nombre',
-                    'empresa': c[2] if len(c) > 2 else '',
-                    'email': c[3] if len(c) > 3 else ''
+                    'telefono': c[2] if len(c) > 2 else '',
+                    'empresa': c[3] if len(c) > 3 else '',
+                    'email': c[4] if len(c) > 4 else '',
+                    'estado': c[5] if len(c) > 5 else 'ACTIVO'
                 }
         
         return None
