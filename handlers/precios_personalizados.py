@@ -201,8 +201,82 @@ Paso 1: Selecciona el cliente
         return SELECCIONAR_CLIENTE
     
     elif opcion == "eliminar":
-        await query.edit_message_text("⚠️ Función en desarrollo")
-        return MENU
+        context.user_data['accion'] = 'eliminar'
+        
+        await query.edit_message_text("Cargando precios personalizados...")
+        
+        precios = obtener_precios_personalizados()
+        
+        if not precios:
+            mensaje = """
+❌ No hay precios personalizados para eliminar
+
+_Primero debes agregar precios con la opción de agregar_
+"""
+            keyboard = [[InlineKeyboardButton("↩️ Volver", callback_data="pp_volver")]]
+            await query.edit_message_text(
+                mensaje,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
+            )
+            return MENU
+        
+        mensaje = """
+*🗑️ ELIMINAR PRECIO PERSONALIZADO*
+━━━━━━━━━━━━━━━━━━━━━
+
+Selecciona el precio a eliminar:
+"""
+        
+        keyboard = []
+        # Guardar info de precios en contexto para referencias
+        context.user_data['precios_lista'] = []
+        
+        for i, p in enumerate(precios[:15], 1):  # Máximo 15 precios
+            try:
+                id_producto = p[0] if len(p) > 0 else "-"
+                nombre_producto = p[1] if len(p) > 1 else "-"
+                id_cliente = p[2] if len(p) > 2 else "-"
+                empresa = p[3] if len(p) > 3 else "-"
+                precio_kg = p[4] if len(p) > 4 else "-"
+                
+                # Texto del botón
+                texto = f"{empresa} - {nombre_producto} (S/{precio_kg})"
+                if len(texto) > 40:
+                    texto = texto[:37] + "..."
+                
+                # Guardar índice de fila para eliminar después (fila = i + 1 porque hay header)
+                context.user_data['precios_lista'].append({
+                    'fila': i + 1,  # Fila en Excel (header es fila 1)
+                    'id_producto': id_producto,
+                    'nombre_producto': nombre_producto,
+                    'empresa': empresa,
+                    'precio': precio_kg
+                })
+                
+                keyboard.append([
+                    InlineKeyboardButton(
+                        texto,
+                        callback_data=f"del_{i}"
+                    )
+                ])
+                
+            except Exception as e:
+                logger.error(f"Error listando precio {i}: {e}")
+                continue
+        
+        if len(precios) > 15:
+            mensaje += f"\n_Mostrando 15 de {len(precios)} precios_\n"
+        
+        keyboard.append([InlineKeyboardButton("❌ Cancelar", callback_data="pp_volver")])
+        
+        await query.edit_message_text(
+            mensaje,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
+        
+        return SELECCIONAR_CLIENTE  # Reutilizar este estado para eliminar
 
 async def cliente_seleccionado(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Maneja la selección de un cliente"""
