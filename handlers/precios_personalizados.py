@@ -670,7 +670,29 @@ def register_precios_personalizados_handlers(application):
             ],
             SELECCIONAR_CLIENTE: [
                 CallbackQueryHandler(cliente_seleccionado, pattern='^cli_'),
+                CallbackQueryHandler(cliente_seleccionado, pattern='^del_'),
+                CallbackQueryHandler(cliente_seleccionado, pattern='^confirm_del_'),
+                CallbackQueryHandler(precios_personalizados_command, pattern='^pp_volver
+            SELECCIONAR_PRODUCTO: [
+                CallbackQueryHandler(producto_seleccionado, pattern='^prod_'),
                 CallbackQueryHandler(precios_personalizados_command, pattern='^pp_volver$'),
+                MessageHandler(filters.COMMAND, cancelar)
+            ],
+            INGRESAR_PRECIO: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, procesar_precio),
+                MessageHandler(filters.COMMAND, cancelar)
+            ]
+        },
+        fallbacks=[
+            CommandHandler('cancelar', cancelar),
+            CallbackQueryHandler(precios_personalizados_command, pattern='^pp_volver$')
+        ],
+        conversation_timeout=300
+    )
+    
+    application.add_handler(conv_handler)
+    logger.info("Handlers de precios personalizados registrados correctamente")
+),
                 MessageHandler(filters.COMMAND, cancelar)
             ],
             SELECCIONAR_PRODUCTO: [
