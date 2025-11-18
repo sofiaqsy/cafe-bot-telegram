@@ -98,61 +98,41 @@ _No hay precios personalizados configurados_
             )
             return MENU
         
-        # Agrupar por cliente
-        precios_por_cliente = {}
-        for p in precios:
-            telefono = p[0]
-            if telefono not in precios_por_cliente:
-                precios_por_cliente[telefono] = {
-                    'nombre': p[1],
-                    'productos': []
-                }
-            # Asegurar que precio_normal y precio_vip sean números válidos
-            try:
-                precio_normal_val = float(p[4]) if len(p) > 4 and p[4] else 0
-                precio_vip_val = float(p[5]) if len(p) > 5 and p[5] else 0
-            except (ValueError, TypeError):
-                # Si no se puede convertir, usar 0
-                precio_normal_val = 0
-                precio_vip_val = 0
-            
-            precios_por_cliente[telefono]['productos'].append({
-                'id': p[2],
-                'nombre': p[3],
-                'precio_normal': precio_normal_val,
-                'precio_vip': precio_vip_val
-            })
-        
-        # Construir mensaje
+        # Construir mensaje con TODA la información
         mensaje = "*📋 PRECIOS PERSONALIZADOS*\n━━━━━━━━━━━━━━━━━━━━━\n\n"
+        mensaje += f"Total: *{len(precios)}* precio(s) configurado(s)\n\n"
         
-        contador = 0
-        for telefono, datos in precios_por_cliente.items():
-            contador += 1
-            if contador > 5:  # Máximo 5 clientes
-                mensaje += f"\n_...y {len(precios_por_cliente) - 5} clientes más_"
-                break
-            
-            mensaje += f"*{datos['nombre']}* ({telefono})\n"
-            for prod in datos['productos'][:3]:  # Máximo 3 productos por cliente
-                try:
-                    precio_normal = prod['precio_normal']
-                    precio_vip = prod['precio_vip']
-                    
-                    if precio_normal > 0:
-                        descuento = precio_normal - precio_vip
-                        porcentaje = (descuento / precio_normal) * 100
-                        mensaje += f"  • {prod['nombre']}: S/{precio_vip} "
-                        mensaje += f"(-{porcentaje:.0f}%)\n"
-                    else:
-                        mensaje += f"  • {prod['nombre']}: S/{precio_vip}\n"
-                except (ValueError, TypeError, ZeroDivisionError):
-                    # Si hay error, solo mostrar el precio VIP
-                    mensaje += f"  • {prod['nombre']}: S/{prod['precio_vip']}\n"
-            
-            if len(datos['productos']) > 3:
-                mensaje += f"  _...y {len(datos['productos']) - 3} más_\n"
-            mensaje += "\n"
+        for i, p in enumerate(precios[:10], 1):  # Máximo 10 precios
+            try:
+                # Leer todas las columnas según la estructura del Excel
+                id_producto = p[0] if len(p) > 0 else "-"
+                nombre_producto = p[1] if len(p) > 1 else "-"
+                id_cliente = p[2] if len(p) > 2 else "-"
+                empresa = p[3] if len(p) > 3 else "-"
+                precio_kg = p[4] if len(p) > 4 else "-"
+                descripcion = p[5] if len(p) > 5 else "-"
+                estado = p[6] if len(p) > 6 else "ACTIVO"
+                ultima_mod = p[7] if len(p) > 7 else "-"
+                
+                # Formatear mensaje
+                mensaje += f"*{i}. {nombre_producto}*\n"
+                mensaje += f"ID Producto: `{id_producto}`\n"
+                mensaje += f"Cliente: {empresa} (`{id_cliente}`)\n"
+                mensaje += f"Precio: *S/{precio_kg}* /kg\n"
+                
+                # Solo mostrar descripción si no es muy larga
+                if descripcion and descripcion != "-" and len(descripcion) < 50:
+                    mensaje += f"_{descripcion}_\n"
+                
+                mensaje += f"Estado: {estado}\n"
+                mensaje += f"━━━━━━━━━━━━━━━\n"
+                
+            except Exception as e:
+                logger.error(f"Error formateando precio {i}: {e}")
+                continue
+        
+        if len(precios) > 10:
+            mensaje += f"\n_Mostrando 10 de {len(precios)} precios_\n"
         
         keyboard = [[InlineKeyboardButton("↩️ Volver", callback_data="pp_volver")]]
         
@@ -522,7 +502,7 @@ def obtener_precios_personalizados():
         
         result = service.spreadsheets().values().get(
             spreadsheetId=SPREADSHEET_ID,
-            range='CatalogoPersonalizado!A:G'
+            range='CatalogoPersonalizado!A:H'  # Leer hasta la columna H
         ).execute()
         
         values = result.get('values', [])
@@ -530,7 +510,7 @@ def obtener_precios_personalizados():
         if len(values) <= 1:
             return []
         
-        return values[1:]
+        return values[1:]  # Saltar el header
         
     except Exception as e:
         logger.error(f"Error obteniendo precios personalizados: {e}")
@@ -546,18 +526,21 @@ def agregar_precio_personalizado(telefono, nombre_cliente, empresa, id_producto,
         if not service:
             return False
         
-        # Preparar datos
+        # Preparar datos según la estructura: A-H
+        # A: ID_Producto, B: Nombre, C: ID Cliente, D: Empresa/Negocio, 
+        # E: Precio_Kg, F: Descripcion, G: Estado, H: Ultima_Modificacion
         ahora = datetime.now(peru_tz)
-        fecha_creacion = ahora.strftime("%d/%m/%Y %H:%M")
+        fecha_modificacion = ahora.strftime("%d/%m/%Y, %I:%M:%S %p")
         
         nueva_fila = [
-            telefono,
-            nombre_cliente,
-            id_producto,
-            nombre_producto,
-            str(precio_normal),
-            str(precio_vip),
-            fecha_creacion
+            id_producto,           # A: ID_Producto
+            nombre_producto,       # B: Nombre
+            telefono,              # C: ID Cliente (teléfono)
+            empresa or nombre_cliente,  # D: Empresa/Negocio
+            str(precio_vip),       # E: Precio_Kg (precio VIP)
+            "",                    # F: Descripcion (vacío por ahora)
+            "ACTIVO",              # G: Estado
+            fecha_modificacion     # H: Ultima_Modificacion
         ]
         
         # Agregar a la hoja
@@ -565,13 +548,13 @@ def agregar_precio_personalizado(telefono, nombre_cliente, empresa, id_producto,
         
         service.spreadsheets().values().append(
             spreadsheetId=SPREADSHEET_ID,
-            range='CatalogoPersonalizado!A:G',
+            range='CatalogoPersonalizado!A:H',
             valueInputOption='USER_ENTERED',
             insertDataOption='INSERT_ROWS',
             body=body
         ).execute()
         
-        logger.info(f"Precio personalizado agregado: {telefono} - {nombre_producto} - S/{precio_vip}")
+        logger.info(f"Precio personalizado agregado: {id_producto} - {empresa} - S/{precio_vip}")
         return True
         
     except Exception as e:
