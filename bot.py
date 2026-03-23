@@ -23,6 +23,7 @@ from handlers.gastos import register_gastos_handlers
 from handlers.adelantos import register_adelantos_handlers
 from handlers.capitalizacion import register_capitalizacion_handlers
 from handlers.compra_mixta import register_compra_mixta_handlers
+from handlers.asistente import register_asistente_handlers
 
 
 def eliminar_webhook():
@@ -65,6 +66,9 @@ def main():
     register_adelantos_handlers(application)
     register_capitalizacion_handlers(application)
     register_compra_mixta_handlers(application)
+
+    # AI assistant — registered in group 1 so it runs after all ConversationHandlers
+    register_asistente_handlers(application)
 
     logger.info("Todos los handlers registrados. Bot iniciando en modo POLLING...")
     application.run_polling(drop_pending_updates=True)

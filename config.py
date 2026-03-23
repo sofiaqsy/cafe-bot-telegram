@@ -36,6 +36,10 @@ os.makedirs(DATA_DIR, exist_ok=True)
 UPLOADS_FOLDER = os.path.join(pathlib.Path(__file__).parent.absolute(), "uploads")
 os.makedirs(UPLOADS_FOLDER, exist_ok=True)
 
+# Configuración de IA (Groq primary, Gemini backup — both free)
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
 # Verificar configuración de Google Sheets
 def check_sheets_config():
     """Verifica que la configuración de Google Sheets esté completa"""
