@@ -700,20 +700,44 @@ def buscar_proveedor(nombre: str) -> dict | None:
         # Try known possible column names for the provider name
         name_keys = ["nombre", "Nombre", "NOMBRE", "name", "proveedor", "Proveedor"]
 
-        for p in proveedores:
+        def _get_name(p):
             for key in name_keys:
-                val = p.get(key, "").strip().lower()
-                if val == nombre_norm:
-                    logger.info(f"[PROVEEDOR] Encontrado (exacto): {p}")
-                    return _normalize_proveedor(p)
+                v = p.get(key, "").strip().lower()
+                if v:
+                    return v
+            return ""
 
-        # Partial match fallback
+        import re
+
+        def _words(s):
+            return set(re.split(r'[\s,.()\-_/]+', s.lower()))
+
+        user_words = _words(nombre_norm) - {""}
+
+        # 1. Exact match
         for p in proveedores:
-            for key in name_keys:
-                val = p.get(key, "").strip().lower()
-                if nombre_norm in val:
-                    logger.info(f"[PROVEEDOR] Encontrado (parcial): {p}")
-                    return _normalize_proveedor(p)
+            if _get_name(p) == nombre_norm:
+                logger.info(f"[PROVEEDOR] Encontrado (exacto): {p}")
+                return _normalize_proveedor(p)
+
+        # 2. Substring: user input inside provider name
+        for p in proveedores:
+            if nombre_norm in _get_name(p):
+                logger.info(f"[PROVEEDOR] Encontrado (subcadena): {p}")
+                return _normalize_proveedor(p)
+
+        # 3. Substring: provider name inside user input
+        for p in proveedores:
+            if _get_name(p) in nombre_norm:
+                logger.info(f"[PROVEEDOR] Encontrado (subcadena inversa): {p}")
+                return _normalize_proveedor(p)
+
+        # 4. Any word from user input matches any word in provider name
+        for p in proveedores:
+            prov_words = _words(_get_name(p)) - {""}
+            if user_words & prov_words:
+                logger.info(f"[PROVEEDOR] Encontrado (palabra): {p}")
+                return _normalize_proveedor(p)
 
         logger.warning(f"[PROVEEDOR] '{nombre}' no encontrado en la hoja.")
         return None
