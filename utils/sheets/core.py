@@ -677,14 +677,35 @@ def buscar_proveedor(nombre: str) -> dict | None:
     """
     try:
         proveedores = get_all_data("proveedores")
+        if not proveedores:
+            logger.warning("[PROVEEDOR] La hoja 'proveedores' está vacía.")
+            return None
+
+        # Log the actual column names from the sheet so we can debug mismatches
+        logger.info(f"[PROVEEDOR] Columnas disponibles en la hoja: {list(proveedores[0].keys())}")
+        logger.info(f"[PROVEEDOR] Buscando: '{nombre}'")
+
         nombre_norm = nombre.strip().lower()
+
+        # Try known possible column names for the provider name
+        name_keys = ["nombre", "Nombre", "NOMBRE", "name", "proveedor", "Proveedor"]
+
         for p in proveedores:
-            if p.get("nombre", "").strip().lower() == nombre_norm:
-                return p
+            for key in name_keys:
+                val = p.get(key, "").strip().lower()
+                if val == nombre_norm:
+                    logger.info(f"[PROVEEDOR] Encontrado (exacto): {p}")
+                    return p
+
         # Partial match fallback
         for p in proveedores:
-            if nombre_norm in p.get("nombre", "").strip().lower():
-                return p
+            for key in name_keys:
+                val = p.get(key, "").strip().lower()
+                if nombre_norm in val:
+                    logger.info(f"[PROVEEDOR] Encontrado (parcial): {p}")
+                    return p
+
+        logger.warning(f"[PROVEEDOR] '{nombre}' no encontrado en la hoja.")
         return None
     except Exception as e:
         logger.error(f"Error buscando proveedor '{nombre}': {e}")

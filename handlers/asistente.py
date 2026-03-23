@@ -271,6 +271,10 @@ async def _mostrar_confirmacion(update: Update, context: ContextTypes.DEFAULT_TY
     nombre_proveedor = datos.get("proveedor")
     if nombre_proveedor and accion in ("compra", "adelanto", "gasto"):
         proveedor = buscar_proveedor(nombre_proveedor)
+        if proveedor:
+            logger.info(f"[ASISTENTE] Proveedor encontrado: {proveedor}")
+            if not proveedor.get("numero_cuenta"):
+                logger.warning(f"[ASISTENTE] Proveedor '{nombre_proveedor}' encontrado pero sin 'numero_cuenta'. Columnas: {list(proveedor.keys())}")
         if proveedor and proveedor.get("numero_cuenta"):
             context.user_data["ai_proveedor_info"] = proveedor
             banco = proveedor.get("banco", "—")
