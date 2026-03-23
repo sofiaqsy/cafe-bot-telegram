@@ -107,9 +107,10 @@ def _save_gasto(datos: dict, username: str) -> bool:
     notas = datos.get("notas") or "Registrado por asistente IA"
     record = {
         "fecha": now.strftime("%Y-%m-%d %H:%M:%S"),
-        "concepto": datos.get("concepto", ""),
+        "descripcion": datos.get("concepto", ""),
         "monto": float(datos.get("monto", 0)),
         "categoria": datos.get("categoria", ""),
+        "registrado_por": username,
         "notas": notas,
     }
     return sheets_append("gastos", record)
@@ -187,7 +188,7 @@ async def ai_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             "• _\"Gasté 200 soles en combustible\"_\n"
             "• _\"Le di un adelanto de 500 a María\"_\n\n"
             "O usa los comandos directos:\n"
-            "/compra · /gasto · /adelanto · /compra\_mixta",
+            "/compra · /gasto · /adelanto · /compra_mixta",
             parse_mode="Markdown",
         )
         return ConversationHandler.END

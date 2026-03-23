@@ -670,6 +670,16 @@ def get_filtered_data(sheet_name, filters=None, days=None):
     return filtered_data
 
 
+def _normalize_proveedor(p: dict) -> dict:
+    """Normalize provider dict to standard keys regardless of actual sheet column names."""
+    return {
+        "nombre":        p.get("nombre") or p.get("Nombre") or p.get("proveedor") or "",
+        "banco":         p.get("banco") or p.get("Banco") or p.get("forma_pago") or p.get("banco/forma_pago") or "",
+        "numero_cuenta": p.get("numero_cuenta") or p.get("cuenta") or p.get("Cuenta") or p.get("numero") or "",
+        "tipo_cuenta":   p.get("tipo_cuenta") or p.get("propietario_cuenta") or p.get("tipo") or "",
+    }
+
+
 def buscar_proveedor(nombre: str) -> dict | None:
     """
     Busca un proveedor en la hoja 'proveedores' por nombre (insensible a mayúsculas).
@@ -695,7 +705,7 @@ def buscar_proveedor(nombre: str) -> dict | None:
                 val = p.get(key, "").strip().lower()
                 if val == nombre_norm:
                     logger.info(f"[PROVEEDOR] Encontrado (exacto): {p}")
-                    return p
+                    return _normalize_proveedor(p)
 
         # Partial match fallback
         for p in proveedores:
@@ -703,7 +713,7 @@ def buscar_proveedor(nombre: str) -> dict | None:
                 val = p.get(key, "").strip().lower()
                 if nombre_norm in val:
                     logger.info(f"[PROVEEDOR] Encontrado (parcial): {p}")
-                    return p
+                    return _normalize_proveedor(p)
 
         logger.warning(f"[PROVEEDOR] '{nombre}' no encontrado en la hoja.")
         return None
