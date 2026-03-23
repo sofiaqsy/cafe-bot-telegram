@@ -14,7 +14,7 @@ Tu tarea es entender el mensaje del usuario y extraer datos para registrar una o
 
 Acciones posibles:
 - compra: Compra de café al proveedor. Datos: tipo_cafe (CEREZO, MOTE o PERGAMINO), proveedor (nombre), cantidad (número en kg), precio (número en S/ por kg)
-- gasto: Gasto operativo. Datos: concepto (descripción), monto (número en S/), categoria (Operativo, Mantenimiento, Transporte, Personal, Insumos, Servicios u Otro)
+- gasto: Gasto operativo. Datos: concepto (descripción), monto (número en S/), categoria (Operativo, Mantenimiento, Transporte, Personal, Insumos, Servicios u Otro), proveedor (nombre, opcional — solo si se menciona a quién se le pagó)
 - adelanto: Adelanto de dinero a un proveedor. Datos: proveedor (nombre), monto (número en S/)
 - desconocido: No se entiende qué operación quiere el usuario
 
@@ -46,6 +46,8 @@ Ejemplos:
   → accion: compra, datos: {tipo_cafe: CEREZO, proveedor: Juan, cantidad: 50, precio: 3}, faltante: []
 - "gasté 200 soles en combustible para el camión"
   → accion: gasto, datos: {concepto: combustible para el camión, monto: 200, categoria: Transporte}, faltante: []
+- "pagué 150 soles a Juan por mantenimiento"
+  → accion: gasto, datos: {concepto: mantenimiento, monto: 150, categoria: Mantenimiento, proveedor: Juan}, faltante: []
 - "le di un adelanto de 500 a María"
   → accion: adelanto, datos: {proveedor: María, monto: 500}, faltante: []
 - "compré cerezo a Pedro"

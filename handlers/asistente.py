@@ -64,11 +64,13 @@ def _build_summary(accion: str, datos: dict) -> str:
             "¿Confirmas? (Sí / No)"
         )
     elif accion == "gasto":
+        proveedor_line = f"Proveedor: {datos.get('proveedor')}\n" if datos.get("proveedor") else ""
         return (
             f"💸 *RESUMEN DE GASTO*\n\n"
             f"Concepto: {datos.get('concepto')}\n"
             f"Monto: {formatear_precio(datos.get('monto'))}\n"
-            f"Categoría: {datos.get('categoria')}\n\n"
+            f"Categoría: {datos.get('categoria')}\n"
+            f"{proveedor_line}\n"
             "¿Confirmas? (Sí / No)"
         )
     elif accion == "adelanto":
@@ -102,12 +104,13 @@ def _save_compra(datos: dict, username: str) -> bool:
 
 def _save_gasto(datos: dict, username: str) -> bool:
     now = get_now_peru()
+    notas = datos.get("notas") or "Registrado por asistente IA"
     record = {
         "fecha": now.strftime("%Y-%m-%d %H:%M:%S"),
         "concepto": datos.get("concepto", ""),
         "monto": float(datos.get("monto", 0)),
         "categoria": datos.get("categoria", ""),
-        "notas": "Registrado por asistente IA",
+        "notas": notas,
     }
     return sheets_append("gastos", record)
 
@@ -266,7 +269,7 @@ async def _mostrar_confirmacion(update: Update, context: ContextTypes.DEFAULT_TY
 
     # Check if this action has a provider and the provider exists in the sheet
     nombre_proveedor = datos.get("proveedor")
-    if nombre_proveedor and accion in ("compra", "adelanto"):
+    if nombre_proveedor and accion in ("compra", "adelanto", "gasto"):
         proveedor = buscar_proveedor(nombre_proveedor)
         if proveedor and proveedor.get("numero_cuenta"):
             context.user_data["ai_proveedor_info"] = proveedor
