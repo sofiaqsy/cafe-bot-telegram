@@ -104,14 +104,16 @@ def _save_compra(datos: dict, username: str) -> bool:
 
 def _save_gasto(datos: dict, username: str) -> bool:
     now = get_now_peru()
-    notas = datos.get("notas") or "Registrado por asistente IA"
+    descripcion = datos.get("concepto", "")
+    # Append account number to descripcion since gastos sheet has no notas column
+    if datos.get("notas"):
+        descripcion = f"{descripcion} | {datos['notas']}"
     record = {
         "fecha": now.strftime("%Y-%m-%d %H:%M:%S"),
-        "descripcion": datos.get("concepto", ""),
+        "descripcion": descripcion,
         "monto": float(datos.get("monto", 0)),
         "categoria": datos.get("categoria", ""),
         "registrado_por": username,
-        "notas": notas,
     }
     return sheets_append("gastos", record)
 
