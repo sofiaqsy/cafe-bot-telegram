@@ -172,8 +172,19 @@ async def ai_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     logger.info(f"[ASISTENTE] GROQ_API_KEY configurada: {'Sí' if GROQ_API_KEY else 'NO ❌'}")
     logger.info(f"[ASISTENTE] GEMINI_API_KEY configurada: {'Sí' if GEMINI_API_KEY else 'NO ❌'}")
 
-    if len(user_message) < 5:
-        logger.info(f"[ASISTENTE] Mensaje muy corto ({len(user_message)} chars), ignorando.")
+    SALUDOS = {"hola", "holi", "hey", "buenas", "hi", "hello", "khe", "ke", "qué", "que", "ola"}
+    if len(user_message) < 5 or user_message.lower() in SALUDOS:
+        logger.info(f"[ASISTENTE] Saludo o mensaje corto — respondiendo con menú.")
+        await update.message.reply_text(
+            f"¡Hola! 👋 ¿Qué deseas registrar hoy?\n\n"
+            "Puedes escribirme con tus propias palabras, por ejemplo:\n"
+            "• _\"Compré 50 kg de cerezo a Juan a 3 soles\"_\n"
+            "• _\"Gasté 200 soles en combustible\"_\n"
+            "• _\"Le di un adelanto de 500 a María\"_\n\n"
+            "O usa los comandos directos:\n"
+            "/compra · /gasto · /adelanto · /compra\_mixta",
+            parse_mode="Markdown",
+        )
         return ConversationHandler.END
 
     await update.message.reply_text("🤖 Analizando tu mensaje...")
