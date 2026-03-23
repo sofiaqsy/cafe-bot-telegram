@@ -5,6 +5,7 @@ Parses natural language messages into structured coffee business operations.
 import json
 import logging
 import requests
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +53,7 @@ Ejemplos:
 """
 
 
-def _call_groq(message: str, groq_api_key: str) -> dict | None:
+def _call_groq(message: str, groq_api_key: str) -> Optional[dict]:
     """Call Groq API with llama-3.3-70b-versatile."""
     try:
         response = requests.post(
@@ -82,7 +83,7 @@ def _call_groq(message: str, groq_api_key: str) -> dict | None:
         return None
 
 
-def _call_gemini(message: str, gemini_api_key: str) -> dict | None:
+def _call_gemini(message: str, gemini_api_key: str) -> Optional[dict]:
     """Call Gemini 1.5 Flash as backup."""
     try:
         prompt = f"{SYSTEM_PROMPT}\n\nMensaje del usuario: {message}\n\nResponde solo con el JSON:"
