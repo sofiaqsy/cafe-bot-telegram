@@ -76,7 +76,7 @@ def main():
     register_capitalizacion_handlers(application)
     register_compra_mixta_handlers(application)
 
-    # AI assistant — registered in group 1 so it runs after all ConversationHandlers
+    # AI assistant — registered last in group 0 so other ConversationHandlers take priority
     register_asistente_handlers(application)
 
     # Global error handler

@@ -327,5 +327,5 @@ def register_asistente_handlers(application):
         },
         fallbacks=[CommandHandler("cancelar", cancelar)],
     )
-    application.add_handler(conv_handler, group=1)
-    logger.info("✅ Asistente IA registrado en grupo 1")
+    application.add_handler(conv_handler)
+    logger.info("✅ Asistente IA registrado en grupo 0 (último, no interferirá con otros handlers)")
