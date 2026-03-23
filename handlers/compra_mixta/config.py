@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 # Estados para la conversación
-TIPO_CAFE, PROVEEDOR, CANTIDAD, PRECIO, METODO_PAGO, MONTO_EFECTIVO, MONTO_TRANSFERENCIA, SELECCIONAR_ADELANTO, CONFIRMAR = range(9)
+TIPO_CAFE, PROVEEDOR, CANTIDAD, PRECIO, METODO_PAGO, MONTO_EFECTIVO, MONTO_TRANSFERENCIA, MONTO_ADELANTO, MONTO_POR_PAGAR, SELECCIONAR_ADELANTO, CONFIRMAR = range(11)
 
 # Tipos de café predefinidos - solo 3 opciones fijas (copiado de compras.py)
 TIPOS_CAFE = ["CEREZO", "MOTE", "PERGAMINO"]
