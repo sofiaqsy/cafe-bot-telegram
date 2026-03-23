@@ -271,7 +271,10 @@ async def _mostrar_confirmacion(update: Update, context: ContextTypes.DEFAULT_TY
     datos = context.user_data["ai_datos"]
 
     # Check if this action has a provider and the provider exists in the sheet
+    # For gastos, also try matching the concepto if proveedor is not explicitly set
     nombre_proveedor = datos.get("proveedor")
+    if not nombre_proveedor and accion == "gasto":
+        nombre_proveedor = datos.get("concepto")
     if nombre_proveedor and accion in ("compra", "adelanto", "gasto"):
         proveedor = buscar_proveedor(nombre_proveedor)
         if proveedor:
