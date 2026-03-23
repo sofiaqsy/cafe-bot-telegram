@@ -4,12 +4,13 @@ Listens to free-text messages and uses Groq/Gemini to understand the user's inte
 then guides them through confirmation before saving the record.
 """
 import logging
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram import Update, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ContextTypes,
     ConversationHandler,
     MessageHandler,
     CommandHandler,
+    CallbackQueryHandler,
     filters,
 )
 
@@ -213,7 +214,10 @@ async def ai_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if not faltante:
         # All data present — show summary and ask confirmation
         summary = _build_summary(accion, context.user_data["ai_datos"])
-        keyboard = ReplyKeyboardMarkup([["Sí", "No"]], one_time_keyboard=True, resize_keyboard=True)
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("✅ Confirmar", callback_data="ai_confirmar"),
+            InlineKeyboardButton("❌ Cancelar", callback_data="ai_cancelar"),
+        ]])
         await update.message.reply_text(summary, parse_mode="Markdown", reply_markup=keyboard)
         return CONFIRMAR
 
@@ -262,27 +266,29 @@ async def pedir_campo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
 
 async def _mostrar_confirmacion(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Show final summary and ask for confirmation."""
+    """Show final summary and ask for confirmation with inline buttons."""
     accion = context.user_data["ai_accion"]
     datos = context.user_data["ai_datos"]
     summary = _build_summary(accion, datos)
-    keyboard = ReplyKeyboardMarkup([["Sí", "No"]], one_time_keyboard=True, resize_keyboard=True)
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("✅ Confirmar", callback_data="ai_confirmar"),
+        InlineKeyboardButton("❌ Cancelar", callback_data="ai_cancelar"),
+    ]])
     await update.message.reply_text(summary, parse_mode="Markdown", reply_markup=keyboard)
     return CONFIRMAR
 
 
 async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Save the record if user confirms."""
-    respuesta = update.message.text.strip().lower()
+    """Save the record when user taps Confirmar button."""
+    query = update.callback_query
+    await query.answer()
+
     accion = context.user_data.get("ai_accion")
     datos = context.user_data.get("ai_datos", {})
     username = update.effective_user.username or update.effective_user.first_name
 
-    if respuesta not in ("sí", "si", "s", "yes", "y"):
-        await update.message.reply_text(
-            "❌ Operación cancelada.",
-            reply_markup=ReplyKeyboardRemove(),
-        )
+    if query.data == "ai_cancelar":
+        await query.edit_message_text("❌ Operación cancelada.")
         context.user_data.clear()
         return ConversationHandler.END
 
@@ -297,22 +303,17 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             ok = False
 
         if ok:
-            await update.message.reply_text(
+            await query.edit_message_text(
                 "✅ ¡Registrado correctamente!\n\n"
-                "Puedes seguir registrando con un nuevo mensaje o usando los comandos.",
-                reply_markup=ReplyKeyboardRemove(),
+                "Puedes seguir registrando con un nuevo mensaje o usando los comandos."
             )
         else:
-            await update.message.reply_text(
-                "❌ Error al guardar. Intenta nuevamente o usa el comando directo.",
-                reply_markup=ReplyKeyboardRemove(),
+            await query.edit_message_text(
+                "❌ Error al guardar. Intenta nuevamente o usa el comando directo."
             )
     except Exception as e:
         logger.error(f"Error saving AI record: {e}")
-        await update.message.reply_text(
-            "❌ Error al guardar. Intenta nuevamente.",
-            reply_markup=ReplyKeyboardRemove(),
-        )
+        await query.edit_message_text("❌ Error al guardar. Intenta nuevamente.")
 
     context.user_data.clear()
     return ConversationHandler.END
@@ -333,7 +334,7 @@ def register_asistente_handlers(application):
     conv_handler = ConversationHandler(
         entry_points=[MessageHandler(filters.TEXT & ~filters.COMMAND, ai_entry)],
         states={
-            CONFIRMAR:   [MessageHandler(filters.TEXT & ~filters.COMMAND, confirmar)],
+            CONFIRMAR:   [CallbackQueryHandler(confirmar, pattern=r"^ai_(confirmar|cancelar)$")],
             PEDIR_CAMPO: [MessageHandler(filters.TEXT & ~filters.COMMAND, pedir_campo)],
         },
         fallbacks=[CommandHandler("cancelar", cancelar)],
