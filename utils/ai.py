@@ -119,11 +119,24 @@ def parse_message(message: str, groq_api_key: str = None, gemini_api_key: str = 
     result = None
 
     if groq_api_key:
+        logger.info("[AI] Intentando Groq...")
         result = _call_groq(message, groq_api_key)
+        if result:
+            logger.info(f"[AI] Groq respondió correctamente: accion={result.get('accion')}")
+        else:
+            logger.warning("[AI] Groq falló o no respondió.")
+    else:
+        logger.warning("[AI] GROQ_API_KEY no configurada, saltando Groq.")
 
     if result is None and gemini_api_key:
-        logger.info("Groq unavailable or no key, trying Gemini...")
+        logger.info("[AI] Intentando Gemini como backup...")
         result = _call_gemini(message, gemini_api_key)
+        if result:
+            logger.info(f"[AI] Gemini respondió correctamente: accion={result.get('accion')}")
+        else:
+            logger.warning("[AI] Gemini también falló.")
+    elif result is None:
+        logger.warning("[AI] GEMINI_API_KEY no configurada. Sin backup disponible.")
 
     if result is None:
         return {

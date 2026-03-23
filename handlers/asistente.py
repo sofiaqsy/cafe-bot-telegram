@@ -165,14 +165,22 @@ def _validate_field(field: str, value: str) -> tuple[bool, str]:
 
 async def ai_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Entry point: process free-text message with AI."""
+    user = update.effective_user
     user_message = update.message.text.strip()
 
+    logger.info(f"[ASISTENTE] Mensaje recibido de {user.id} (@{user.username}): '{user_message}'")
+    logger.info(f"[ASISTENTE] GROQ_API_KEY configurada: {'Sí' if GROQ_API_KEY else 'NO ❌'}")
+    logger.info(f"[ASISTENTE] GEMINI_API_KEY configurada: {'Sí' if GEMINI_API_KEY else 'NO ❌'}")
+
     if len(user_message) < 5:
+        logger.info(f"[ASISTENTE] Mensaje muy corto ({len(user_message)} chars), ignorando.")
         return ConversationHandler.END
 
     await update.message.reply_text("🤖 Analizando tu mensaje...")
 
+    logger.info(f"[ASISTENTE] Llamando a parse_message...")
     result = parse_message(user_message, GROQ_API_KEY, GEMINI_API_KEY)
+    logger.info(f"[ASISTENTE] Resultado IA: {result}")
     accion = result.get("accion", "desconocido")
 
     if accion == "desconocido" or not result.get("entendido"):
@@ -318,7 +326,6 @@ def register_asistente_handlers(application):
             PEDIR_CAMPO: [MessageHandler(filters.TEXT & ~filters.COMMAND, pedir_campo)],
         },
         fallbacks=[CommandHandler("cancelar", cancelar)],
-        # group=-1 ensures this runs after all other ConversationHandlers
     )
     application.add_handler(conv_handler, group=1)
-    logger.info("Asistente IA registrado en grupo 1")
+    logger.info("✅ Asistente IA registrado en grupo 1")

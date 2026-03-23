@@ -1,7 +1,8 @@
 import logging
 import traceback
 import requests
-from telegram.ext import Application, CommandHandler
+from telegram import Update
+from telegram.ext import Application, CommandHandler, ContextTypes
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -42,6 +43,14 @@ def eliminar_webhook():
         return False
 
 
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Log all unhandled errors."""
+    logger.error(f"[ERROR HANDLER] Excepción no manejada: {context.error}")
+    logger.error(traceback.format_exc())
+    if isinstance(update, Update) and update.effective_message:
+        await update.effective_message.reply_text("❌ Ocurrió un error inesperado. Intenta de nuevo.")
+
+
 def main():
     """Start the bot."""
     logger.info(f"Token configurado: {'Sí' if TOKEN else 'No'}")
@@ -69,6 +78,9 @@ def main():
 
     # AI assistant — registered in group 1 so it runs after all ConversationHandlers
     register_asistente_handlers(application)
+
+    # Global error handler
+    application.add_error_handler(error_handler)
 
     logger.info("Todos los handlers registrados. Bot iniciando en modo POLLING...")
     application.run_polling(drop_pending_updates=True)
