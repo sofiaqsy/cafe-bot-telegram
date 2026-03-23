@@ -16,7 +16,7 @@ from telegram.ext import (
 
 from config import GROQ_API_KEY, GEMINI_API_KEY
 from utils.ai import parse_message
-from utils.sheets import append_data as sheets_append
+from utils.sheets import append_data as sheets_append, buscar_proveedor
 from utils.helpers import get_now_peru, format_date_for_sheets
 from utils.sheets import generate_unique_id
 from utils.formatters import formatear_precio
@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 # Conversation states
 CONFIRMAR = 0
 PEDIR_CAMPO = 1
+CONFIRMAR_PROVEEDOR = 2
 
 # Required fields per action
 REQUIRED_FIELDS = {
@@ -212,14 +213,7 @@ async def ai_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data["ai_faltante"] = faltante
 
     if not faltante:
-        # All data present — show summary and ask confirmation
-        summary = _build_summary(accion, context.user_data["ai_datos"])
-        keyboard = InlineKeyboardMarkup([[
-            InlineKeyboardButton("✅ Confirmar", callback_data="ai_confirmar"),
-            InlineKeyboardButton("❌ Cancelar", callback_data="ai_cancelar"),
-        ]])
-        await update.message.reply_text(summary, parse_mode="Markdown", reply_markup=keyboard)
-        return CONFIRMAR
+        return await _mostrar_confirmacion(update, context)
 
     # Ask for the first missing field
     campo = faltante[0]
@@ -266,16 +260,74 @@ async def pedir_campo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
 
 async def _mostrar_confirmacion(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Show final summary and ask for confirmation with inline buttons."""
+    """Check provider account, then show final summary with inline buttons."""
     accion = context.user_data["ai_accion"]
     datos = context.user_data["ai_datos"]
+
+    # Check if this action has a provider and the provider exists in the sheet
+    nombre_proveedor = datos.get("proveedor")
+    if nombre_proveedor and accion in ("compra", "adelanto"):
+        proveedor = buscar_proveedor(nombre_proveedor)
+        if proveedor and proveedor.get("numero_cuenta"):
+            context.user_data["ai_proveedor_info"] = proveedor
+            banco = proveedor.get("banco", "—")
+            numero = proveedor.get("numero_cuenta", "—")
+            tipo = proveedor.get("tipo_cuenta", "—")
+            texto = (
+                f"🏦 *Cuenta del proveedor encontrada*\n\n"
+                f"Proveedor: {proveedor.get('nombre')}\n"
+                f"Banco: {banco}\n"
+                f"Número de cuenta: `{numero}`\n"
+                f"Tipo: {tipo}\n\n"
+                "¿Es esta la cuenta correcta?"
+            )
+            keyboard = InlineKeyboardMarkup([[
+                InlineKeyboardButton("✅ Sí, continuar", callback_data="prov_ok"),
+                InlineKeyboardButton("❌ No, cancelar", callback_data="prov_cancel"),
+            ]])
+            await update.message.reply_text(texto, parse_mode="Markdown", reply_markup=keyboard)
+            return CONFIRMAR_PROVEEDOR
+
+    # No provider info — go straight to final confirmation
+    return await _mostrar_resumen_final(update.message, context)
+
+
+async def _mostrar_resumen_final(message, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Show the operation summary and ask for final confirmation."""
+    accion = context.user_data["ai_accion"]
+    datos = context.user_data["ai_datos"]
+
+    # Attach account number to notas if provider info was confirmed
+    proveedor_info = context.user_data.get("ai_proveedor_info")
+    if proveedor_info and proveedor_info.get("numero_cuenta"):
+        cuenta = proveedor_info["numero_cuenta"]
+        banco = proveedor_info.get("banco", "")
+        nota_cuenta = f"Cuenta {banco}: {cuenta}".strip()
+        datos["notas"] = nota_cuenta
+        context.user_data["ai_datos"] = datos
+
     summary = _build_summary(accion, datos)
     keyboard = InlineKeyboardMarkup([[
         InlineKeyboardButton("✅ Confirmar", callback_data="ai_confirmar"),
         InlineKeyboardButton("❌ Cancelar", callback_data="ai_cancelar"),
     ]])
-    await update.message.reply_text(summary, parse_mode="Markdown", reply_markup=keyboard)
+    await message.reply_text(summary, parse_mode="Markdown", reply_markup=keyboard)
     return CONFIRMAR
+
+
+async def confirmar_proveedor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle the provider account confirmation step."""
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "prov_cancel":
+        await query.edit_message_text("❌ Operación cancelada.")
+        context.user_data.clear()
+        return ConversationHandler.END
+
+    # Provider confirmed — show final summary
+    await query.edit_message_text("✅ Cuenta confirmada.")
+    return await _mostrar_resumen_final(query.message, context)
 
 
 async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -334,8 +386,9 @@ def register_asistente_handlers(application):
     conv_handler = ConversationHandler(
         entry_points=[MessageHandler(filters.TEXT & ~filters.COMMAND, ai_entry)],
         states={
-            CONFIRMAR:   [CallbackQueryHandler(confirmar, pattern=r"^ai_(confirmar|cancelar)$")],
-            PEDIR_CAMPO: [MessageHandler(filters.TEXT & ~filters.COMMAND, pedir_campo)],
+            CONFIRMAR_PROVEEDOR: [CallbackQueryHandler(confirmar_proveedor, pattern=r"^prov_(ok|cancel)$")],
+            CONFIRMAR:           [CallbackQueryHandler(confirmar, pattern=r"^ai_(confirmar|cancelar)$")],
+            PEDIR_CAMPO:         [MessageHandler(filters.TEXT & ~filters.COMMAND, pedir_campo)],
         },
         fallbacks=[CommandHandler("cancelar", cancelar)],
     )

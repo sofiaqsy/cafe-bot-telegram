@@ -668,3 +668,24 @@ def get_filtered_data(sheet_name, filters=None, days=None):
     
     logger.info(f"Filtrado: de {len(all_data)} registros a {len(filtered_data)} registros")
     return filtered_data
+
+
+def buscar_proveedor(nombre: str) -> dict | None:
+    """
+    Busca un proveedor en la hoja 'proveedores' por nombre (insensible a mayúsculas).
+    Retorna el primer proveedor que coincida, o None si no se encuentra.
+    """
+    try:
+        proveedores = get_all_data("proveedores")
+        nombre_norm = nombre.strip().lower()
+        for p in proveedores:
+            if p.get("nombre", "").strip().lower() == nombre_norm:
+                return p
+        # Partial match fallback
+        for p in proveedores:
+            if nombre_norm in p.get("nombre", "").strip().lower():
+                return p
+        return None
+    except Exception as e:
+        logger.error(f"Error buscando proveedor '{nombre}': {e}")
+        return None

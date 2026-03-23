@@ -25,7 +25,8 @@ from utils.sheets.core import (
     append_data,
     update_cell,
     get_all_data,
-    get_filtered_data
+    get_filtered_data,
+    buscar_proveedor,
 )
 
 # Funciones de almacén
