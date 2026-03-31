@@ -489,7 +489,7 @@ HTML = """<!DOCTYPE html>
     footer { text-align: center; padding: 24px; font-size: 0.78rem; color: #bbb; }
 
     /* HISTORICAL CHART */
-    .hist-card { background:#fff; border-radius:12px; padding:24px; box-shadow:0 1px 8px rgba(0,0,0,0.07); margin-bottom:24px; }
+    .hist-card { background:#fff; border-radius:12px; padding:24px; box-shadow:0 1px 8px rgba(0,0,0,0.07); margin-top:32px; margin-bottom:24px; }
     .hist-toolbar { display:flex; gap:24px; align-items:center; flex-wrap:wrap; margin-bottom:20px; }
     .hist-toolbar .seg { display:flex; border:1.5px solid #e0d5c5; border-radius:8px; overflow:hidden; }
     .hist-toolbar .seg button {
