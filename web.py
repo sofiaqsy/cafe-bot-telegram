@@ -302,7 +302,7 @@ HTML = """<!DOCTYPE html>
 </footer>
 
 <script>
-const ZONAS = {{ zonas_json }};
+const ZONAS = {{ zonas_json | safe }};
 
 function fmt(n, dec=4) {
   return parseFloat(n).toFixed(dec);
