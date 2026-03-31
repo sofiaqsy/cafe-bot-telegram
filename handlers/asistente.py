@@ -184,14 +184,13 @@ async def ai_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if len(user_message) < 5 or user_message.lower() in SALUDOS:
         logger.info(f"[ASISTENTE] Saludo o mensaje corto — respondiendo con menú.")
         await update.message.reply_text(
-            f"¡Hola! 👋 ¿Qué deseas registrar hoy?\n\n"
+            "¡Hola! ¿Qué deseas registrar hoy?\n\n"
             "Puedes escribirme con tus propias palabras, por ejemplo:\n"
-            "• _\"Compré 50 kg de cerezo a Juan a 3 soles\"_\n"
-            "• _\"Gasté 200 soles en combustible\"_\n"
-            "• _\"Le di un adelanto de 500 a María\"_\n\n"
+            '• "Compré 50 kg de cerezo a Juan a 3 soles"\n'
+            '• "Gasté 200 soles en combustible"\n'
+            '• "Le di un adelanto de 500 a María"\n\n'
             "O usa los comandos directos:\n"
             "/compra · /gasto · /adelanto · /compra_mixta",
-            parse_mode="Markdown",
         )
         return ConversationHandler.END
 
