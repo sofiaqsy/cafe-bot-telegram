@@ -490,7 +490,7 @@ HTML = """<!DOCTYPE html>
 
     /* HISTORICAL CHART */
     .hist-card { background:#fff; border-radius:12px; padding:24px; box-shadow:0 1px 8px rgba(0,0,0,0.07); margin-bottom:24px; }
-    .hist-toolbar { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:20px; }
+    .hist-toolbar { display:flex; gap:24px; align-items:center; flex-wrap:wrap; margin-bottom:20px; }
     .hist-toolbar .seg { display:flex; border:1.5px solid #e0d5c5; border-radius:8px; overflow:hidden; }
     .hist-toolbar .seg button {
       background:#faf8f5; border:none; padding:7px 14px;
@@ -530,6 +530,7 @@ HTML = """<!DOCTYPE html>
     <a href="#inicio" class="active">Inicio</a>
     <a href="#mercado">Mercado</a>
     <a href="#zonas">Zonas</a>
+    <a href="#historico">Historico</a>
   </div>
 </nav>
 
