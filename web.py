@@ -3,8 +3,19 @@ Public price web for Cooperativa Agroindustrial Villa Rica Golden Coffee Ltda.
 Serves a price calculator page based on the CC Golden Excel formulas.
 """
 import time
+import logging
+import threading
 import requests as http_requests
 from flask import Flask, render_template_string, request, jsonify
+
+logger = logging.getLogger(__name__)
+
+# ── Sheets integration (optional — only available when running via main.py) ──
+try:
+    from utils.sheets import append_data as sheets_append, get_all_data as sheets_get_all
+    _sheets_ok = True
+except Exception:
+    _sheets_ok = False
 
 app = Flask(__name__)
 
@@ -113,6 +124,84 @@ ZONAS = [
     {"zona": "ÑAGAZU", "rendimiento": 0.7172},
 ]
 
+# ── Historical price snapshot ─────────────────────────────────────────────────
+_last_saved_date = {"date": None}   # avoid duplicate rows on the same day
+
+def _compute_snapshot(bolsa, dolar):
+    """Calculate all price fields from bolsa + dolar."""
+    pb  = bolsa * dolar
+    cc  = 29 * dolar
+    return {
+        "bolsa":           round(bolsa, 2),
+        "dolar":           round(dolar, 4),
+        "precio_bolsa":    round(pb,   2),
+        "pergamino_seco":  round((pb - cc) / 60, 4),
+        "mote":            round(((pb - cc) / 60 * 7.3) - 3.5, 4),
+        "cerezo":          round((pb / 60) / (280 / 55.2) - (41 / 280), 4),
+        "oro_verde":       round(pb / 46, 4),
+    }
+
+def save_precio_historico():
+    """Fetch live prices and save one row per day to preciosHistoricos sheet."""
+    if not _sheets_ok:
+        return
+    import datetime, pytz
+    today = datetime.datetime.now(pytz.timezone("America/Lima")).strftime("%Y-%m-%d")
+    if _last_saved_date["date"] == today:
+        return  # already saved today
+    bolsa = get_coffee_bolsa()
+    dolar = get_usd_pen_rate()
+    if not bolsa or not dolar:
+        logger.warning("[HISTORICO] No se pudo obtener precios live para guardar.")
+        return
+    snap = _compute_snapshot(bolsa, dolar)
+    snap["fecha"] = today
+    try:
+        sheets_append("preciosHistoricos", snap)
+        _last_saved_date["date"] = today
+        logger.info(f"[HISTORICO] Snapshot guardado: {snap}")
+    except Exception as e:
+        logger.error(f"[HISTORICO] Error al guardar: {e}")
+
+def get_historico_data():
+    """Read all rows from preciosHistoricos sheet."""
+    if not _sheets_ok:
+        return []
+    try:
+        rows = sheets_get_all("preciosHistoricos")
+        result = []
+        for r in rows:
+            try:
+                result.append({
+                    "fecha":          r.get("fecha", ""),
+                    "bolsa":          float(r.get("bolsa", 0)          or 0),
+                    "dolar":          float(r.get("dolar", 0)          or 0),
+                    "precio_bolsa":   float(r.get("precio_bolsa", 0)   or 0),
+                    "pergamino_seco": float(r.get("pergamino_seco", 0) or 0),
+                    "mote":           float(r.get("mote", 0)           or 0),
+                    "cerezo":         float(r.get("cerezo", 0)         or 0),
+                    "oro_verde":      float(r.get("oro_verde", 0)      or 0),
+                })
+            except Exception:
+                pass
+        return sorted(result, key=lambda x: x["fecha"])
+    except Exception as e:
+        logger.error(f"[HISTORICO] Error al leer: {e}")
+        return []
+
+def _scheduler_loop():
+    """Background thread: try to save a snapshot every 6 hours."""
+    time.sleep(10)   # let Flask start first
+    while True:
+        try:
+            save_precio_historico()
+        except Exception as e:
+            logger.error(f"[SCHEDULER] {e}")
+        time.sleep(3600 * 6)  # retry in 6 hours
+
+threading.Thread(target=_scheduler_loop, daemon=True, name="precio-scheduler").start()
+
+
 def calcular_precios(bolsa, dolar):
     precio_bolsa = bolsa * dolar
     cc = 29 * dolar
@@ -145,7 +234,8 @@ HTML = """<!DOCTYPE html>
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Precios del dia — CC Golden Coffee</title>
+  <title>Precios del dia — Finca Rosal</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Segoe UI', Arial, sans-serif; background: #f2ede4; color: #2d2416; }
@@ -397,6 +487,20 @@ HTML = """<!DOCTYPE html>
     .btn-pg:disabled { opacity: 0.35; cursor: default; }
 
     footer { text-align: center; padding: 24px; font-size: 0.78rem; color: #bbb; }
+
+    /* HISTORICAL CHART */
+    .hist-card { background:#fff; border-radius:12px; padding:24px; box-shadow:0 1px 8px rgba(0,0,0,0.07); margin-bottom:24px; }
+    .hist-toolbar { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:20px; }
+    .hist-toolbar .seg { display:flex; border:1.5px solid #e0d5c5; border-radius:8px; overflow:hidden; }
+    .hist-toolbar .seg button {
+      background:#faf8f5; border:none; padding:7px 14px;
+      font-size:0.8rem; font-weight:600; color:#888; cursor:pointer;
+      border-right:1px solid #e0d5c5; transition:all .15s;
+    }
+    .hist-toolbar .seg button:last-child { border-right:none; }
+    .hist-toolbar .seg button.active { background:#3b1f06; color:#fff; }
+    .chart-wrap { position:relative; height:260px; }
+    .hist-empty { text-align:center; padding:48px; color:#bbb; font-size:0.9rem; }
   </style>
 </head>
 <body>
@@ -524,6 +628,26 @@ HTML = """<!DOCTYPE html>
       <button class="btn-pg" id="pg-next"  onclick="goPage(currentPage+1)">&rsaquo;</button>
       <button class="btn-pg" id="pg-last"  onclick="goPage(totalPages-1)">&raquo;</button>
     </div>
+  </div>
+
+  <!-- HISTORICAL CHART -->
+  <div class="hist-card" id="historico">
+    <div class="card-title" style="margin-bottom:16px;">Historico de Precios</div>
+    <div class="hist-toolbar">
+      <div class="seg" id="seg-tipo">
+        <button class="active" onclick="setHistTipo('pergamino_seco',this)">Pergamino</button>
+        <button onclick="setHistTipo('mote',this)">Mote</button>
+        <button onclick="setHistTipo('cerezo',this)">Cerezo</button>
+        <button onclick="setHistTipo('oro_verde',this)">Oro Verde</button>
+      </div>
+      <div class="seg" id="seg-period">
+        <button onclick="setHistPeriod(7,this)">7 dias</button>
+        <button class="active" onclick="setHistPeriod(30,this)">30 dias</button>
+        <button onclick="setHistPeriod(0,this)">Todos</button>
+      </div>
+    </div>
+    <div class="chart-wrap"><canvas id="hist-chart"></canvas></div>
+    <div class="hist-empty" id="hist-empty" style="display:none">Sin datos historicos aun. El primer registro se guardara automaticamente hoy.</div>
   </div>
 
 </div>
@@ -681,6 +805,85 @@ document.getElementById('sort-by').addEventListener('change', () => { currentPag
 populateZonaSelect();
 update();
 
+// ── Historical chart ──────────────────────────────────────────────────────────
+let histData    = [];
+let histTipo    = 'pergamino_seco';
+let histPeriod  = 30;
+let histChart   = null;
+
+const HIST_LABELS = {
+  pergamino_seco: 'Pergamino Seco (S/./kg)',
+  mote:           'Mote (S/./kg)',
+  cerezo:         'Cerezo (S/./kg)',
+  oro_verde:      'Oro Verde (S/./kg)',
+};
+
+function setHistTipo(tipo, btn) {
+  histTipo = tipo;
+  document.querySelectorAll('#seg-tipo button').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderHistChart();
+}
+function setHistPeriod(days, btn) {
+  histPeriod = days;
+  document.querySelectorAll('#seg-period button').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderHistChart();
+}
+
+function renderHistChart() {
+  const empty = document.getElementById('hist-empty');
+  const wrap  = document.querySelector('.chart-wrap');
+  if (!histData.length) {
+    empty.style.display = ''; wrap.style.display = 'none'; return;
+  }
+  empty.style.display = 'none'; wrap.style.display = '';
+
+  let rows = histData;
+  if (histPeriod > 0) rows = rows.slice(-histPeriod);
+
+  const labels = rows.map(r => r.fecha);
+  const values = rows.map(r => r[histTipo]);
+
+  if (histChart) histChart.destroy();
+  histChart = new Chart(document.getElementById('hist-chart'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: HIST_LABELS[histTipo],
+        data: values,
+        borderColor: '#c8a96e',
+        backgroundColor: 'rgba(200,169,110,0.10)',
+        borderWidth: 2,
+        pointRadius: rows.length > 60 ? 0 : 3,
+        pointHoverRadius: 5,
+        fill: true,
+        tension: 0.3,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { maxTicksLimit: 8, font: { size: 11 } }, grid: { color: '#f0ebe0' } },
+        y: {
+          ticks: { callback: v => 'S/. ' + v.toFixed(2), font: { size: 11 } },
+          grid: { color: '#f0ebe0' }
+        }
+      }
+    }
+  });
+}
+
+(async () => {
+  try {
+    const res = await fetch('/api/historico');
+    histData  = await res.json();
+    renderHistChart();
+  } catch(e) { console.warn('historico unavailable', e); }
+})();
+
 // Auto-fetch live market data (bolsa + tipo de cambio)
 (async () => {
   const badge = document.getElementById('fx-badge');
@@ -729,6 +932,12 @@ def api_bolsa():
     if price:
         return jsonify({"price": price, "ticker": "KC=F", "unit": "USD/quintal", "source": "Yahoo Finance"})
     return jsonify({"error": "No se pudo obtener el precio de bolsa"}), 503
+
+
+@app.route("/api/historico")
+def api_historico():
+    data = get_historico_data()
+    return jsonify(data)
 
 
 @app.route("/api/tipo-cambio")
