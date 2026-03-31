@@ -404,6 +404,7 @@ def register_asistente_handlers(application):
             PEDIR_CAMPO:         [MessageHandler(filters.TEXT & ~filters.COMMAND, pedir_campo)],
         },
         fallbacks=[CommandHandler("cancelar", cancelar)],
+        per_message=False,
     )
     application.add_handler(conv_handler)
     logger.info("✅ Asistente IA registrado en grupo 0 (último, no interferirá con otros handlers)")

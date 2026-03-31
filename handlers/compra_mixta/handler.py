@@ -52,7 +52,7 @@ def register_compra_mixta_handlers(application):
                 CONFIRMAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirmar_step)],
             },
             fallbacks=[CommandHandler("cancelar", cancelar)],
-            # Añadir opción para permitir que se caigan las conversaciones después de cierto tiempo de inactividad
+            per_message=False,
             conversation_timeout=900  # 15 minutos - para evitar conversaciones colgadas
         )
         
