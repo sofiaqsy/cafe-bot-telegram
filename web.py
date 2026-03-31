@@ -10,7 +10,7 @@ app = Flask(__name__)
 
 # ── Exchange rate cache (USD → PEN) ──────────────────────────────────────────
 _fx_cache = {"rate": None, "ts": 0}
-_FX_TTL   = 3600  # seconds
+_FX_TTL   = 3600  # 1 hour
 
 def get_usd_pen_rate():
     now = time.time()
@@ -25,7 +25,31 @@ def get_usd_pen_rate():
         _fx_cache["ts"]   = now
         return _fx_cache["rate"]
     except Exception:
-        return _fx_cache["rate"]  # return stale value if fetch fails
+        return _fx_cache["rate"]
+
+
+# ── Coffee futures cache (KC=F — ICE Coffee C, USD/quintal) ──────────────────
+_bolsa_cache = {"price": None, "ts": 0}
+_BOLSA_TTL   = 1800  # 30 minutes
+
+def get_coffee_bolsa():
+    now = time.time()
+    if _bolsa_cache["price"] and now - _bolsa_cache["ts"] < _BOLSA_TTL:
+        return _bolsa_cache["price"]
+    try:
+        # Yahoo Finance unofficial endpoint — no API key required
+        resp = http_requests.get(
+            "https://query1.finance.yahoo.com/v8/finance/chart/KC%3DF",
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=5,
+        )
+        meta  = resp.json()["chart"]["result"][0]["meta"]
+        price = meta.get("regularMarketPrice") or meta.get("previousClose")
+        _bolsa_cache["price"] = round(float(price), 2)
+        _bolsa_cache["ts"]    = now
+        return _bolsa_cache["price"]
+    except Exception:
+        return _bolsa_cache["price"]
 
 # Average rendimiento per zone (source: CC Golden 2019.xlsx - Perg Org Proc Indiv)
 ZONAS = [
@@ -657,22 +681,34 @@ document.getElementById('sort-by').addEventListener('change', () => { currentPag
 populateZonaSelect();
 update();
 
-// Auto-fetch USD/PEN exchange rate
+// Auto-fetch live market data (bolsa + tipo de cambio)
 (async () => {
   const badge = document.getElementById('fx-badge');
   try {
-    const res  = await fetch('/api/tipo-cambio');
-    const data = await res.json();
-    if (data.rate) {
-      document.getElementById('dolar').value = data.rate;
-      badge.textContent = 'tipo de cambio en vivo';
+    const [resBolsa, resFx] = await Promise.all([
+      fetch('/api/bolsa'),
+      fetch('/api/tipo-cambio'),
+    ]);
+    const [dataBolsa, dataFx] = await Promise.all([resBolsa.json(), resFx.json()]);
+
+    let updated = false;
+    if (dataBolsa.price) {
+      document.getElementById('bolsa').value = dataBolsa.price;
+      updated = true;
+    }
+    if (dataFx.rate) {
+      document.getElementById('dolar').value = dataFx.rate;
+      updated = true;
+    }
+    if (updated) {
+      badge.textContent = 'precios en vivo';
       badge.classList.add('live');
       update();
     } else {
-      badge.textContent = 'tipo de cambio manual';
+      badge.textContent = 'valores manuales';
     }
   } catch (e) {
-    badge.textContent = 'tipo de cambio manual';
+    badge.textContent = 'valores manuales';
   }
 })();
 </script>
@@ -685,6 +721,14 @@ def index():
     import json
     zonas_json = json.dumps(ZONAS, ensure_ascii=False)
     return render_template_string(HTML, zonas_json=zonas_json)
+
+
+@app.route("/api/bolsa")
+def api_bolsa():
+    price = get_coffee_bolsa()
+    if price:
+        return jsonify({"price": price, "ticker": "KC=F", "unit": "USD/quintal", "source": "Yahoo Finance"})
+    return jsonify({"error": "No se pudo obtener el precio de bolsa"}), 503
 
 
 @app.route("/api/tipo-cambio")
