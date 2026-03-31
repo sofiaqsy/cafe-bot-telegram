@@ -2,9 +2,30 @@
 Public price web for Cooperativa Agroindustrial Villa Rica Golden Coffee Ltda.
 Serves a price calculator page based on the CC Golden Excel formulas.
 """
+import time
+import requests as http_requests
 from flask import Flask, render_template_string, request, jsonify
 
 app = Flask(__name__)
+
+# ── Exchange rate cache (USD → PEN) ──────────────────────────────────────────
+_fx_cache = {"rate": None, "ts": 0}
+_FX_TTL   = 3600  # seconds
+
+def get_usd_pen_rate():
+    now = time.time()
+    if _fx_cache["rate"] and now - _fx_cache["ts"] < _FX_TTL:
+        return _fx_cache["rate"]
+    try:
+        resp = http_requests.get(
+            "https://open.er-api.com/v6/latest/USD", timeout=5
+        )
+        rate = resp.json()["rates"]["PEN"]
+        _fx_cache["rate"] = round(rate, 4)
+        _fx_cache["ts"]   = now
+        return _fx_cache["rate"]
+    except Exception:
+        return _fx_cache["rate"]  # return stale value if fetch fails
 
 # Average rendimiento per zone (source: CC Golden 2019.xlsx - Perg Org Proc Indiv)
 ZONAS = [
@@ -159,6 +180,13 @@ HTML = """<!DOCTYPE html>
       text-align: center;
     }
     .nav-inputs input:focus { outline: none; border-color: #c8a96e; background: rgba(255,255,255,0.2); }
+    .fx-badge {
+      font-size: 0.65rem;
+      color: rgba(255,255,255,0.4);
+      white-space: nowrap;
+      margin-left: 2px;
+    }
+    .fx-badge.live { color: #7ec87e; }
     .nav-links { display: flex; align-items: center; gap: 4px; }
     .nav-links a {
       color: rgba(255,255,255,0.75);
@@ -368,6 +396,7 @@ HTML = """<!DOCTYPE html>
     <label>Bolsa y Cambio</label>
     <input type="number" id="bolsa" value="162" step="0.01" min="0" placeholder="$"/>
     <input type="number" id="dolar" value="3.79" step="0.001" min="0" placeholder="S/."/>
+    <span class="fx-badge" id="fx-badge">cargando...</span>
   </div>
   <div class="nav-links">
     <a href="#inicio" class="active">Inicio</a>
@@ -627,6 +656,25 @@ document.getElementById('sort-by').addEventListener('change', () => { currentPag
 
 populateZonaSelect();
 update();
+
+// Auto-fetch USD/PEN exchange rate
+(async () => {
+  const badge = document.getElementById('fx-badge');
+  try {
+    const res  = await fetch('/api/tipo-cambio');
+    const data = await res.json();
+    if (data.rate) {
+      document.getElementById('dolar').value = data.rate;
+      badge.textContent = 'tipo de cambio en vivo';
+      badge.classList.add('live');
+      update();
+    } else {
+      badge.textContent = 'tipo de cambio manual';
+    }
+  } catch (e) {
+    badge.textContent = 'tipo de cambio manual';
+  }
+})();
 </script>
 </body>
 </html>"""
@@ -637,6 +685,14 @@ def index():
     import json
     zonas_json = json.dumps(ZONAS, ensure_ascii=False)
     return render_template_string(HTML, zonas_json=zonas_json)
+
+
+@app.route("/api/tipo-cambio")
+def api_tipo_cambio():
+    rate = get_usd_pen_rate()
+    if rate:
+        return jsonify({"rate": rate, "source": "open.er-api.com"})
+    return jsonify({"error": "No se pudo obtener el tipo de cambio"}), 503
 
 
 @app.route("/api/precios")
