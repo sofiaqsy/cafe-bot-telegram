@@ -341,8 +341,18 @@ HTML = """<!DOCTYPE html>
     <h2>💰 Calcular pago</h2>
     <div class="calc-row">
       <div class="input-group">
+        <label>Tipo de café</label>
+        <select id="calc-tipo">
+          <option value="pergamino">☕ Pergamino Seco</option>
+          <option value="mote">🌽 Mote</option>
+          <option value="cerezo">🍒 Cerezo</option>
+          <option value="oro_verde">🟢 Oro Verde</option>
+        </select>
+      </div>
+      <div class="input-group" id="zona-group">
         <label>Zona</label>
         <select id="calc-zona"></select>
+        <div class="input-hint">Solo aplica para Pergamino Seco</div>
       </div>
       <div class="input-group">
         <label>Kg netos</label>
@@ -351,8 +361,9 @@ HTML = """<!DOCTYPE html>
       </div>
     </div>
     <div class="calc-result" id="calc-result">
-      <div class="res-item">Zona<span id="res-zona">—</span></div>
-      <div class="res-item">Rendimiento<span id="res-rend">—</span></div>
+      <div class="res-item">Tipo<span id="res-tipo">—</span></div>
+      <div class="res-item" id="res-zona-wrap">Zona<span id="res-zona">—</span></div>
+      <div class="res-item" id="res-rend-wrap">Rendimiento<span id="res-rend">—</span></div>
       <div class="res-item">Precio / kg<span id="res-precio">—</span></div>
       <div class="res-item">Kg netos<span id="res-kg">—</span></div>
       <div class="res-total">Total a pagar<span id="res-total">S/. 0.00</span></div>
@@ -457,6 +468,26 @@ function update() {
   renderZonas(bolsa, dolar, filter);
 }
 
+const TIPO_LABELS = {
+  pergamino: 'Pergamino Seco',
+  mote:      'Mote',
+  cerezo:    'Cerezo',
+  oro_verde: 'Oro Verde',
+};
+
+function getPrecioKg(tipo, bolsa, dolar, zona) {
+  const pb = bolsa * dolar;
+  const cc = 29 * dolar;
+  if (tipo === 'pergamino') {
+    const z = ZONAS.find(z => z.zona === zona);
+    return z ? (pb - cc) * z.rendimiento / 46 : 0;
+  }
+  if (tipo === 'mote')      return ((pb - cc) / 60 * 7.3) - 3.5;
+  if (tipo === 'cerezo')    return (pb / 60) / (280 / 55.2) - (41 / 280);
+  if (tipo === 'oro_verde') return pb / 46;
+  return 0;
+}
+
 function populateZonaSelect() {
   const sel = document.getElementById('calc-zona');
   sel.innerHTML = ZONAS.map(z =>
@@ -468,18 +499,27 @@ function updateCalc() {
   const bolsa = parseFloat(document.getElementById('bolsa').value) || 0;
   const dolar = parseFloat(document.getElementById('dolar').value) || 0;
   const kg    = parseFloat(document.getElementById('calc-kg').value) || 0;
+  const tipo  = document.getElementById('calc-tipo').value;
   const zona  = document.getElementById('calc-zona').value;
 
-  const z = ZONAS.find(z => z.zona === zona);
-  if (!z) return;
+  // Show/hide zona selector based on tipo
+  const zonaGroup = document.getElementById('zona-group');
+  const resZonaWrap = document.getElementById('res-zona-wrap');
+  const resRendWrap = document.getElementById('res-rend-wrap');
+  const isPerg = tipo === 'pergamino';
+  zonaGroup.style.display    = isPerg ? '' : 'none';
+  resZonaWrap.style.display  = isPerg ? '' : 'none';
+  resRendWrap.style.display  = isPerg ? '' : 'none';
 
-  const precio_bolsa = bolsa * dolar;
-  const cc = 29 * dolar;
-  const precio_kg = (precio_bolsa - cc) * z.rendimiento / 46;
+  const precio_kg = getPrecioKg(tipo, bolsa, dolar, zona);
   const total = precio_kg * kg;
 
-  document.getElementById('res-zona').textContent   = z.zona;
-  document.getElementById('res-rend').textContent   = (z.rendimiento * 100).toFixed(2) + '%';
+  document.getElementById('res-tipo').textContent   = TIPO_LABELS[tipo];
+  if (isPerg) {
+    const z = ZONAS.find(z => z.zona === zona);
+    document.getElementById('res-zona').textContent = z ? z.zona : '—';
+    document.getElementById('res-rend').textContent = z ? (z.rendimiento*100).toFixed(2)+'%' : '—';
+  }
   document.getElementById('res-precio').textContent = 'S/. ' + precio_kg.toFixed(4);
   document.getElementById('res-kg').textContent     = kg.toFixed(2) + ' kg';
   document.getElementById('res-total').textContent  = 'S/. ' + total.toFixed(2);
@@ -488,6 +528,7 @@ function updateCalc() {
 document.getElementById('bolsa').addEventListener('input', () => { update(); updateCalc(); });
 document.getElementById('dolar').addEventListener('input', () => { update(); updateCalc(); });
 document.getElementById('search').addEventListener('input', update);
+document.getElementById('calc-tipo').addEventListener('change', updateCalc);
 document.getElementById('calc-zona').addEventListener('change', updateCalc);
 document.getElementById('calc-kg').addEventListener('input', updateCalc);
 
