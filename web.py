@@ -69,20 +69,6 @@ ZONAS = [
 ]
 
 def calcular_precios(bolsa, dolar):
-    """
-    Formulas from CC Golden 2019.xlsx - Precio sheet:
-      Precio Bolsa         = bolsa × dólar
-      Costos proceso (cc)  = 29 × dólar
-      Pergamino seco       = (Precio Bolsa - cc) / 60      [fixed, international bag]
-      Oro verde            = Precio Bolsa / 46             [local QQ = 46 kg]
-      Pergamino todo costo = Precio Bolsa / 60
-      Lata (mote)          = pergamino_seco × 7.3
-      Mote                 = lata - 3.5
-      Cerezo               = (Precio Bolsa / 60) / (280/55.2) - (41/280)
-
-    Per-zone pergamino price uses actual rendimiento:
-      Pergamino zona = (Precio Bolsa - cc) × rendimiento / 46
-    """
     precio_bolsa = bolsa * dolar
     cc = 29 * dolar
     pergamino_seco = (precio_bolsa - cc) / 60
@@ -91,17 +77,11 @@ def calcular_precios(bolsa, dolar):
     lata = pergamino_seco * 7.3
     mote = lata - 3.5
     cerezo = (precio_bolsa / 60) / (280 / 55.2) - (41 / 280)
-
     zonas_calc = []
     for z in ZONAS:
         r = z["rendimiento"]
         precio_zona = round((precio_bolsa - cc) * r / 46, 4)
-        zonas_calc.append({
-            "zona": z["zona"],
-            "rendimiento": round(r * 100, 2),
-            "precio_kg": precio_zona,
-        })
-
+        zonas_calc.append({"zona": z["zona"], "rendimiento": round(r * 100, 2), "precio_kg": precio_zona})
     return {
         "precio_bolsa": round(precio_bolsa, 2),
         "cc": round(cc, 2),
@@ -120,364 +100,416 @@ HTML = """<!DOCTYPE html>
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Precios Café — CC Golden</title>
+  <title>Precios del dia — CC Golden Coffee</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #f2ede4; color: #2d2416; }
 
-    body {
-      font-family: 'Segoe UI', Arial, sans-serif;
-      background: #f4f1eb;
-      color: #2d2416;
-      min-height: 100vh;
-    }
-
-    header {
-      background: linear-gradient(135deg, #3b1f06 0%, #6b3a1f 100%);
-      color: #fff;
-      padding: 24px 32px;
-      display: flex;
-      align-items: center;
-      gap: 16px;
-    }
-    header .logo { font-size: 2rem; }
-    header h1 { font-size: 1.3rem; font-weight: 700; line-height: 1.3; }
-    header p { font-size: 0.85rem; opacity: 0.8; margin-top: 2px; }
-
-    .container { max-width: 960px; margin: 0 auto; padding: 32px 16px; }
-
-    /* Inputs */
-    .inputs-card {
+    /* TOP BAR */
+    .topbar {
       background: #fff;
-      border-radius: 12px;
-      padding: 28px;
-      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
-      margin-bottom: 28px;
-    }
-    .inputs-card h2 { font-size: 1rem; color: #6b3a1f; margin-bottom: 20px; text-transform: uppercase; letter-spacing: .05em; }
-    .inputs-row { display: flex; gap: 20px; flex-wrap: wrap; }
-    .input-group { flex: 1; min-width: 180px; }
-    .input-group label { display: block; font-size: 0.82rem; font-weight: 600; color: #6b3a1f; margin-bottom: 6px; text-transform: uppercase; }
-    .input-group input {
-      width: 100%;
-      padding: 12px 14px;
-      border: 2px solid #e0d5c5;
-      border-radius: 8px;
-      font-size: 1.2rem;
-      font-weight: 700;
-      color: #2d2416;
-      background: #faf8f5;
-      transition: border-color .2s;
-    }
-    .input-group input:focus { outline: none; border-color: #6b3a1f; }
-    .input-hint { font-size: 0.75rem; color: #999; margin-top: 4px; }
-
-    /* Summary prices */
-    .prices-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-      gap: 16px;
-      margin-bottom: 28px;
-    }
-    .price-card {
-      background: #fff;
-      border-radius: 12px;
-      padding: 20px 16px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.07);
-      text-align: center;
-      border-top: 4px solid #c8a96e;
-    }
-    .price-card.highlight { border-top-color: #3b1f06; }
-    .price-card .label { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: #999; letter-spacing: .04em; margin-bottom: 8px; }
-    .price-card .value { font-size: 1.6rem; font-weight: 800; color: #3b1f06; }
-    .price-card .unit { font-size: 0.78rem; color: #aaa; margin-top: 2px; }
-
-    /* Zone table */
-    .table-card {
-      background: #fff;
-      border-radius: 12px;
-      padding: 24px;
-      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
-    }
-    .table-card h2 { font-size: 1rem; color: #6b3a1f; margin-bottom: 16px; text-transform: uppercase; letter-spacing: .05em; }
-
-    .search-box {
-      width: 100%;
-      padding: 10px 14px;
-      border: 2px solid #e0d5c5;
-      border-radius: 8px;
-      font-size: 0.9rem;
-      margin-bottom: 16px;
-      background: #faf8f5;
-    }
-    .search-box:focus { outline: none; border-color: #6b3a1f; }
-
-    table { width: 100%; border-collapse: collapse; }
-    th {
-      text-align: left;
-      font-size: 0.75rem;
-      text-transform: uppercase;
-      letter-spacing: .05em;
-      color: #999;
-      padding: 8px 12px;
-      border-bottom: 2px solid #f0ebe0;
-    }
-    td { padding: 11px 12px; border-bottom: 1px solid #f0ebe0; font-size: 0.92rem; }
-    tr:last-child td { border-bottom: none; }
-    tr:hover td { background: #faf7f0; }
-    td.zona-name { font-weight: 600; }
-    td.rendimiento { color: #888; font-size: 0.85rem; }
-    td.precio { font-weight: 800; color: #3b1f06; font-size: 1.05rem; text-align: right; }
-    th:last-child { text-align: right; }
-
-    .badge {
-      display: inline-block;
-      padding: 2px 8px;
-      border-radius: 20px;
-      font-size: 0.75rem;
-      font-weight: 700;
-      background: #f0ebe0;
-      color: #6b3a1f;
-    }
-
-    /* Calcular pago */
-    .calc-card {
-      background: #fff;
-      border-radius: 12px;
-      padding: 28px;
-      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
-      margin-top: 28px;
-      border-top: 4px solid #3b1f06;
-    }
-    .calc-card h2 { font-size: 1rem; color: #6b3a1f; margin-bottom: 20px; text-transform: uppercase; letter-spacing: .05em; }
-    .calc-row { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-end; }
-    .calc-row .input-group { flex: 1; min-width: 180px; }
-    .calc-row select {
-      width: 100%;
-      padding: 12px 14px;
-      border: 2px solid #e0d5c5;
-      border-radius: 8px;
-      font-size: 1rem;
-      font-weight: 600;
-      color: #2d2416;
-      background: #faf8f5;
-      cursor: pointer;
-      transition: border-color .2s;
-    }
-    .calc-row select:focus { outline: none; border-color: #6b3a1f; }
-    .calc-result {
-      margin-top: 24px;
-      background: #3b1f06;
-      border-radius: 10px;
-      padding: 20px 24px;
+      border-bottom: 1px solid #e8e0d0;
+      padding: 10px 32px;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      flex-wrap: wrap;
+    }
+    .topbar .brand { display: flex; align-items: center; gap: 12px; }
+    .topbar .brand-icon {
+      width: 36px; height: 36px;
+      background: #3b1f06;
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .topbar .brand-icon svg { width: 20px; height: 20px; fill: #fff; }
+    .topbar .brand-name { font-size: 1rem; font-weight: 800; color: #3b1f06; line-height: 1.1; }
+    .topbar .brand-sub  { font-size: 0.75rem; color: #999; }
+    .topbar .contact    { font-size: 0.8rem; color: #aaa; }
+
+    /* NAVBAR */
+    nav {
+      background: #3b1f06;
+      padding: 0 32px;
+      display: flex;
+      align-items: center;
+      gap: 0;
+      height: 52px;
+    }
+    .nav-inputs {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-right: 32px;
+      flex-shrink: 0;
+    }
+    .nav-inputs label {
+      color: rgba(255,255,255,0.7);
+      font-size: 0.78rem;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .nav-inputs input {
+      background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.25);
+      border-radius: 6px;
+      color: #fff;
+      font-size: 0.95rem;
+      font-weight: 700;
+      padding: 5px 10px;
+      width: 90px;
+      text-align: center;
+    }
+    .nav-inputs input:focus { outline: none; border-color: #c8a96e; background: rgba(255,255,255,0.2); }
+    .nav-links { display: flex; align-items: center; gap: 4px; }
+    .nav-links a {
+      color: rgba(255,255,255,0.75);
+      text-decoration: none;
+      font-size: 0.85rem;
+      font-weight: 500;
+      padding: 0 14px;
+      height: 52px;
+      display: flex;
+      align-items: center;
+      border-bottom: 3px solid transparent;
+      transition: color .15s, border-color .15s;
+    }
+    .nav-links a:hover, .nav-links a.active { color: #fff; border-bottom-color: #c8a96e; }
+
+    /* LAYOUT */
+    .container { max-width: 1100px; margin: 0 auto; padding: 28px 16px; }
+
+    /* CALCULATOR */
+    .main-grid { display: grid; grid-template-columns: 1fr 320px; gap: 20px; margin-bottom: 24px; }
+    @media (max-width: 800px) { .main-grid { grid-template-columns: 1fr; } }
+
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 1px 8px rgba(0,0,0,0.07);
+    }
+    .card-title {
+      font-size: 0.78rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: #3b1f06;
+      margin-bottom: 20px;
+    }
+
+    .calc-fields { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 20px; }
+    .field { flex: 1; min-width: 140px; }
+    .field label {
+      display: block;
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      color: #888;
+      margin-bottom: 6px;
+    }
+    .field select, .field input[type=number] {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1.5px solid #e0d5c5;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #2d2416;
+      background: #faf8f5;
+      appearance: auto;
+    }
+    .field select:focus, .field input:focus { outline: none; border-color: #3b1f06; }
+    .field-hint { font-size: 0.71rem; color: #bbb; margin-top: 4px; }
+
+    .calc-result-bar {
+      background: #3b1f06;
+      border-radius: 10px;
+      padding: 18px 22px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
       gap: 12px;
     }
-    .calc-result .res-item { color: rgba(255,255,255,0.7); font-size: 0.85rem; }
-    .calc-result .res-item span { display: block; font-size: 1.1rem; font-weight: 700; color: #fff; margin-top: 2px; }
-    .calc-result .res-total { color: #fff; font-size: 0.85rem; }
-    .calc-result .res-total span { display: block; font-size: 2rem; font-weight: 800; color: #f5c842; margin-top: 2px; }
-
-    footer {
-      text-align: center;
-      padding: 24px;
-      font-size: 0.8rem;
-      color: #bbb;
-      margin-top: 16px;
+    .calc-result-bar .label { color: rgba(255,255,255,0.65); font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+    .calc-result-bar .amount { color: #f5c842; font-size: 1.8rem; font-weight: 800; }
+    .btn-confirm {
+      background: #c8a96e;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 11px 22px;
+      font-size: 0.88rem;
+      font-weight: 700;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: background .15s;
     }
+    .btn-confirm:hover { background: #a8893e; }
+
+    /* PROMO CARD */
+    .promo-card {
+      background: #3b1f06;
+      border-radius: 12px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .promo-card img { width: 100%; height: 180px; object-fit: cover; opacity: .85; }
+    .promo-body { padding: 18px; flex: 1; }
+    .promo-tag { font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; color: #c8a96e; margin-bottom: 6px; }
+    .promo-title { font-size: 1.1rem; font-weight: 800; color: #fff; line-height: 1.3; }
+    .promo-sub { font-size: 0.8rem; color: rgba(255,255,255,0.6); margin-top: 6px; }
+
+    /* INDICATORS */
+    .indicators { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
+    @media (max-width: 600px) { .indicators { grid-template-columns: 1fr; } }
+    .ind-card {
+      background: #fff;
+      border-radius: 10px;
+      padding: 18px 20px;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.06);
+      border-top: 3px solid #e0d5c5;
+    }
+    .ind-card.primary { border-top-color: #3b1f06; }
+    .ind-label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: #aaa; margin-bottom: 8px; }
+    .ind-value { font-size: 1.55rem; font-weight: 800; color: #3b1f06; }
+    .ind-unit  { font-size: 0.75rem; color: #bbb; margin-top: 3px; }
+
+    /* ZONE TABLE */
+    .zone-card { background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 1px 8px rgba(0,0,0,0.07); }
+    .zone-toolbar { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+    .zone-toolbar input[type=text] {
+      flex: 1;
+      min-width: 200px;
+      padding: 9px 14px;
+      border: 1.5px solid #e0d5c5;
+      border-radius: 8px;
+      font-size: 0.88rem;
+      background: #faf8f5;
+    }
+    .zone-toolbar input:focus { outline: none; border-color: #3b1f06; }
+    .sort-label { font-size: 0.78rem; color: #888; font-weight: 600; white-space: nowrap; }
+    .zone-toolbar select {
+      padding: 9px 12px;
+      border: 1.5px solid #e0d5c5;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      background: #faf8f5;
+      font-weight: 600;
+    }
+    .zone-toolbar select:focus { outline: none; border-color: #3b1f06; }
+
+    table { width: 100%; border-collapse: collapse; }
+    th {
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: #aaa;
+      padding: 8px 12px;
+      border-bottom: 2px solid #f0ebe0;
+      text-align: left;
+    }
+    th.right { text-align: right; }
+    td { padding: 12px 12px; border-bottom: 1px solid #f5f0e8; vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #faf7f0; }
+
+    td.zona-name { font-weight: 700; font-size: 0.9rem; }
+    td.rend-cell { width: 220px; }
+    .rend-wrap { display: flex; align-items: center; gap: 10px; }
+    .rend-pct { font-size: 0.8rem; font-weight: 700; color: #6b3a1f; min-width: 44px; }
+    .rend-bar-bg { flex: 1; height: 6px; background: #f0ebe0; border-radius: 3px; overflow: hidden; }
+    .rend-bar    { height: 100%; background: #c8a96e; border-radius: 3px; }
+    td.precio-cell { font-weight: 800; font-size: 1rem; color: #3b1f06; text-align: right; }
+    td.action-cell { text-align: right; width: 90px; }
+    .btn-ver {
+      background: none;
+      border: 1.5px solid #e0d5c5;
+      border-radius: 6px;
+      padding: 5px 10px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: #6b3a1f;
+      cursor: pointer;
+      transition: all .15s;
+    }
+    .btn-ver:hover { background: #f5f0e8; border-color: #c8a96e; }
+
+    /* detail row */
+    .detail-row td { background: #faf7f0; font-size: 0.82rem; color: #666; padding: 8px 12px 12px 12px; }
+    .detail-grid { display: flex; gap: 24px; flex-wrap: wrap; }
+    .detail-item span { display: block; font-size: 0.7rem; text-transform: uppercase; letter-spacing: .05em; color: #aaa; font-weight: 700; margin-bottom: 2px; }
+    .detail-item strong { font-size: 0.9rem; color: #3b1f06; }
+
+    /* PAGINATION */
+    .pagination { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 16px; font-size: 0.82rem; color: #888; }
+    .pg-info { margin-right: 8px; }
+    .btn-pg {
+      border: 1.5px solid #e0d5c5;
+      background: #fff;
+      border-radius: 6px;
+      width: 32px; height: 32px;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+      font-size: 0.85rem;
+      color: #3b1f06;
+      font-weight: 700;
+      transition: all .15s;
+    }
+    .btn-pg:hover:not(:disabled) { background: #f5f0e8; border-color: #c8a96e; }
+    .btn-pg:disabled { opacity: 0.35; cursor: default; }
+
+    footer { text-align: center; padding: 24px; font-size: 0.78rem; color: #bbb; }
   </style>
 </head>
 <body>
 
-<header>
-  <div class="logo">☕</div>
-  <div>
-    <h1>Cooperativa Agroindustrial Villa Rica Golden Coffee Ltda.</h1>
-    <p>Productores &amp; Exportadores de café de origen — Precios del día</p>
+<!-- TOP BAR -->
+<div class="topbar">
+  <div class="brand">
+    <div class="brand-icon">
+      <svg viewBox="0 0 24 24"><path d="M2 21v-2h2V5h14v2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2v6h2v2H2zm4-2h8V7H6v12zm10-6h2V9h-2v4z"/></svg>
+    </div>
+    <div>
+      <div class="brand-name">CC Golden Coffee</div>
+      <div class="brand-sub">Nuestros cafes especiales — Precios del dia</div>
+    </div>
   </div>
-</header>
+  <div class="contact">Cooperativa Agroindustrial Villa Rica Golden Coffee Ltda.</div>
+</div>
 
-<div class="container">
+<!-- NAVBAR -->
+<nav>
+  <div class="nav-inputs">
+    <label>Bolsa y Cambio</label>
+    <input type="number" id="bolsa" value="162" step="0.01" min="0" placeholder="$"/>
+    <input type="number" id="dolar" value="3.79" step="0.001" min="0" placeholder="S/."/>
+  </div>
+  <div class="nav-links">
+    <a href="#inicio" class="active">Inicio</a>
+    <a href="#mercado">Mercado</a>
+    <a href="#zonas">Zonas</a>
+  </div>
+</nav>
 
-  <div class="inputs-card">
-    <h2>Parámetros del día</h2>
-    <div class="inputs-row">
-      <div class="input-group">
-        <label>Bolsa ($ / QQ)</label>
-        <input type="number" id="bolsa" value="162" step="0.01" min="0"/>
-        <div class="input-hint">Precio bolsa internacional en dólares por quintal</div>
+<div class="container" id="inicio">
+
+  <!-- CALCULATOR + PROMO -->
+  <div class="main-grid">
+    <div class="card">
+      <div class="card-title">Calculadora de Pago</div>
+      <div class="calc-fields">
+        <div class="field">
+          <label>Tipo de Cafe</label>
+          <select id="calc-tipo">
+            <option value="pergamino">Pergamino Seco</option>
+            <option value="mote">Mote</option>
+            <option value="cerezo">Cerezo</option>
+            <option value="oro_verde">Oro Verde</option>
+          </select>
+        </div>
+        <div class="field" id="zona-group">
+          <label>Zona</label>
+          <select id="calc-zona"></select>
+          <div class="field-hint">Solo aplica para Pergamino Seco</div>
+        </div>
+        <div class="field">
+          <label>Kg Netos</label>
+          <input type="number" id="calc-kg" value="" step="0.1" min="0" placeholder="0.0"/>
+        </div>
       </div>
-      <div class="input-group">
-        <label>Tipo de cambio (S/. / $)</label>
-        <input type="number" id="dolar" value="3.79" step="0.001" min="0"/>
-        <div class="input-hint">Tipo de cambio del día</div>
+      <div class="calc-result-bar">
+        <div>
+          <div class="label">Total a pagar</div>
+          <div class="amount" id="res-total">S/. 0.00</div>
+        </div>
+        <button class="btn-confirm" onclick="confirmarPago()">Confirmar</button>
+      </div>
+    </div>
+
+    <div class="promo-card">
+      <img src="https://images.unsplash.com/photo-1447933601403-0c6688de566e?w=600&q=80" alt="Cafe"/>
+      <div class="promo-body">
+        <div class="promo-tag">Informacion</div>
+        <div class="promo-title">Cooperativa Villa Rica Golden Coffee</div>
+        <div class="promo-sub">Productores y Exportadores de cafe de origen — Villa Rica, Peru</div>
       </div>
     </div>
   </div>
 
-  <div class="prices-grid" id="prices-grid">
-    <!-- filled by JS -->
+  <!-- KEY INDICATORS -->
+  <div id="mercado">
+    <div class="card-title" style="margin-bottom:14px;">Indicadores Clave</div>
+    <div class="indicators">
+      <div class="ind-card primary">
+        <div class="ind-label">Precio Bolsa</div>
+        <div class="ind-value" id="ind-bolsa">S/. —</div>
+        <div class="ind-unit">por quintal (60 kg)</div>
+      </div>
+      <div class="ind-card">
+        <div class="ind-label">Pergamino Todo Costo</div>
+        <div class="ind-value" id="ind-perg-costo">S/. —</div>
+        <div class="ind-unit">por kg</div>
+      </div>
+      <div class="ind-card">
+        <div class="ind-label">Oro Verde</div>
+        <div class="ind-value" id="ind-oro">S/. —</div>
+        <div class="ind-unit">por kg</div>
+      </div>
+    </div>
   </div>
 
-  <div class="table-card">
-    <h2>Precio de pergamino seco por zona</h2>
-    <input class="search-box" type="text" id="search" placeholder="Buscar zona..."/>
-    <table id="zona-table">
+  <!-- ZONE TABLE -->
+  <div class="zone-card" id="zonas">
+    <div class="card-title">Precio de Pergamino Seco por Zona</div>
+    <div class="zone-toolbar">
+      <input type="text" id="search" placeholder="Buscar zona..."/>
+      <span class="sort-label">Ordenar por</span>
+      <select id="sort-by">
+        <option value="zona">Zona (A-Z)</option>
+        <option value="rendimiento">Rendimiento</option>
+        <option value="precio">Precio</option>
+      </select>
+    </div>
+    <table>
       <thead>
         <tr>
           <th>Zona</th>
           <th>Rendimiento</th>
-          <th>Precio S/. / kg</th>
+          <th class="right">Precio S/. / kg</th>
+          <th></th>
         </tr>
       </thead>
       <tbody id="zona-body"></tbody>
     </table>
-  </div>
-
-  <!-- Calculadora de pago -->
-  <div class="calc-card">
-    <h2>💰 Calcular pago</h2>
-    <div class="calc-row">
-      <div class="input-group">
-        <label>Tipo de café</label>
-        <select id="calc-tipo">
-          <option value="pergamino">☕ Pergamino Seco</option>
-          <option value="mote">🌽 Mote</option>
-          <option value="cerezo">🍒 Cerezo</option>
-          <option value="oro_verde">🟢 Oro Verde</option>
-        </select>
-      </div>
-      <div class="input-group" id="zona-group">
-        <label>Zona</label>
-        <select id="calc-zona"></select>
-        <div class="input-hint">Solo aplica para Pergamino Seco</div>
-      </div>
-      <div class="input-group">
-        <label>Kg netos</label>
-        <input type="number" id="calc-kg" value="0" step="0.1" min="0"
-               style="font-size:1.2rem;font-weight:700;"/>
-      </div>
-    </div>
-    <div class="calc-result" id="calc-result">
-      <div class="res-item">Tipo<span id="res-tipo">—</span></div>
-      <div class="res-item" id="res-zona-wrap">Zona<span id="res-zona">—</span></div>
-      <div class="res-item" id="res-rend-wrap">Rendimiento<span id="res-rend">—</span></div>
-      <div class="res-item">Precio / kg<span id="res-precio">—</span></div>
-      <div class="res-item">Kg netos<span id="res-kg">—</span></div>
-      <div class="res-total">Total a pagar<span id="res-total">S/. 0.00</span></div>
+    <div class="pagination">
+      <span class="pg-info" id="pg-info"></span>
+      <button class="btn-pg" id="pg-first" onclick="goPage(0)">&laquo;</button>
+      <button class="btn-pg" id="pg-prev"  onclick="goPage(currentPage-1)">&lsaquo;</button>
+      <button class="btn-pg" id="pg-next"  onclick="goPage(currentPage+1)">&rsaquo;</button>
+      <button class="btn-pg" id="pg-last"  onclick="goPage(totalPages-1)">&raquo;</button>
     </div>
   </div>
 
 </div>
 
 <footer>
-  Cooperativa Agroindustrial Villa Rica Golden Coffee Ltda. · Precios referenciales calculados con fórmula CC Golden
+  Cooperativa Agroindustrial Villa Rica Golden Coffee Ltda. &nbsp;&middot;&nbsp; Precios referenciales calculados con formula CC Golden
 </footer>
 
 <script>
 const ZONAS = {{ zonas_json | safe }};
+const PAGE_SIZE = 10;
+let currentPage = 0;
+let totalPages  = 1;
+let filteredZonas = [];
 
-function fmt(n, dec=4) {
-  return parseFloat(n).toFixed(dec);
-}
-
-function calcular(bolsa, dolar) {
-  const precio_bolsa = bolsa * dolar;
-  const cc = 29 * dolar;
-  const pergamino_seco = (precio_bolsa - cc) / 60;
-  const oro_verde = precio_bolsa / 46;
-  const pergamino_todo_costo = precio_bolsa / 60;
-  const lata = pergamino_seco * 7.3;
-  const mote = lata - 3.5;
-  const cerezo = (precio_bolsa / 60) / (280 / 55.2) - (41 / 280);
-
-  return { precio_bolsa, cc, pergamino_seco, oro_verde, pergamino_todo_costo, lata, mote, cerezo };
-}
-
-function renderPrices(bolsa, dolar) {
-  const p = calcular(bolsa, dolar);
-  const grid = document.getElementById('prices-grid');
-  grid.innerHTML = `
-    <div class="price-card highlight">
-      <div class="label">Precio Bolsa</div>
-      <div class="value">S/. ${fmt(p.precio_bolsa, 2)}</div>
-      <div class="unit">por quintal (60 kg)</div>
-    </div>
-    <div class="price-card highlight">
-      <div class="label">Pergamino Seco</div>
-      <div class="value">S/. ${fmt(p.pergamino_seco, 4)}</div>
-      <div class="unit">por kg</div>
-    </div>
-    <div class="price-card">
-      <div class="label">Pergamino Todo Costo</div>
-      <div class="value">S/. ${fmt(p.pergamino_todo_costo, 4)}</div>
-      <div class="unit">por kg</div>
-    </div>
-    <div class="price-card">
-      <div class="label">Oro Verde</div>
-      <div class="value">S/. ${fmt(p.oro_verde, 4)}</div>
-      <div class="unit">por kg</div>
-    </div>
-    <div class="price-card">
-      <div class="label">Mote</div>
-      <div class="value">S/. ${fmt(p.mote, 4)}</div>
-      <div class="unit">por kg</div>
-    </div>
-    <div class="price-card">
-      <div class="label">Lata (mote limpio)</div>
-      <div class="value">S/. ${fmt(p.lata, 4)}</div>
-      <div class="unit">por lata</div>
-    </div>
-    <div class="price-card">
-      <div class="label">Cerezo</div>
-      <div class="value">S/. ${fmt(p.cerezo, 4)}</div>
-      <div class="unit">por kg</div>
-    </div>
-    <div class="price-card">
-      <div class="label">Costos de Proceso</div>
-      <div class="value">S/. ${fmt(p.cc, 2)}</div>
-      <div class="unit">por quintal</div>
-    </div>
-  `;
-}
-
-function renderZonas(bolsa, dolar, filter='') {
-  const precio_bolsa = bolsa * dolar;
-  const cc = 29 * dolar;
-  const body = document.getElementById('zona-body');
-  const rows = ZONAS
-    .filter(z => z.zona.toLowerCase().includes(filter.toLowerCase()))
-    .map(z => {
-      const precio = ((precio_bolsa - cc) * z.rendimiento / 46).toFixed(4);
-      return `<tr>
-        <td class="zona-name">${z.zona}</td>
-        <td class="rendimiento"><span class="badge">${(z.rendimiento*100).toFixed(2)}%</span></td>
-        <td class="precio">S/. ${precio}</td>
-      </tr>`;
-    });
-  body.innerHTML = rows.join('');
-}
-
-function update() {
-  const bolsa = parseFloat(document.getElementById('bolsa').value) || 0;
-  const dolar = parseFloat(document.getElementById('dolar').value) || 0;
-  const filter = document.getElementById('search').value;
-  renderPrices(bolsa, dolar);
-  renderZonas(bolsa, dolar, filter);
-}
-
-const TIPO_LABELS = {
-  pergamino: 'Pergamino Seco',
-  mote:      'Mote',
-  cerezo:    'Cerezo',
-  oro_verde: 'Oro Verde',
-};
+const TIPO_LABELS = { pergamino:'Pergamino Seco', mote:'Mote', cerezo:'Cerezo', oro_verde:'Oro Verde' };
 
 function getPrecioKg(tipo, bolsa, dolar, zona) {
-  const pb = bolsa * dolar;
-  const cc = 29 * dolar;
+  const pb = bolsa * dolar, cc = 29 * dolar;
   if (tipo === 'pergamino') {
     const z = ZONAS.find(z => z.zona === zona);
     return z ? (pb - cc) * z.rendimiento / 46 : 0;
@@ -488,53 +520,138 @@ function getPrecioKg(tipo, bolsa, dolar, zona) {
   return 0;
 }
 
+function getZonaPrecios(bolsa, dolar) {
+  const pb = bolsa * dolar, cc = 29 * dolar;
+  return ZONAS.map(z => ({
+    zona: z.zona,
+    rendimiento: z.rendimiento,
+    precio: (pb - cc) * z.rendimiento / 46,
+  }));
+}
+
 function populateZonaSelect() {
-  const sel = document.getElementById('calc-zona');
-  sel.innerHTML = ZONAS.map(z =>
-    `<option value="${z.zona}">${z.zona} (${(z.rendimiento*100).toFixed(2)}%)</option>`
-  ).join('');
+  document.getElementById('calc-zona').innerHTML =
+    ZONAS.map(z => `<option value="${z.zona}">${z.zona} (${(z.rendimiento*100).toFixed(2)}%)</option>`).join('');
 }
 
 function updateCalc() {
   const bolsa = parseFloat(document.getElementById('bolsa').value) || 0;
   const dolar = parseFloat(document.getElementById('dolar').value) || 0;
-  const kg    = parseFloat(document.getElementById('calc-kg').value) || 0;
+  const kg    = parseFloat(document.getElementById('calc-kg').value)  || 0;
   const tipo  = document.getElementById('calc-tipo').value;
   const zona  = document.getElementById('calc-zona').value;
 
-  // Show/hide zona selector based on tipo
-  const zonaGroup = document.getElementById('zona-group');
-  const resZonaWrap = document.getElementById('res-zona-wrap');
-  const resRendWrap = document.getElementById('res-rend-wrap');
-  const isPerg = tipo === 'pergamino';
-  zonaGroup.style.display    = isPerg ? '' : 'none';
-  resZonaWrap.style.display  = isPerg ? '' : 'none';
-  resRendWrap.style.display  = isPerg ? '' : 'none';
+  document.getElementById('zona-group').style.display = tipo === 'pergamino' ? '' : 'none';
 
   const precio_kg = getPrecioKg(tipo, bolsa, dolar, zona);
-  const total = precio_kg * kg;
-
-  document.getElementById('res-tipo').textContent   = TIPO_LABELS[tipo];
-  if (isPerg) {
-    const z = ZONAS.find(z => z.zona === zona);
-    document.getElementById('res-zona').textContent = z ? z.zona : '—';
-    document.getElementById('res-rend').textContent = z ? (z.rendimiento*100).toFixed(2)+'%' : '—';
-  }
-  document.getElementById('res-precio').textContent = 'S/. ' + precio_kg.toFixed(4);
-  document.getElementById('res-kg').textContent     = kg.toFixed(2) + ' kg';
-  document.getElementById('res-total').textContent  = 'S/. ' + total.toFixed(2);
+  document.getElementById('res-total').textContent = 'S/. ' + (precio_kg * kg).toLocaleString('es-PE', {minimumFractionDigits:2, maximumFractionDigits:2});
 }
 
-document.getElementById('bolsa').addEventListener('input', () => { update(); updateCalc(); });
-document.getElementById('dolar').addEventListener('input', () => { update(); updateCalc(); });
-document.getElementById('search').addEventListener('input', update);
+function updateIndicators() {
+  const bolsa = parseFloat(document.getElementById('bolsa').value) || 0;
+  const dolar = parseFloat(document.getElementById('dolar').value) || 0;
+  const pb  = bolsa * dolar;
+  const cc  = 29 * dolar;
+  document.getElementById('ind-bolsa').textContent      = 'S/. ' + pb.toFixed(2);
+  document.getElementById('ind-perg-costo').textContent = 'S/. ' + (pb / 60).toFixed(4);
+  document.getElementById('ind-oro').textContent        = 'S/. ' + (pb / 46).toFixed(4);
+}
+
+function buildFilteredList() {
+  const bolsa  = parseFloat(document.getElementById('bolsa').value)  || 0;
+  const dolar  = parseFloat(document.getElementById('dolar').value)  || 0;
+  const filter = document.getElementById('search').value.toLowerCase();
+  const sortBy = document.getElementById('sort-by').value;
+
+  let list = getZonaPrecios(bolsa, dolar)
+    .filter(z => z.zona.toLowerCase().includes(filter));
+
+  if (sortBy === 'rendimiento') list.sort((a,b) => b.rendimiento - a.rendimiento);
+  else if (sortBy === 'precio') list.sort((a,b) => b.precio - a.precio);
+  else list.sort((a,b) => a.zona.localeCompare(b.zona));
+
+  return list;
+}
+
+function renderZonas() {
+  filteredZonas = buildFilteredList();
+  totalPages    = Math.max(1, Math.ceil(filteredZonas.length / PAGE_SIZE));
+  currentPage   = Math.min(currentPage, totalPages - 1);
+
+  const start = currentPage * PAGE_SIZE;
+  const page  = filteredZonas.slice(start, start + PAGE_SIZE);
+
+  document.getElementById('pg-info').textContent =
+    `${start + 1}-${Math.min(start + PAGE_SIZE, filteredZonas.length)} de ${filteredZonas.length}`;
+
+  document.getElementById('pg-first').disabled = currentPage === 0;
+  document.getElementById('pg-prev').disabled  = currentPage === 0;
+  document.getElementById('pg-next').disabled  = currentPage >= totalPages - 1;
+  document.getElementById('pg-last').disabled  = currentPage >= totalPages - 1;
+
+  const MIN_REND = 0.62, MAX_REND = 0.80;
+  document.getElementById('zona-body').innerHTML = page.map((z, i) => {
+    const pct = ((z.rendimiento - MIN_REND) / (MAX_REND - MIN_REND) * 100).toFixed(1);
+    const rowId = 'row-' + (start + i);
+    return `
+    <tr>
+      <td class="zona-name">${z.zona}</td>
+      <td class="rend-cell">
+        <div class="rend-wrap">
+          <span class="rend-pct">${(z.rendimiento*100).toFixed(2)}%</span>
+          <div class="rend-bar-bg"><div class="rend-bar" style="width:${pct}%"></div></div>
+        </div>
+      </td>
+      <td class="precio-cell">S/. ${z.precio.toFixed(4)}</td>
+      <td class="action-cell">
+        <button class="btn-ver" onclick="toggleDetail('${rowId}', '${z.zona}', ${z.rendimiento}, ${z.precio})">Ver mas</button>
+      </td>
+    </tr>
+    <tr class="detail-row" id="${rowId}" style="display:none">
+      <td colspan="4">
+        <div class="detail-grid">
+          <div class="detail-item"><span>Zona</span><strong>${z.zona}</strong></div>
+          <div class="detail-item"><span>Rendimiento</span><strong>${(z.rendimiento*100).toFixed(2)}%</strong></div>
+          <div class="detail-item"><span>Precio / kg</span><strong>S/. ${z.precio.toFixed(4)}</strong></div>
+          <div class="detail-item"><span>Precio / QQ (46kg)</span><strong>S/. ${(z.precio*46).toFixed(2)}</strong></div>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function toggleDetail(rowId, zona, rend, precio) {
+  const row = document.getElementById(rowId);
+  row.style.display = row.style.display === 'none' ? '' : 'none';
+}
+
+function goPage(p) {
+  currentPage = Math.max(0, Math.min(p, totalPages - 1));
+  renderZonas();
+}
+
+function confirmarPago() {
+  const total = document.getElementById('res-total').textContent;
+  const tipo  = TIPO_LABELS[document.getElementById('calc-tipo').value];
+  const kg    = document.getElementById('calc-kg').value || '0';
+  alert(`Pago confirmado\\n\\nTipo: ${tipo}\\nKg: ${kg}\\nTotal: ${total}`);
+}
+
+function update() {
+  updateIndicators();
+  updateCalc();
+  renderZonas();
+}
+
+['bolsa','dolar'].forEach(id => document.getElementById(id).addEventListener('input', update));
 document.getElementById('calc-tipo').addEventListener('change', updateCalc);
 document.getElementById('calc-zona').addEventListener('change', updateCalc);
 document.getElementById('calc-kg').addEventListener('input', updateCalc);
+document.getElementById('search').addEventListener('input', () => { currentPage = 0; renderZonas(); });
+document.getElementById('sort-by').addEventListener('change', () => { currentPage = 0; renderZonas(); });
 
 populateZonaSelect();
 update();
-updateCalc();
 </script>
 </body>
 </html>"""
