@@ -107,8 +107,8 @@ HTML = """<!DOCTYPE html>
 
     /* TOP BAR */
     .topbar {
-      background: #fff;
-      border-bottom: 1px solid #e8e0d0;
+      background: #2a1204;
+      border-bottom: 1px solid #1a0b02;
       padding: 10px 32px;
       display: flex;
       justify-content: space-between;
@@ -117,14 +117,13 @@ HTML = """<!DOCTYPE html>
     .topbar .brand { display: flex; align-items: center; gap: 12px; }
     .topbar .brand-icon {
       width: 36px; height: 36px;
-      background: #3b1f06;
+      background: rgba(255,255,255,0.1);
       border-radius: 8px;
       display: flex; align-items: center; justify-content: center;
     }
-    .topbar .brand-icon svg { width: 20px; height: 20px; fill: #fff; }
-    .topbar .brand-name { font-size: 1rem; font-weight: 800; color: #3b1f06; line-height: 1.1; }
-    .topbar .brand-sub  { font-size: 0.75rem; color: #999; }
-    .topbar .contact    { font-size: 0.8rem; color: #aaa; }
+    .topbar .brand-icon svg { width: 20px; height: 20px; fill: #c8a96e; }
+    .topbar .brand-name { font-size: 1rem; font-weight: 800; color: #f0e6d0; line-height: 1.1; }
+    .topbar .brand-sub  { font-size: 0.75rem; color: rgba(255,255,255,0.45); }
 
     /* NAVBAR */
     nav {
@@ -361,7 +360,6 @@ HTML = """<!DOCTYPE html>
       <div class="brand-sub">Nuestros cafes especiales — Precios del dia</div>
     </div>
   </div>
-  <div class="contact">Cooperativa Agroindustrial Villa Rica Golden Coffee Ltda.</div>
 </div>
 
 <!-- NAVBAR -->
