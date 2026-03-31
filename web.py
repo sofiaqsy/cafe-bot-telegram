@@ -239,6 +239,47 @@ HTML = """<!DOCTYPE html>
       color: #6b3a1f;
     }
 
+    /* Calcular pago */
+    .calc-card {
+      background: #fff;
+      border-radius: 12px;
+      padding: 28px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+      margin-top: 28px;
+      border-top: 4px solid #3b1f06;
+    }
+    .calc-card h2 { font-size: 1rem; color: #6b3a1f; margin-bottom: 20px; text-transform: uppercase; letter-spacing: .05em; }
+    .calc-row { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-end; }
+    .calc-row .input-group { flex: 1; min-width: 180px; }
+    .calc-row select {
+      width: 100%;
+      padding: 12px 14px;
+      border: 2px solid #e0d5c5;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      color: #2d2416;
+      background: #faf8f5;
+      cursor: pointer;
+      transition: border-color .2s;
+    }
+    .calc-row select:focus { outline: none; border-color: #6b3a1f; }
+    .calc-result {
+      margin-top: 24px;
+      background: #3b1f06;
+      border-radius: 10px;
+      padding: 20px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .calc-result .res-item { color: rgba(255,255,255,0.7); font-size: 0.85rem; }
+    .calc-result .res-item span { display: block; font-size: 1.1rem; font-weight: 700; color: #fff; margin-top: 2px; }
+    .calc-result .res-total { color: #fff; font-size: 0.85rem; }
+    .calc-result .res-total span { display: block; font-size: 2rem; font-weight: 800; color: #f5c842; margin-top: 2px; }
+
     footer {
       text-align: center;
       padding: 24px;
@@ -293,6 +334,29 @@ HTML = """<!DOCTYPE html>
       </thead>
       <tbody id="zona-body"></tbody>
     </table>
+  </div>
+
+  <!-- Calculadora de pago -->
+  <div class="calc-card">
+    <h2>💰 Calcular pago</h2>
+    <div class="calc-row">
+      <div class="input-group">
+        <label>Zona</label>
+        <select id="calc-zona"></select>
+      </div>
+      <div class="input-group">
+        <label>Kg netos</label>
+        <input type="number" id="calc-kg" value="0" step="0.1" min="0"
+               style="font-size:1.2rem;font-weight:700;"/>
+      </div>
+    </div>
+    <div class="calc-result" id="calc-result">
+      <div class="res-item">Zona<span id="res-zona">—</span></div>
+      <div class="res-item">Rendimiento<span id="res-rend">—</span></div>
+      <div class="res-item">Precio / kg<span id="res-precio">—</span></div>
+      <div class="res-item">Kg netos<span id="res-kg">—</span></div>
+      <div class="res-total">Total a pagar<span id="res-total">S/. 0.00</span></div>
+    </div>
   </div>
 
 </div>
@@ -393,11 +457,43 @@ function update() {
   renderZonas(bolsa, dolar, filter);
 }
 
-document.getElementById('bolsa').addEventListener('input', update);
-document.getElementById('dolar').addEventListener('input', update);
-document.getElementById('search').addEventListener('input', update);
+function populateZonaSelect() {
+  const sel = document.getElementById('calc-zona');
+  sel.innerHTML = ZONAS.map(z =>
+    `<option value="${z.zona}">${z.zona} (${(z.rendimiento*100).toFixed(2)}%)</option>`
+  ).join('');
+}
 
+function updateCalc() {
+  const bolsa = parseFloat(document.getElementById('bolsa').value) || 0;
+  const dolar = parseFloat(document.getElementById('dolar').value) || 0;
+  const kg    = parseFloat(document.getElementById('calc-kg').value) || 0;
+  const zona  = document.getElementById('calc-zona').value;
+
+  const z = ZONAS.find(z => z.zona === zona);
+  if (!z) return;
+
+  const precio_bolsa = bolsa * dolar;
+  const cc = 29 * dolar;
+  const precio_kg = (precio_bolsa - cc) * z.rendimiento / 46;
+  const total = precio_kg * kg;
+
+  document.getElementById('res-zona').textContent   = z.zona;
+  document.getElementById('res-rend').textContent   = (z.rendimiento * 100).toFixed(2) + '%';
+  document.getElementById('res-precio').textContent = 'S/. ' + precio_kg.toFixed(4);
+  document.getElementById('res-kg').textContent     = kg.toFixed(2) + ' kg';
+  document.getElementById('res-total').textContent  = 'S/. ' + total.toFixed(2);
+}
+
+document.getElementById('bolsa').addEventListener('input', () => { update(); updateCalc(); });
+document.getElementById('dolar').addEventListener('input', () => { update(); updateCalc(); });
+document.getElementById('search').addEventListener('input', update);
+document.getElementById('calc-zona').addEventListener('change', updateCalc);
+document.getElementById('calc-kg').addEventListener('input', updateCalc);
+
+populateZonaSelect();
 update();
+updateCalc();
 </script>
 </body>
 </html>"""
