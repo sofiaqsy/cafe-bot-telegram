@@ -132,6 +132,7 @@ HTML = """<!DOCTYPE html>
       padding: 0 32px;
       display: flex;
       align-items: center;
+      justify-content: space-between;
       gap: 0;
       height: 52px;
     }
@@ -139,7 +140,6 @@ HTML = """<!DOCTYPE html>
       display: flex;
       align-items: center;
       gap: 10px;
-      margin-right: 32px;
       flex-shrink: 0;
     }
     .nav-inputs label {
@@ -226,26 +226,10 @@ HTML = """<!DOCTYPE html>
       background: #3b1f06;
       border-radius: 10px;
       padding: 18px 22px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
     }
-    .calc-result-bar .label { color: rgba(255,255,255,0.65); font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
-    .calc-result-bar .amount { color: #f5c842; font-size: 1.8rem; font-weight: 800; }
-    .btn-confirm {
-      background: #c8a96e;
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      padding: 11px 22px;
-      font-size: 0.88rem;
-      font-weight: 700;
-      cursor: pointer;
-      flex-shrink: 0;
-      transition: background .15s;
-    }
-    .btn-confirm:hover { background: #a8893e; }
+    .calc-result-bar .label { color: rgba(255,255,255,0.65); font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+    .calc-result-bar .amount { color: #f5c842; font-size: 2rem; font-weight: 800; }
+    .calc-result-bar .price-kg { color: rgba(255,255,255,0.55); font-size: 0.78rem; margin-top: 4px; }
 
     /* PROMO CARD */
     .promo-card {
@@ -373,7 +357,7 @@ HTML = """<!DOCTYPE html>
       <svg viewBox="0 0 24 24"><path d="M2 21v-2h2V5h14v2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2v6h2v2H2zm4-2h8V7H6v12zm10-6h2V9h-2v4z"/></svg>
     </div>
     <div>
-      <div class="brand-name">CC Golden Coffee</div>
+      <div class="brand-name">Finca Rosal</div>
       <div class="brand-sub">Nuestros cafes especiales — Precios del dia</div>
     </div>
   </div>
@@ -421,11 +405,9 @@ HTML = """<!DOCTYPE html>
         </div>
       </div>
       <div class="calc-result-bar">
-        <div>
-          <div class="label">Total a pagar</div>
-          <div class="amount" id="res-total">S/. 0.00</div>
-        </div>
-        <button class="btn-confirm" onclick="confirmarPago()">Confirmar</button>
+        <div class="label">Total a pagar</div>
+        <div class="amount" id="res-total">S/. 0.00</div>
+        <div class="price-kg" id="res-kg-label"></div>
       </div>
     </div>
 
@@ -545,6 +527,7 @@ function updateCalc() {
 
   const precio_kg = getPrecioKg(tipo, bolsa, dolar, zona);
   document.getElementById('res-total').textContent = 'S/. ' + (precio_kg * kg).toLocaleString('es-PE', {minimumFractionDigits:2, maximumFractionDigits:2});
+  document.getElementById('res-kg-label').textContent = kg > 0 ? `S/. ${precio_kg.toFixed(4)} por kg` : '';
 }
 
 function updateIndicators() {
@@ -630,12 +613,6 @@ function goPage(p) {
   renderZonas();
 }
 
-function confirmarPago() {
-  const total = document.getElementById('res-total').textContent;
-  const tipo  = TIPO_LABELS[document.getElementById('calc-tipo').value];
-  const kg    = document.getElementById('calc-kg').value || '0';
-  alert(`Pago confirmado\\n\\nTipo: ${tipo}\\nKg: ${kg}\\nTotal: ${total}`);
-}
 
 function update() {
   updateIndicators();
