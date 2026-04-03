@@ -162,6 +162,17 @@ def save_precio_historico():
         logger.info(f"[HISTORICO] Snapshot guardado: {snap}")
     except Exception as e:
         logger.error(f"[HISTORICO] Error al guardar: {e}")
+        return
+
+    # Update prices in apartalo-core (Pergamino + Verde/Oro Verde)
+    try:
+        from utils.apartalo import actualizar_precios
+        actualizar_precios(
+            precio_pergamino=snap["pergamino_seco"],
+            precio_oro_verde=snap["oro_verde"],
+        )
+    except Exception as e:
+        logger.error(f"[APARTALO] Error actualizando precios: {e}")
 
 def get_historico_data():
     """Read all rows from preciosHistoricos sheet."""

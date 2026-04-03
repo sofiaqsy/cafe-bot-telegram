@@ -99,7 +99,20 @@ def _save_compra(datos: dict, username: str) -> bool:
         "registrado_por": username,
         "notas": "Registrado por asistente IA",
     }
-    return sheets_append("compras", record)
+    ok = sheets_append("compras", record)
+
+    # Sync stock to apartalo-core if PERGAMINO
+    if ok and datos.get("tipo_cafe", "").upper() == "PERGAMINO":
+        try:
+            from utils.apartalo import agregar_stock_pergamino
+            agregar_stock_pergamino(
+                float(datos.get("cantidad", 0)),
+                motivo=f"Compra IA {record.get('id','')} - {datos.get('proveedor','')}"
+            )
+        except Exception as e:
+            logger.error(f"[APARTALO] Error sincronizando stock (asistente): {e}")
+
+    return ok
 
 
 def _save_gasto(datos: dict, username: str) -> bool:

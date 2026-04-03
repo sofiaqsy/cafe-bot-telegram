@@ -153,7 +153,18 @@ async def confirmar_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     "notas": f"Compra mixta - Método de pago: {datos['metodo_pago']}"
                 }
                 result_compra = append_sheets("compras", datos_compra_regular)
-                
+
+                # Sync stock to apartalo-core if PERGAMINO
+                if result_compra and datos.get("tipo_cafe", "").upper() == "PERGAMINO":
+                    try:
+                        from utils.apartalo import agregar_stock_pergamino
+                        agregar_stock_pergamino(
+                            float(datos.get("cantidad", 0)),
+                            motivo=f"Compra mixta {compra_id} - {datos.get('proveedor','')}"
+                        )
+                    except Exception as e:
+                        logger.error(f"[APARTALO] Error sincronizando stock (mixta): {e}")
+
                 # 2. Guardar también en la hoja de compras_mixtas para detalles adicionales
                 logger.info(f"Guardando compra mixta en hoja de compras_mixtas: {datos}")
                 result_mixta = append_sheets("compras_mixtas", datos)
