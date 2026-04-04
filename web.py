@@ -170,6 +170,7 @@ def save_precio_historico():
         actualizar_precios(
             precio_pergamino=snap["pergamino_seco"],
             precio_oro_verde=snap["oro_verde"],
+            precio_cerezo=snap["cerezo"],
         )
     except Exception as e:
         logger.error(f"[APARTALO] Error actualizando precios: {e}")

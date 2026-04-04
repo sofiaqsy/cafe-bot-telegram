@@ -101,11 +101,12 @@ def _save_compra(datos: dict, username: str) -> bool:
     }
     ok = sheets_append("compras", record)
 
-    # Sync stock to apartalo-core if PERGAMINO
-    if ok and datos.get("tipo_cafe", "").upper() == "PERGAMINO":
+    # Sync stock to apartalo-core (PERGAMINO or CEREZO)
+    if ok:
         try:
-            from utils.apartalo import agregar_stock_pergamino
-            agregar_stock_pergamino(
+            from utils.apartalo import agregar_stock
+            agregar_stock(
+                datos.get("tipo_cafe", ""),
                 float(datos.get("cantidad", 0)),
                 motivo=f"Compra IA {record.get('id','')} - {datos.get('proveedor','')}"
             )

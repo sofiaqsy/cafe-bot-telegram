@@ -228,16 +228,16 @@ async def confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             if result:
                 logger.info(f"Compra guardada exitosamente para usuario {user_id}")
 
-                # Sync stock to apartalo-core if PERGAMINO
-                if datos_limpios.get("tipo_cafe", "").upper() == "PERGAMINO":
-                    try:
-                        from utils.apartalo import agregar_stock_pergamino
-                        agregar_stock_pergamino(
-                            float(datos_limpios.get("cantidad", 0)),
-                            motivo=f"Compra {datos_limpios.get('id','')} - {datos_limpios.get('proveedor','')}"
-                        )
-                    except Exception as e:
-                        logger.error(f"[APARTALO] Error sincronizando stock: {e}")
+                # Sync stock to apartalo-core (PERGAMINO or CEREZO)
+                try:
+                    from utils.apartalo import agregar_stock
+                    agregar_stock(
+                        datos_limpios.get("tipo_cafe", ""),
+                        float(datos_limpios.get("cantidad", 0)),
+                        motivo=f"Compra {datos_limpios.get('id','')} - {datos_limpios.get('proveedor','')}"
+                    )
+                except Exception as e:
+                    logger.error(f"[APARTALO] Error sincronizando stock: {e}")
                 
                 await update.message.reply_text(
                     "✅ ¡Compra registrada exitosamente!\n\n"

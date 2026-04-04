@@ -154,11 +154,12 @@ async def confirmar_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 }
                 result_compra = append_sheets("compras", datos_compra_regular)
 
-                # Sync stock to apartalo-core if PERGAMINO
-                if result_compra and datos.get("tipo_cafe", "").upper() == "PERGAMINO":
+                # Sync stock to apartalo-core (PERGAMINO or CEREZO)
+                if result_compra:
                     try:
-                        from utils.apartalo import agregar_stock_pergamino
-                        agregar_stock_pergamino(
+                        from utils.apartalo import agregar_stock
+                        agregar_stock(
+                            datos.get("tipo_cafe", ""),
                             float(datos.get("cantidad", 0)),
                             motivo=f"Compra mixta {compra_id} - {datos.get('proveedor','')}"
                         )
